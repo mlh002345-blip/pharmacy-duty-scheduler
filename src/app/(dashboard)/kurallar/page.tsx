@@ -1,3 +1,7 @@
+import Link from "next/link";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Table,
@@ -7,14 +11,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { ListBanner } from "@/components/layout/list-banner";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-export default async function KurallarPage() {
-  const rules = await prisma.dutyRule.findMany({
-    include: { region: true },
+export default async function KurallarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ success?: string; error?: string }>;
+}) {
+  const { success, error } = await searchParams;
+
+  const regions = await prisma.region.findMany({
+    include: { dutyRule: true },
     orderBy: { name: "asc" },
   });
 
@@ -23,22 +33,23 @@ export default async function KurallarPage() {
       <div>
         <h1 className="text-2xl font-semibold">Nöbet Kuralları</h1>
         <p className="text-muted-foreground text-sm">
-          Bölge bazlı nöbet ağırlıkları ve asgari nöbet aralığı kuralları.
+          Her bölge için asgari nöbet aralığı ve gün ağırlıkları.
         </p>
       </div>
 
+      <ListBanner success={success} error={error} />
+
       <Card>
         <CardHeader>
-          <CardTitle>Kural Listesi</CardTitle>
+          <CardTitle>Bölge Bazlı Kurallar</CardTitle>
           <CardDescription>
-            Hafta içi, Cumartesi, Pazar, resmi ve dini bayram ağırlıkları.
+            Her bölgenin tek bir aktif kural setine sahip olması önerilir.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Kural Adı</TableHead>
                 <TableHead>Bölge</TableHead>
                 <TableHead>Min. Gün Aralığı</TableHead>
                 <TableHead>Hafta İçi</TableHead>
@@ -47,23 +58,30 @@ export default async function KurallarPage() {
                 <TableHead>Resmi Tatil</TableHead>
                 <TableHead>Dini Bayram</TableHead>
                 <TableHead>Durum</TableHead>
+                <TableHead className="text-right">İşlemler</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rules.map((rule) => (
-                <TableRow key={rule.id}>
-                  <TableCell className="font-medium">{rule.name}</TableCell>
-                  <TableCell>{rule.region.name}</TableCell>
-                  <TableCell>{rule.minDaysBetweenDuties}</TableCell>
-                  <TableCell>{rule.weekdayWeight}</TableCell>
-                  <TableCell>{rule.saturdayWeight}</TableCell>
-                  <TableCell>{rule.sundayWeight}</TableCell>
-                  <TableCell>{rule.officialHolidayWeight}</TableCell>
-                  <TableCell>{rule.religiousHolidayWeight}</TableCell>
+              {regions.map((region) => (
+                <TableRow key={region.id}>
+                  <TableCell className="font-medium">{region.name}</TableCell>
+                  <TableCell>{region.dutyRule?.minDaysBetweenDuties ?? "-"}</TableCell>
+                  <TableCell>{region.dutyRule?.weekdayWeight ?? "-"}</TableCell>
+                  <TableCell>{region.dutyRule?.saturdayWeight ?? "-"}</TableCell>
+                  <TableCell>{region.dutyRule?.sundayWeight ?? "-"}</TableCell>
+                  <TableCell>{region.dutyRule?.officialHolidayWeight ?? "-"}</TableCell>
+                  <TableCell>{region.dutyRule?.religiousHolidayWeight ?? "-"}</TableCell>
                   <TableCell>
-                    <Badge variant={rule.isActive ? "default" : "secondary"}>
-                      {rule.isActive ? "Aktif" : "Pasif"}
+                    <Badge variant={region.dutyRule ? "default" : "secondary"}>
+                      {region.dutyRule ? "Tanımlı" : "Tanımsız"}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={`/kurallar/${region.id}/duzenle`}>
+                        {region.dutyRule ? "Düzenle" : "Kural Oluştur"}
+                      </Link>
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

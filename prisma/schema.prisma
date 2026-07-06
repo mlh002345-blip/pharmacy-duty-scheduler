@@ -27,26 +27,33 @@ model User {
 }
 
 model Region {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String   @unique
+  district       String
+  dailyDutyCount Int      @default(1)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   pharmacies Pharmacy[]
-  dutyRules  DutyRule[]
+  dutyRule   DutyRule?
 }
 
 model Pharmacy {
-  id        String   @id @default(cuid())
-  name      String
-  address   String
-  phone     String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String
+  pharmacistName String
+  phone          String
+  address        String
+  city           String
+  district       String
+  mapUrl         String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   regionId String
-  region   Region @relation(fields: [regionId], references: [id])
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
 
   unavailabilities Unavailability[]
   dutyAssignments  DutyAssignment[]
@@ -55,27 +62,24 @@ model Pharmacy {
 }
 
 model DutyRule {
-  id                    String   @id @default(cuid())
-  name                  String
-  minDaysBetweenDuties  Int      @default(1)
-  weekdayWeight         Float    @default(1)
-  saturdayWeight        Float    @default(1.25)
-  sundayWeight          Float    @default(1.5)
-  officialHolidayWeight Float    @default(2)
-  religiousHolidayWeight Float   @default(2)
-  isActive              Boolean  @default(true)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  minDaysBetweenDuties   Int      @default(1)
+  weekdayWeight          Float    @default(1)
+  saturdayWeight         Float    @default(1.25)
+  sundayWeight           Float    @default(1.5)
+  officialHolidayWeight  Float    @default(2)
+  religiousHolidayWeight Float    @default(2)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  regionId String
-  region   Region @relation(fields: [regionId], references: [id])
-
-  @@index([regionId])
+  regionId String @unique
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Cascade)
 }
 
 enum HolidayType {
   OFFICIAL
   RELIGIOUS
+  OTHER
 }
 
 model Holiday {
@@ -98,7 +102,7 @@ model Unavailability {
   updatedAt DateTime @updatedAt
 
   pharmacyId String
-  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id])
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
 
   @@index([pharmacyId])
 }
@@ -132,7 +136,7 @@ model DutyAssignment {
   dutySchedule   DutySchedule @relation(fields: [dutyScheduleId], references: [id])
 
   pharmacyId String
-  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id])
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
 
   auditLogs AuditLog[]
 

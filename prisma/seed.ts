@@ -3,12 +3,12 @@ import { faker } from "@faker-js/faker/locale/tr";
 
 const prisma = new PrismaClient();
 
-const REGION_NAMES = [
-  "Kadıköy",
-  "Üsküdar",
-  "Beşiktaş",
-  "Bakırköy",
-  "Şişli",
+const REGIONS = [
+  { name: "Kadıköy", district: "Kadıköy" },
+  { name: "Üsküdar", district: "Üsküdar" },
+  { name: "Beşiktaş", district: "Beşiktaş" },
+  { name: "Bakırköy", district: "Bakırköy" },
+  { name: "Şişli", district: "Şişli" },
 ];
 
 const USERS = [
@@ -50,14 +50,17 @@ async function main() {
   await prisma.user.createMany({ data: USERS });
 
   const regions = await Promise.all(
-    REGION_NAMES.map((name) => prisma.region.create({ data: { name } }))
+    REGIONS.map((region) =>
+      prisma.region.create({
+        data: { name: region.name, district: region.district, dailyDutyCount: 1 },
+      })
+    )
   );
 
   await Promise.all(
     regions.map((region) =>
       prisma.dutyRule.create({
         data: {
-          name: `${region.name} Standart Nöbet Kuralı`,
           minDaysBetweenDuties: 7,
           weekdayWeight: 1,
           saturdayWeight: 1.25,
@@ -74,8 +77,11 @@ async function main() {
     const region = regions[i % regions.length];
     return {
       name: `${faker.company.name()} Eczanesi`,
+      pharmacistName: faker.person.fullName(),
       address: faker.location.streetAddress({ useFullAddress: true }),
       phone: faker.phone.number({ style: "national" }),
+      city: "İstanbul",
+      district: region.district,
       isActive: faker.datatype.boolean({ probability: 0.9 }),
       regionId: region.id,
     };
