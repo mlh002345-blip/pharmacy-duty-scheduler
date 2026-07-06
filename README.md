@@ -42,12 +42,11 @@ gerektirmeden erişilebilir.
 
 ## Ortam Değişkenleri
 
-`.env.example` dosyasını `.env` olarak kopyalayın. Yerel/demo ortamı için
-gereken tek değişken:
-
-```
-DATABASE_URL="file:./dev.db"
-```
+`.env.example` dosyasını `.env` olarak kopyalayın. Yerel geliştirme için
+gereken değişkenler ve açıklamaları `.env.example` içinde yorum olarak
+belirtilmiştir (`DATABASE_URL`, `NODE_ENV`, `DEMO_SEED`). Hosted/production
+ortamı için `.env.production.example` dosyasına ve
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) rehberine bakın.
 
 ## Veritabanı Migration
 
@@ -80,6 +79,12 @@ Bu komut veritabanını temizler ve şu demo verilerini oluşturur:
 - içinde bulunulan ay için 1 yayında, 1 taslak nöbet çizelgesi (böylece
   `/vatandas` sayfası seed sonrası hemen gerçek veri gösterir)
 
+Bu script veritabanını **tamamen temizler**. `NODE_ENV=production` iken
+yanlışlıkla çalıştırılmaması için `DEMO_SEED=true` açıkça verilmedikçe
+çalışmayı reddeder; ayrıntılar için
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) → "Demo Seed'i Güvenli
+Çalıştırma" bölümüne bakın.
+
 ## Giriş Bilgileri (Sadece Demo)
 
 Aşağıdaki hesaplar **yalnızca yerel demo/geliştirme** amaçlıdır. Gerçek bir
@@ -95,6 +100,15 @@ pilot kullanımdan önce mutlaka değiştirilmeli veya silinmelidir.
 
 Kısa bir tanıtım için bkz. [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
 Detaylı test adımları için bkz. [`docs/QA_CHECKLIST.md`](docs/QA_CHECKLIST.md).
+
+## Barındırma (Hosted Demo / Pilot) Dağıtımı
+
+Projeyi barındırılan bir demo ortamına veya gerçek bir pilot ortamına
+taşırken izlenecek adımlar (PostgreSQL'e geçiş, ortam değişkenleri,
+migration, ilk yönetici kullanıcısı, demo seed'in güvenli çalıştırılması)
+için bkz. [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Gerçek pilot öncesi
+gözden geçirilmesi gereken güvenlik maddeleri için bkz.
+[`docs/SECURITY_CHECKLIST.md`](docs/SECURITY_CHECKLIST.md).
 
 Özetle:
 

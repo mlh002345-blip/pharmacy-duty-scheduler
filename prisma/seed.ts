@@ -94,7 +94,31 @@ function pharmacyName(lastName: string): string {
   return `${lastName} Eczanesi`;
 }
 
+// Bu script veritabanını tamamen temizleyip sahte demo verisiyle doldurur.
+// Production ortamında yanlışlıkla çalıştırılıp gerçek verinin silinmesini
+// önlemek için: NODE_ENV=production iken DEMO_SEED=true açıkça verilmedikçe
+// çalışmayı reddeder. Yerel/geliştirme ortamında (NODE_ENV production değilken)
+// herhangi bir ek bayrağa gerek yoktur. Ayrıntılar için docs/DEPLOYMENT.md.
+function assertSeedIsSafeToRun() {
+  const isProduction = process.env.NODE_ENV === "production";
+  const demoSeedEnabled = process.env.DEMO_SEED === "true";
+
+  if (isProduction && !demoSeedEnabled) {
+    console.error(
+      "HATA: NODE_ENV=production ortamında demo seed script'i varsayılan " +
+        "olarak engellenir (mevcut veriler silinip demo verisiyle " +
+        "değiştirilir). Bunu bilerek ve isteyerek çalıştırmak için " +
+        "DEMO_SEED=true ortam değişkenini ayarlayın. Gerçek bir pilot/" +
+        "production ortamında bu script'i ASLA çalıştırmayın — bkz. " +
+        "docs/DEPLOYMENT.md ve docs/SECURITY_CHECKLIST.md."
+    );
+    process.exit(1);
+  }
+}
+
 async function main() {
+  assertSeedIsSafeToRun();
+
   console.log("Seeding database...");
 
   await prisma.session.deleteMany();
