@@ -92,6 +92,13 @@ export default async function MazeretlerPage({
                   </TableCell>
                 </TableRow>
               ))}
+              {unavailabilities.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-muted-foreground text-center">
+                    Henüz tanımlı bir mazeret kaydı bulunmuyor.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>

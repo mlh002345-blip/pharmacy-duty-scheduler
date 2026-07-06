@@ -44,7 +44,7 @@ export default async function KullanicilarPage({
           </p>
         </div>
         <Button asChild>
-          <Link href="/kullanicilar/yeni">Yeni Kullanıcı</Link>
+          <Link href="/kullanicilar/yeni">Yeni Ekle</Link>
         </Button>
       </div>
 
@@ -98,6 +98,13 @@ export default async function KullanicilarPage({
                   </TableCell>
                 </TableRow>
               ))}
+              {users.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-muted-foreground text-center">
+                    Henüz tanımlı bir kullanıcı bulunmuyor.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>

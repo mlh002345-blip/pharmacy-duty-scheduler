@@ -262,7 +262,7 @@ export default async function CizelgeDetayPage({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="adalet-raporu">
         <CardHeader>
           <CardTitle>Adalet Raporu</CardTitle>
           <CardDescription>Bu çizelgedeki atamalara göre eczane bazlı özet.</CardDescription>

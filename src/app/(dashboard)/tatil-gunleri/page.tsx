@@ -93,6 +93,13 @@ export default async function TatilGunleriPage({
                   </TableCell>
                 </TableRow>
               ))}
+              {holidays.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-muted-foreground text-center">
+                    Henüz tanımlı bir tatil günü bulunmuyor.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>

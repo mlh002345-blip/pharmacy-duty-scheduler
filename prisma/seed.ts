@@ -2,15 +2,19 @@ import { PrismaClient, HolidayType } from "@prisma/client";
 import { faker } from "@faker-js/faker/locale/tr";
 
 import { hashPassword } from "../src/lib/auth/password";
+import { generateAndSaveDutySchedule } from "../src/lib/scheduling/generate-and-save-duty-schedule";
 
 const prisma = new PrismaClient();
 
+// Side of Istanbul each district sits on, used to generate a plausible
+// landline area code (0216 Anadolu / 0212 Avrupa) instead of faker's
+// made-up area codes.
 const REGIONS = [
-  { name: "Kadıköy", district: "Kadıköy" },
-  { name: "Üsküdar", district: "Üsküdar" },
-  { name: "Beşiktaş", district: "Beşiktaş" },
-  { name: "Bakırköy", district: "Bakırköy" },
-  { name: "Şişli", district: "Şişli" },
+  { name: "Kadıköy", district: "Kadıköy", areaCode: "0216" },
+  { name: "Üsküdar", district: "Üsküdar", areaCode: "0216" },
+  { name: "Beşiktaş", district: "Beşiktaş", areaCode: "0212" },
+  { name: "Bakırköy", district: "Bakırköy", areaCode: "0212" },
+  { name: "Şişli", district: "Şişli", areaCode: "0212" },
 ];
 
 // Demo-only credentials, never use these in a real deployment.
@@ -52,12 +56,51 @@ const HOLIDAYS_2026: { name: string; date: string; type: HolidayType }[] = [
   { name: "Kurban Bayramı 4. Gün", date: "2026-05-30", type: "RELIGIOUS" },
 ];
 
+// Common generic Turkish pharmacy names, used alongside surname-based names
+// (e.g. "Yılmaz Eczanesi") for realistic variety without artificial-looking
+// faker output like "X and Sons" or "X Group".
+const GENERIC_PHARMACY_NAMES = [
+  "Merkez Eczanesi",
+  "Şifa Eczanesi",
+  "Deva Eczanesi",
+  "Sağlık Eczanesi",
+  "Güven Eczanesi",
+  "Anadolu Eczanesi",
+  "Yeni Eczanesi",
+  "Umut Eczanesi",
+  "Hayat Eczanesi",
+  "Yıldız Eczanesi",
+  "Çınar Eczanesi",
+  "Barış Eczanesi",
+];
+
+function turkishLandlinePhone(areaCode: string): string {
+  const exchange = faker.number.int({ min: 200, max: 899 });
+  const part2 = faker.number.int({ min: 10, max: 99 });
+  const part3 = faker.number.int({ min: 10, max: 99 });
+  return `${areaCode} ${exchange} ${part2} ${part3}`;
+}
+
+function turkishAddress(district: string): string {
+  return `${faker.location.streetAddress()}, ${district}/İstanbul`;
+}
+
+function pharmacyName(lastName: string): string {
+  // Most Turkish pharmacies are named after the pharmacist's surname.
+  const useGenericName = faker.datatype.boolean({ probability: 0.25 });
+  if (useGenericName) {
+    return faker.helpers.arrayElement(GENERIC_PHARMACY_NAMES);
+  }
+  return `${lastName} Eczanesi`;
+}
+
 async function main() {
   console.log("Seeding database...");
 
   await prisma.session.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.dutyAssignment.deleteMany();
+  await prisma.dutyScheduleWarning.deleteMany();
   await prisma.dutySchedule.deleteMany();
   await prisma.unavailability.deleteMany();
   await prisma.holiday.deleteMany();
@@ -105,14 +148,18 @@ async function main() {
   );
 
   const pharmacyData = Array.from({ length: 100 }).map((_, i) => {
+    const regionConfig = REGIONS[i % REGIONS.length];
     const region = regions[i % regions.length];
+    const firstName = faker.person.firstName();
+    const lastName = faker.person.lastName();
+
     return {
-      name: `${faker.company.name()} Eczanesi`,
-      pharmacistName: faker.person.fullName(),
-      address: faker.location.streetAddress({ useFullAddress: true }),
-      phone: faker.phone.number({ style: "national" }),
+      name: pharmacyName(lastName),
+      pharmacistName: `${firstName} ${lastName}`,
+      address: turkishAddress(regionConfig.district),
+      phone: turkishLandlinePhone(regionConfig.areaCode),
       city: "İstanbul",
-      district: region.district,
+      district: regionConfig.district,
       isActive: faker.datatype.boolean({ probability: 0.9 }),
       regionId: region.id,
     };
@@ -154,12 +201,47 @@ async function main() {
     }),
   });
 
+  // Demo schedules: one published (so /vatandas shows real data for the
+  // current date right after seeding) and one left as a draft (so the
+  // draft/publish workflow has something to demonstrate immediately).
+  const now = new Date();
+  const currentMonth = now.getUTCMonth() + 1;
+  const currentYear = now.getUTCFullYear();
+
+  // The public /vatandas screen defaults to the alphabetically-first active
+  // region (matching its own query), not creation order — align here so the
+  // default view shows real data immediately after seeding, with no need to
+  // pick a region first.
+  const regionsByName = [...regions].sort((a, b) => a.name.localeCompare(b.name, "tr"));
+  const publishedRegion = regionsByName[0];
+  const draftRegion = regionsByName[1];
+
+  const publishedSchedule = await generateAndSaveDutySchedule({
+    month: currentMonth,
+    year: currentYear,
+    regionId: publishedRegion.id,
+  });
+  await prisma.dutySchedule.update({
+    where: { id: publishedSchedule.id },
+    data: { status: "PUBLISHED" },
+  });
+
+  await generateAndSaveDutySchedule({
+    month: currentMonth,
+    year: currentYear,
+    regionId: draftRegion.id,
+  });
+
   console.log("Seed completed:");
   console.log(`- ${USERS.length} users`);
   console.log(`- ${regions.length} regions`);
   console.log(`- ${pharmacyData.length} pharmacies`);
   console.log(`- ${HOLIDAYS_2026.length} holidays`);
   console.log(`- ${sampleUnavailablePharmacies.length} unavailability records`);
+  console.log(
+    `- 1 published schedule (${publishedRegion.name}, ${currentMonth}/${currentYear})`
+  );
+  console.log(`- 1 draft schedule (${draftRegion.name}, ${currentMonth}/${currentYear})`);
   console.log("");
   console.log("Demo login credentials (local development only):");
   for (const user of USERS) {

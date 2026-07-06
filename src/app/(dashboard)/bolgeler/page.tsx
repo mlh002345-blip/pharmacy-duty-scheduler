@@ -104,6 +104,13 @@ export default async function BolgelerPage({
                   </TableCell>
                 </TableRow>
               ))}
+              {regions.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-muted-foreground text-center">
+                    Henüz tanımlı bir bölge bulunmuyor.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>

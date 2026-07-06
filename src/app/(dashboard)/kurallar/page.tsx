@@ -94,6 +94,13 @@ export default async function KurallarPage({
                   </TableCell>
                 </TableRow>
               ))}
+              {regions.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-muted-foreground text-center">
+                    Henüz tanımlı bir bölge bulunmuyor.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
