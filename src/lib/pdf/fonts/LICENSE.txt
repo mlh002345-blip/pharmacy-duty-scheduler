@@ -1,0 +1,8 @@
+DejaVu Sans (Regular and Bold) — bundled for PDF export so Turkish
+characters (ş, ğ, ı, İ, ö, ü, ç) render correctly without depending on
+whatever fonts happen to be installed on the host.
+
+DejaVu fonts are based on the Bitstream Vera fonts and are released
+under a permissive license that explicitly allows embedding,
+modification, and redistribution. Full license text:
+https://dejavu-fonts.github.io/License.html

@@ -110,11 +110,11 @@ export async function deleteDutyScheduleAction(id: string) {
   if (!schedule) {
     redirectWithMessage("/cizelgeler", "error", "Nöbet çizelgesi bulunamadı.");
   }
-  if (schedule.status !== "DRAFT") {
+  if (schedule.status === "PUBLISHED") {
     redirectWithMessage(
       "/cizelgeler",
       "error",
-      "Sadece taslak durumundaki çizelgeler silinebilir."
+      "Yayında olan çizelge silinemez. Önce yayından kaldırın."
     );
   }
 
@@ -135,4 +135,64 @@ export async function deleteDutyScheduleAction(id: string) {
 
   revalidatePath("/cizelgeler");
   redirectWithMessage("/cizelgeler", "success", "Nöbet çizelgesi silindi.");
+}
+
+export async function publishDutyScheduleAction(id: string) {
+  const schedule = await prisma.dutySchedule.findUnique({ where: { id } });
+  if (!schedule) {
+    redirectWithMessage("/cizelgeler", "error", "Nöbet çizelgesi bulunamadı.");
+  }
+  if (schedule.status === "PUBLISHED") {
+    redirectWithMessage(`/cizelgeler/${id}`, "error", "Çizelge zaten yayında.");
+  }
+
+  const updated = await prisma.dutySchedule.update({
+    where: { id },
+    data: { status: "PUBLISHED" },
+  });
+
+  const userId = await getCurrentUserId();
+  await writeAuditLog({
+    userId,
+    action: "UPDATE",
+    entity: "DutySchedule",
+    entityId: id,
+    before: { status: schedule.status },
+    after: { status: updated.status },
+  });
+
+  revalidatePath(`/cizelgeler/${id}`);
+  revalidatePath("/cizelgeler");
+  revalidatePath("/vatandas");
+  redirectWithMessage(`/cizelgeler/${id}`, "success", "Çizelge Yayınlandı.");
+}
+
+export async function unpublishDutyScheduleAction(id: string) {
+  const schedule = await prisma.dutySchedule.findUnique({ where: { id } });
+  if (!schedule) {
+    redirectWithMessage("/cizelgeler", "error", "Nöbet çizelgesi bulunamadı.");
+  }
+  if (schedule.status === "DRAFT") {
+    redirectWithMessage(`/cizelgeler/${id}`, "error", "Çizelge zaten taslak durumunda.");
+  }
+
+  const updated = await prisma.dutySchedule.update({
+    where: { id },
+    data: { status: "DRAFT" },
+  });
+
+  const userId = await getCurrentUserId();
+  await writeAuditLog({
+    userId,
+    action: "UPDATE",
+    entity: "DutySchedule",
+    entityId: id,
+    before: { status: schedule.status },
+    after: { status: updated.status },
+  });
+
+  revalidatePath(`/cizelgeler/${id}`);
+  revalidatePath("/cizelgeler");
+  revalidatePath("/vatandas");
+  redirectWithMessage(`/cizelgeler/${id}`, "success", "Çizelge Yayından Kaldırıldı.");
 }

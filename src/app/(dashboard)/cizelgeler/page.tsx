@@ -15,14 +15,10 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { prisma } from "@/lib/prisma";
 import { getTurkishMonthName } from "@/lib/scheduling/date-tr";
+import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
 import { deleteDutyScheduleAction } from "./actions";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Taslak",
-  PUBLISHED: "Yayınlandı",
-};
 
 export default async function CizelgelerPage({
   searchParams,
@@ -87,7 +83,7 @@ export default async function CizelgelerPage({
                     </TableCell>
                     <TableCell>
                       <Badge variant={schedule.status === "DRAFT" ? "secondary" : "default"}>
-                        {STATUS_LABELS[schedule.status] ?? schedule.status}
+                        {DUTY_SCHEDULE_STATUS_LABELS[schedule.status] ?? schedule.status}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -97,6 +93,12 @@ export default async function CizelgelerPage({
                       <div className="flex justify-end gap-2">
                         <Button variant="outline" size="sm" asChild>
                           <Link href={`/cizelgeler/${schedule.id}`}>Görüntüle</Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={`/cizelgeler/${schedule.id}/export/excel`}>Excel</a>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <a href={`/cizelgeler/${schedule.id}/export/pdf`}>PDF</a>
                         </Button>
                         {schedule.status === "DRAFT" && (
                           <DeleteButton

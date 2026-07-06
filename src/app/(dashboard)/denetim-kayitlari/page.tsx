@@ -8,6 +8,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
+import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,24 @@ function describeDutyAssignmentChange(
   return `${oldName} → ${newName}${reason ? ` (Neden: ${reason})` : ""}`;
 }
 
+type DutyScheduleChange = { status?: string };
+
+function describeDutyScheduleChange(
+  before: string | null,
+  after: string | null
+): string | null {
+  const beforeValue = parseJson(before) as DutyScheduleChange | null;
+  const afterValue = parseJson(after) as DutyScheduleChange | null;
+  if (!afterValue?.status) return null;
+
+  const oldStatus = beforeValue?.status
+    ? (DUTY_SCHEDULE_STATUS_LABELS[beforeValue.status] ?? beforeValue.status)
+    : null;
+  const newStatus = DUTY_SCHEDULE_STATUS_LABELS[afterValue.status] ?? afterValue.status;
+
+  return oldStatus ? `${oldStatus} → ${newStatus}` : newStatus;
+}
+
 export default async function DenetimKayitlariPage() {
   const auditLogs = await prisma.auditLog.findMany({
     include: { user: true },
@@ -97,10 +116,12 @@ export default async function DenetimKayitlariPage() {
               </TableHeader>
               <TableBody>
                 {auditLogs.map((log) => {
-                  const detail =
-                    log.entity === "DutyAssignment"
-                      ? describeDutyAssignmentChange(log.before, log.after)
-                      : null;
+                  let detail: string | null = null;
+                  if (log.entity === "DutyAssignment") {
+                    detail = describeDutyAssignmentChange(log.before, log.after);
+                  } else if (log.entity === "DutySchedule") {
+                    detail = describeDutyScheduleChange(log.before, log.after);
+                  }
 
                   return (
                     <TableRow key={log.id}>

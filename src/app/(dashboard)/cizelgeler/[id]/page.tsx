@@ -21,13 +21,10 @@ import {
   getTurkishMonthName,
   toDateKey,
 } from "@/lib/scheduling/date-tr";
+import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
+import { publishDutyScheduleAction, unpublishDutyScheduleAction } from "../actions";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Taslak",
-  PUBLISHED: "Yayınlandı",
-};
 
 type FairnessRow = {
   pharmacyId: string;
@@ -105,14 +102,35 @@ export default async function CizelgeDetayPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold">
-          {schedule.region.name} {getTurkishMonthName(schedule.month)} {schedule.year} Nöbet
-          Çizelgesi
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          {getTurkishMonthName(schedule.month)} {schedule.year} dönemi nöbet ataması.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            {schedule.region.name} {getTurkishMonthName(schedule.month)} {schedule.year} Nöbet
+            Çizelgesi
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            {getTurkishMonthName(schedule.month)} {schedule.year} dönemi nöbet ataması.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <a href={`/cizelgeler/${schedule.id}/export/excel`}>Excel&apos;e Aktar</a>
+          </Button>
+          <Button variant="outline" asChild>
+            <a href={`/cizelgeler/${schedule.id}/export/pdf`}>PDF İndir</a>
+          </Button>
+          {schedule.status === "DRAFT" ? (
+            <form action={publishDutyScheduleAction.bind(null, schedule.id)}>
+              <Button type="submit">Yayınla</Button>
+            </form>
+          ) : (
+            <form action={unpublishDutyScheduleAction.bind(null, schedule.id)}>
+              <Button type="submit" variant="secondary">
+                Yayından Kaldır
+              </Button>
+            </form>
+          )}
+        </div>
       </div>
 
       <ListBanner success={success} error={error} />
@@ -147,7 +165,7 @@ export default async function CizelgeDetayPage({
             <CardDescription>Durum</CardDescription>
             <CardTitle className="text-2xl">
               <Badge variant={schedule.status === "DRAFT" ? "secondary" : "default"}>
-                {STATUS_LABELS[schedule.status] ?? schedule.status}
+                {DUTY_SCHEDULE_STATUS_LABELS[schedule.status] ?? schedule.status}
               </Badge>
             </CardTitle>
           </CardHeader>

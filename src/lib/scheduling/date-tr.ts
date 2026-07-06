@@ -59,3 +59,19 @@ export function diffInDays(a: Date, b: Date): number {
   const msPerDay = 24 * 60 * 60 * 1000;
   return Math.round((a.getTime() - b.getTime()) / msPerDay);
 }
+
+export function todayAtUtcMidnight(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+}
+
+export function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+export function parseDateKey(dateKey: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) return null;
+  const [, year, month, day] = match;
+  return dateAtUtcMidnight(Number(year), Number(month), Number(day));
+}
