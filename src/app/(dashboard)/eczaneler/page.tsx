@@ -17,6 +17,7 @@ import {
 import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { StatusToggleButton } from "@/components/layout/status-toggle-button";
+import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permissions";
@@ -33,9 +34,10 @@ export default async function EczanelerPage({
     q?: string;
     regionId?: string;
     status?: string;
+    page?: string;
   }>;
 }) {
-  const { success, error, q, regionId, status } = await searchParams;
+  const { success, error, q, regionId, status, page: pageParam } = await searchParams;
 
   const user = await getCurrentUser();
   const canManage = !!user && hasPermission(user.role, "manageSetupData");
@@ -56,13 +58,25 @@ export default async function EczanelerPage({
     where.isActive = false;
   }
 
-  const [pharmacies, regions] = await Promise.all([
+  const page = parsePageParam(pageParam);
+
+  const [pharmacies, totalCount, regions] = await Promise.all([
     prisma.pharmacy.findMany({
       where,
-      include: { region: true },
+      select: {
+        id: true,
+        name: true,
+        pharmacistName: true,
+        phone: true,
+        isActive: true,
+        region: { select: { name: true } },
+      },
       orderBy: { name: "asc" },
+      skip: (page - 1) * DEFAULT_PAGE_SIZE,
+      take: DEFAULT_PAGE_SIZE,
     }),
-    prisma.region.findMany({ orderBy: { name: "asc" } }),
+    prisma.pharmacy.count({ where }),
+    prisma.region.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   return (
@@ -71,7 +85,7 @@ export default async function EczanelerPage({
         <div>
           <h1 className="text-2xl font-semibold">Eczaneler</h1>
           <p className="text-muted-foreground text-sm">
-            Sisteme kayıtlı eczaneler ({pharmacies.length} kayıt).
+            Sisteme kayıtlı eczaneler ({totalCount} kayıt).
           </p>
         </div>
         {canManage && (
@@ -190,6 +204,13 @@ export default async function EczanelerPage({
               )}
             </TableBody>
           </Table>
+          <Pagination
+            basePath="/eczaneler"
+            searchParams={{ q, regionId, status }}
+            page={page}
+            pageSize={DEFAULT_PAGE_SIZE}
+            totalCount={totalCount}
+          />
         </CardContent>
       </Card>
     </div>

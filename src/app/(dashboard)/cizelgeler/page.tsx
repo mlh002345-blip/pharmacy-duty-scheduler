@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
+import { ExportButton } from "@/components/layout/export-button";
+import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
 import { getTurkishMonthName } from "@/lib/scheduling/date-tr";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
@@ -25,18 +27,32 @@ export const dynamic = "force-dynamic";
 export default async function CizelgelerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; page?: string }>;
 }) {
-  const { success, error } = await searchParams;
+  const { success, error, page: pageParam } = await searchParams;
+  const page = parsePageParam(pageParam);
 
   const user = await getCurrentUser();
   const canGenerate = !!user && hasPermission(user.role, "generateSchedule");
   const canDelete = !!user && hasPermission(user.role, "deleteSchedule");
 
-  const schedules = await prisma.dutySchedule.findMany({
-    include: { region: true, _count: { select: { assignments: true } } },
-    orderBy: [{ year: "desc" }, { month: "desc" }, { createdAt: "desc" }],
-  });
+  const [schedules, totalCount] = await Promise.all([
+    prisma.dutySchedule.findMany({
+      select: {
+        id: true,
+        month: true,
+        year: true,
+        status: true,
+        createdAt: true,
+        region: { select: { name: true } },
+        _count: { select: { assignments: true } },
+      },
+      orderBy: [{ year: "desc" }, { month: "desc" }, { createdAt: "desc" }],
+      skip: (page - 1) * DEFAULT_PAGE_SIZE,
+      take: DEFAULT_PAGE_SIZE,
+    }),
+    prisma.dutySchedule.count(),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -59,7 +75,7 @@ export default async function CizelgelerPage({
       <Card>
         <CardHeader>
           <CardTitle>Çizelge Listesi</CardTitle>
-          <CardDescription>{schedules.length} kayıt.</CardDescription>
+          <CardDescription>{totalCount} kayıt.</CardDescription>
         </CardHeader>
         <CardContent>
           {schedules.length === 0 ? (
@@ -102,12 +118,16 @@ export default async function CizelgelerPage({
                         <Button variant="outline" size="sm" asChild>
                           <Link href={`/cizelgeler/${schedule.id}`}>Görüntüle</Link>
                         </Button>
-                        <Button variant="outline" size="sm" asChild>
-                          <a href={`/cizelgeler/${schedule.id}/export/excel`}>Excel</a>
-                        </Button>
-                        <Button variant="outline" size="sm" asChild>
-                          <a href={`/cizelgeler/${schedule.id}/export/pdf`}>PDF</a>
-                        </Button>
+                        <ExportButton
+                          href={`/cizelgeler/${schedule.id}/export/excel`}
+                          label="Excel"
+                          size="sm"
+                        />
+                        <ExportButton
+                          href={`/cizelgeler/${schedule.id}/export/pdf`}
+                          label="PDF"
+                          size="sm"
+                        />
                         {schedule.status === "DRAFT" && canDelete && (
                           <DeleteButton
                             action={deleteDutyScheduleAction.bind(null, schedule.id)}
@@ -121,6 +141,13 @@ export default async function CizelgelerPage({
               </TableBody>
             </Table>
           )}
+          <Pagination
+            basePath="/cizelgeler"
+            searchParams={{}}
+            page={page}
+            pageSize={DEFAULT_PAGE_SIZE}
+            totalCount={totalCount}
+          />
         </CardContent>
       </Card>
     </div>

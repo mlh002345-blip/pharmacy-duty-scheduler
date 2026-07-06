@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/layout/submit-button";
 
 export function StatusToggleButton({
   action,
@@ -9,9 +9,9 @@ export function StatusToggleButton({
 }) {
   return (
     <form action={action}>
-      <Button type="submit" variant="outline" size="sm">
+      <SubmitButton variant="outline" size="sm" pendingText="İşlem yapılıyor...">
         {isActive ? "Pasif Yap" : "Aktif Yap"}
-      </Button>
+      </SubmitButton>
     </form>
   );
 }

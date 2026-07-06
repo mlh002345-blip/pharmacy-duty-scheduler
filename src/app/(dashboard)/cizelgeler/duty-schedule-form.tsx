@@ -2,8 +2,6 @@
 
 import { useActionState } from "react";
 import Link from "next/link";
-import type { Region } from "@prisma/client";
-
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -14,7 +12,11 @@ import { createDutyScheduleAction } from "./actions";
 
 const YEAR_OPTIONS = Array.from({ length: 11 }, (_, i) => 2025 + i);
 
-export function DutyScheduleForm({ regions }: { regions: Region[] }) {
+export function DutyScheduleForm({
+  regions,
+}: {
+  regions: { id: string; name: string }[];
+}) {
   const [state, formAction, isPending] = useActionState(
     createDutyScheduleAction,
     initialActionState
@@ -69,7 +71,7 @@ export function DutyScheduleForm({ regions }: { regions: Region[] }) {
 
       <div className="flex gap-2">
         <Button type="submit" disabled={isPending}>
-          Nöbet Çizelgesi Oluştur
+          {isPending ? "Çizelge oluşturuluyor..." : "Nöbet Çizelgesi Oluştur"}
         </Button>
         <Button type="button" variant="outline" asChild>
           <Link href="/cizelgeler">İptal</Link>

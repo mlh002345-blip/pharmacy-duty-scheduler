@@ -17,12 +17,19 @@ export default async function AtamaDuzenlePage({
 
   const assignment = await prisma.dutyAssignment.findUnique({
     where: { id: assignmentId },
-    include: { pharmacy: true, dutySchedule: { include: { region: true } } },
+    select: {
+      date: true,
+      pharmacyId: true,
+      dutyScheduleId: true,
+      pharmacy: { select: { name: true } },
+      dutySchedule: { select: { regionId: true } },
+    },
   });
   if (!assignment || assignment.dutyScheduleId !== scheduleId) notFound();
 
   const candidatePharmacies = await prisma.pharmacy.findMany({
     where: { regionId: assignment.dutySchedule.regionId, isActive: true },
+    select: { id: true, name: true, pharmacistName: true },
     orderBy: { name: "asc" },
   });
 

@@ -76,6 +76,7 @@ model Pharmacy {
   dutyAssignments  DutyAssignment[]
 
   @@index([regionId])
+  @@index([isActive])
 }
 
 model DutyRule {
@@ -144,6 +145,8 @@ model DutySchedule {
   warnings    DutyScheduleWarning[]
 
   @@unique([year, month, regionId])
+  @@index([regionId])
+  @@index([status])
 }
 
 model DutyAssignment {
@@ -165,6 +168,7 @@ model DutyAssignment {
 
   @@index([dutyScheduleId])
   @@index([pharmacyId])
+  @@index([date])
 }
 
 model DutyScheduleWarning {
@@ -202,4 +206,5 @@ model AuditLog {
 
   @@index([userId])
   @@index([entity, entityId])
+  @@index([createdAt])
 }

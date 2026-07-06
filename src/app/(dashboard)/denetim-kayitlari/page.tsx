@@ -7,6 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
@@ -115,12 +116,31 @@ function describeUserChange(before: string | null, after: string | null): string
   return parts.length > 0 ? parts.join("; ") : `${afterValue.name} (${afterValue.email})`;
 }
 
-export default async function DenetimKayitlariPage() {
-  const auditLogs = await prisma.auditLog.findMany({
-    include: { user: true },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+export default async function DenetimKayitlariPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const { page: pageParam } = await searchParams;
+  const page = parsePageParam(pageParam);
+
+  const [auditLogs, totalCount] = await Promise.all([
+    prisma.auditLog.findMany({
+      select: {
+        id: true,
+        createdAt: true,
+        action: true,
+        entity: true,
+        before: true,
+        after: true,
+        user: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * DEFAULT_PAGE_SIZE,
+      take: DEFAULT_PAGE_SIZE,
+    }),
+    prisma.auditLog.count(),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -134,7 +154,7 @@ export default async function DenetimKayitlariPage() {
       <Card>
         <CardHeader>
           <CardTitle>Kayıt Listesi</CardTitle>
-          <CardDescription>Son 50 işlem gösteriliyor.</CardDescription>
+          <CardDescription>{totalCount} kayıt.</CardDescription>
         </CardHeader>
         <CardContent>
           {auditLogs.length === 0 ? (
@@ -176,6 +196,13 @@ export default async function DenetimKayitlariPage() {
               </TableBody>
             </Table>
           )}
+          <Pagination
+            basePath="/denetim-kayitlari"
+            searchParams={{}}
+            page={page}
+            pageSize={DEFAULT_PAGE_SIZE}
+            totalCount={totalCount}
+          />
         </CardContent>
       </Card>
     </div>

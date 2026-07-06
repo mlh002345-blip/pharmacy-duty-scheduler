@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
 import { StatusToggleButton } from "@/components/layout/status-toggle-button";
+import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
 import { requirePermissionOrRedirectWithMessage } from "@/lib/auth/guard";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
@@ -23,16 +24,32 @@ export const dynamic = "force-dynamic";
 export default async function KullanicilarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; page?: string }>;
 }) {
   const currentUser = await requirePermissionOrRedirectWithMessage(
     "manageUsers",
     "/",
     "Bu sayfaya erişim yetkiniz bulunmuyor."
   );
-  const { success, error } = await searchParams;
+  const { success, error, page: pageParam } = await searchParams;
+  const page = parsePageParam(pageParam);
 
-  const users = await prisma.user.findMany({ orderBy: { name: "asc" } });
+  const [users, totalCount] = await Promise.all([
+    prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+      orderBy: { name: "asc" },
+      skip: (page - 1) * DEFAULT_PAGE_SIZE,
+      take: DEFAULT_PAGE_SIZE,
+    }),
+    prisma.user.count(),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,7 +70,7 @@ export default async function KullanicilarPage({
       <Card>
         <CardHeader>
           <CardTitle>Kullanıcı Listesi</CardTitle>
-          <CardDescription>{users.length} kayıt.</CardDescription>
+          <CardDescription>{totalCount} kayıt.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -107,6 +124,13 @@ export default async function KullanicilarPage({
               )}
             </TableBody>
           </Table>
+          <Pagination
+            basePath="/kullanicilar"
+            searchParams={{}}
+            page={page}
+            pageSize={DEFAULT_PAGE_SIZE}
+            totalCount={totalCount}
+          />
         </CardContent>
       </Card>
     </div>

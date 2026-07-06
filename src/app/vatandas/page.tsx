@@ -62,6 +62,7 @@ export default async function VatandasEkraniPage({
 
   const regions = await prisma.region.findMany({
     where: { isActive: true },
+    select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
 

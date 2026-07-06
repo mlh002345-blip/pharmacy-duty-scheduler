@@ -37,7 +37,7 @@ export function LoginForm() {
       )}
 
       <Button type="submit" disabled={isPending} className="w-full">
-        Giriş Yap
+        {isPending ? "Giriş yapılıyor..." : "Giriş Yap"}
       </Button>
     </form>
   );

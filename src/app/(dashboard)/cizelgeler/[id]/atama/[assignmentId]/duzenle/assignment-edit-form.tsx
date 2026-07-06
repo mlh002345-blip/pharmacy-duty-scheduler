@@ -2,7 +2,6 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import type { Pharmacy } from "@prisma/client";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +28,7 @@ export function AssignmentEditForm({
   action: EditAssignmentAction;
   scheduleId: string;
   currentPharmacyId: string;
-  candidatePharmacies: Pharmacy[];
+  candidatePharmacies: { id: string; name: string; pharmacistName: string }[];
 }) {
   const [state, formAction, isPending] = useActionState(
     action,
@@ -97,7 +96,7 @@ export function AssignmentEditForm({
 
       <div className="flex gap-2">
         <Button type="submit" disabled={isPending}>
-          Kaydet
+          {isPending ? "Kaydediliyor..." : "Kaydet"}
         </Button>
         <Button type="button" variant="outline" asChild>
           <Link href={`/cizelgeler/${scheduleId}`}>İptal</Link>

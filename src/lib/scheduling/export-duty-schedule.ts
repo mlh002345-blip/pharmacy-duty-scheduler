@@ -4,10 +4,22 @@ import { toAsciiSlug } from "@/lib/slug";
 export async function loadDutyScheduleForExport(scheduleId: string) {
   return prisma.dutySchedule.findUnique({
     where: { id: scheduleId },
-    include: {
-      region: true,
+    select: {
+      id: true,
+      month: true,
+      year: true,
+      status: true,
+      region: { select: { name: true } },
       assignments: {
-        include: { pharmacy: true },
+        select: {
+          date: true,
+          weight: true,
+          isManual: true,
+          note: true,
+          pharmacy: {
+            select: { name: true, pharmacistName: true, phone: true, address: true },
+          },
+        },
         orderBy: [{ date: "asc" }, { pharmacy: { name: "asc" } }],
       },
     },

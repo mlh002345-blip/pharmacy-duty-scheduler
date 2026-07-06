@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/layout/submit-button";
 
 export function DeleteButton({
   action,
@@ -18,9 +18,9 @@ export function DeleteButton({
         }
       }}
     >
-      <Button type="submit" variant="destructive" size="sm">
+      <SubmitButton variant="destructive" size="sm" pendingText="Siliniyor...">
         Sil
-      </Button>
+      </SubmitButton>
     </form>
   );
 }

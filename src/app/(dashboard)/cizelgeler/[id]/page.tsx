@@ -13,6 +13,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
+import { SubmitButton } from "@/components/layout/submit-button";
+import { ExportButton } from "@/components/layout/export-button";
 import { prisma } from "@/lib/prisma";
 import {
   dateAtUtcMidnight,
@@ -54,13 +56,28 @@ export default async function CizelgeDetayPage({
 
   const schedule = await prisma.dutySchedule.findUnique({
     where: { id },
-    include: {
-      region: true,
+    select: {
+      id: true,
+      month: true,
+      year: true,
+      status: true,
+      region: { select: { name: true, dailyDutyCount: true } },
       assignments: {
-        include: { pharmacy: true },
+        select: {
+          id: true,
+          date: true,
+          weight: true,
+          note: true,
+          isManual: true,
+          pharmacyId: true,
+          pharmacy: { select: { name: true, phone: true, address: true } },
+        },
         orderBy: [{ date: "asc" }, { pharmacy: { name: "asc" } }],
       },
-      warnings: { orderBy: { date: "asc" } },
+      warnings: {
+        select: { id: true, date: true, message: true },
+        orderBy: { date: "asc" },
+      },
     },
   });
 
@@ -72,6 +89,7 @@ export default async function CizelgeDetayPage({
   const monthEnd = dateAtUtcMidnight(schedule.year, schedule.month, totalDays);
   const holidaysInMonth = await prisma.holiday.findMany({
     where: { date: { gte: monthStart, lte: monthEnd } },
+    select: { date: true },
   });
   const holidayDateKeys = new Set(holidaysInMonth.map((h) => toDateKey(h.date)));
   const isHolidayDate = (date: Date) => holidayDateKeys.has(toDateKey(date));
@@ -119,22 +137,19 @@ export default async function CizelgeDetayPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" asChild>
-            <a href={`/cizelgeler/${schedule.id}/export/excel`}>Excel&apos;e Aktar</a>
-          </Button>
-          <Button variant="outline" asChild>
-            <a href={`/cizelgeler/${schedule.id}/export/pdf`}>PDF İndir</a>
-          </Button>
+          <ExportButton
+            href={`/cizelgeler/${schedule.id}/export/excel`}
+            label="Excel'e Aktar"
+          />
+          <ExportButton href={`/cizelgeler/${schedule.id}/export/pdf`} label="PDF İndir" />
           {canPublish &&
             (schedule.status === "DRAFT" ? (
               <form action={publishDutyScheduleAction.bind(null, schedule.id)}>
-                <Button type="submit">Yayınla</Button>
+                <SubmitButton>Yayınla</SubmitButton>
               </form>
             ) : (
               <form action={unpublishDutyScheduleAction.bind(null, schedule.id)}>
-                <Button type="submit" variant="secondary">
-                  Yayından Kaldır
-                </Button>
+                <SubmitButton variant="secondary">Yayından Kaldır</SubmitButton>
               </form>
             ))}
         </div>
