@@ -1,0 +1,166 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  OPERATOR
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  role      UserRole @default(OPERATOR)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditLogs AuditLog[]
+}
+
+model Region {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pharmacies Pharmacy[]
+  dutyRules  DutyRule[]
+}
+
+model Pharmacy {
+  id        String   @id @default(cuid())
+  name      String
+  address   String
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id])
+
+  unavailabilities Unavailability[]
+  dutyAssignments  DutyAssignment[]
+
+  @@index([regionId])
+}
+
+model DutyRule {
+  id                    String   @id @default(cuid())
+  name                  String
+  minDaysBetweenDuties  Int      @default(1)
+  weekdayWeight         Float    @default(1)
+  saturdayWeight        Float    @default(1.25)
+  sundayWeight          Float    @default(1.5)
+  officialHolidayWeight Float    @default(2)
+  religiousHolidayWeight Float   @default(2)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id])
+
+  @@index([regionId])
+}
+
+enum HolidayType {
+  OFFICIAL
+  RELIGIOUS
+}
+
+model Holiday {
+  id        String      @id @default(cuid())
+  name      String
+  date      DateTime
+  type      HolidayType
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([date, type])
+}
+
+model Unavailability {
+  id        String   @id @default(cuid())
+  startDate DateTime
+  endDate   DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id])
+
+  @@index([pharmacyId])
+}
+
+enum DutyScheduleStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model DutySchedule {
+  id        String             @id @default(cuid())
+  month     Int
+  year      Int
+  status    DutyScheduleStatus @default(DRAFT)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  assignments DutyAssignment[]
+
+  @@unique([year, month])
+}
+
+model DutyAssignment {
+  id        String   @id @default(cuid())
+  date      DateTime
+  weight    Float    @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dutyScheduleId String
+  dutySchedule   DutySchedule @relation(fields: [dutyScheduleId], references: [id])
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id])
+
+  auditLogs AuditLog[]
+
+  @@index([dutyScheduleId])
+  @@index([pharmacyId])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  action    AuditAction
+  entity    String
+  entityId  String
+  before    String?
+  after     String?
+  createdAt DateTime    @default(now())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id])
+
+  dutyAssignmentId String?
+  dutyAssignment   DutyAssignment? @relation(fields: [dutyAssignmentId], references: [id])
+
+  @@index([userId])
+  @@index([entity, entityId])
+}
