@@ -8,6 +8,7 @@ export async function writeAuditLog(params: {
   entityId: string;
   before?: unknown;
   after?: unknown;
+  dutyAssignmentId?: string;
 }) {
   await prisma.auditLog.create({
     data: {
@@ -17,6 +18,7 @@ export async function writeAuditLog(params: {
       entityId: params.entityId,
       before: params.before !== undefined ? JSON.stringify(params.before) : null,
       after: params.after !== undefined ? JSON.stringify(params.after) : null,
+      dutyAssignmentId: params.dutyAssignmentId,
     },
   });
 }

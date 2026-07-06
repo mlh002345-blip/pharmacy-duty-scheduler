@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Table,
@@ -12,7 +14,13 @@ import {
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
 import { prisma } from "@/lib/prisma";
-import { daysInMonth, getTurkishDayName, getTurkishMonthName } from "@/lib/scheduling/date-tr";
+import {
+  dateAtUtcMidnight,
+  daysInMonth,
+  getTurkishDayName,
+  getTurkishMonthName,
+  toDateKey,
+} from "@/lib/scheduling/date-tr";
 
 export const dynamic = "force-dynamic";
 
@@ -57,10 +65,19 @@ export default async function CizelgeDetayPage({
 
   const totalDays = daysInMonth(schedule.year, schedule.month);
 
+  const monthStart = dateAtUtcMidnight(schedule.year, schedule.month, 1);
+  const monthEnd = dateAtUtcMidnight(schedule.year, schedule.month, totalDays);
+  const holidaysInMonth = await prisma.holiday.findMany({
+    where: { date: { gte: monthStart, lte: monthEnd } },
+  });
+  const holidayDateKeys = new Set(holidaysInMonth.map((h) => toDateKey(h.date)));
+  const isHolidayDate = (date: Date) => holidayDateKeys.has(toDateKey(date));
+
   const fairnessMap = new Map<string, FairnessRow>();
   for (const assignment of schedule.assignments) {
     const isWeekendDate =
       assignment.date.getUTCDay() === 0 || assignment.date.getUTCDay() === 6;
+    const isHolidayDuty = isHolidayDate(assignment.date);
     const existing = fairnessMap.get(assignment.pharmacyId);
     if (!existing) {
       fairnessMap.set(assignment.pharmacyId, {
@@ -68,14 +85,14 @@ export default async function CizelgeDetayPage({
         name: assignment.pharmacy.name,
         totalDuties: 1,
         weekendDuties: isWeekendDate ? 1 : 0,
-        holidayDuties: assignment.note ? 1 : 0,
+        holidayDuties: isHolidayDuty ? 1 : 0,
         totalLoadScore: assignment.weight,
         lastDutyDate: assignment.date,
       });
     } else {
       existing.totalDuties += 1;
       if (isWeekendDate) existing.weekendDuties += 1;
-      if (assignment.note) existing.holidayDuties += 1;
+      if (isHolidayDuty) existing.holidayDuties += 1;
       existing.totalLoadScore += assignment.weight;
       if (assignment.date > existing.lastDutyDate) {
         existing.lastDutyDate = assignment.date;
@@ -175,6 +192,7 @@ export default async function CizelgeDetayPage({
                 <TableHead>Adres</TableHead>
                 <TableHead>Ağırlık</TableHead>
                 <TableHead>Not</TableHead>
+                <TableHead className="text-right">İşlemler</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -182,18 +200,30 @@ export default async function CizelgeDetayPage({
                 <TableRow key={assignment.id}>
                   <TableCell>{assignment.date.toLocaleDateString("tr-TR")}</TableCell>
                   <TableCell>{getTurkishDayName(assignment.date)}</TableCell>
-                  <TableCell className="font-medium">{assignment.pharmacy.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {assignment.pharmacy.name}
+                      {assignment.isManual && <Badge variant="outline">Manuel</Badge>}
+                    </div>
+                  </TableCell>
                   <TableCell>{assignment.pharmacy.phone}</TableCell>
                   <TableCell className="max-w-xs truncate">
                     {assignment.pharmacy.address}
                   </TableCell>
                   <TableCell>{assignment.weight}</TableCell>
                   <TableCell>{assignment.note ?? "-"}</TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={`/cizelgeler/${schedule.id}/atama/${assignment.id}/duzenle`}>
+                        Düzenle
+                      </Link>
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
               {schedule.assignments.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-muted-foreground text-center">
+                  <TableCell colSpan={8} className="text-muted-foreground text-center">
                     Bu çizelge için atama bulunmuyor.
                   </TableCell>
                 </TableRow>

@@ -135,6 +135,7 @@ model DutyAssignment {
   date      DateTime
   weight    Float    @default(1)
   note      String?
+  isManual  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
