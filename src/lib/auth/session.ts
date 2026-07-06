@@ -44,6 +44,9 @@ export async function getCurrentUser() {
   if (!session || session.expiresAt.getTime() < Date.now()) {
     return null;
   }
+  if (!session.user.isActive) {
+    return null;
+  }
 
   return session.user;
 }

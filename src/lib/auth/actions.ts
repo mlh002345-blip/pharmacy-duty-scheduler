@@ -32,6 +32,10 @@ export async function loginAction(
     return { success: false, message: "Hatalı e-posta veya şifre." };
   }
 
+  if (!user.isActive) {
+    return { success: false, message: "Kullanıcı hesabı pasif durumdadır." };
+  }
+
   await createSession(user.id);
   redirect("/");
 }

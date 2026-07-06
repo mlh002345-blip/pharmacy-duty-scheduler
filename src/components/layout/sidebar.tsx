@@ -2,19 +2,26 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { UserRole } from "@prisma/client";
 
 import { cn } from "@/lib/utils";
 import { navItems } from "@/lib/nav-items";
 import { logoutAction } from "@/lib/auth/actions";
+import { hasPermission } from "@/lib/auth/permissions";
 
 export function Sidebar({
   userName,
   roleLabel,
+  role,
 }: {
   userName: string;
   roleLabel: string;
+  role: UserRole;
 }) {
   const pathname = usePathname();
+  const visibleNavItems = navItems.filter(
+    (item) => !item.permission || hasPermission(role, item.permission)
+  );
 
   return (
     <aside className="hidden w-64 shrink-0 border-r bg-sidebar text-sidebar-foreground md:flex md:flex-col">
@@ -22,7 +29,7 @@ export function Sidebar({
         <span className="text-sm font-semibold">Nöbet Yönetim Paneli</span>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const isActive =
             item.href === "/"
               ? pathname === "/"

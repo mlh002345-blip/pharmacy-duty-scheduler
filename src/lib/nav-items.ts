@@ -9,13 +9,17 @@ import {
   Scale,
   History,
   Globe,
+  Users,
   type LucideIcon,
 } from "lucide-react";
+
+import type { Permission } from "@/lib/auth/permissions";
 
 export type NavItem = {
   label: string;
   href: string;
   icon: LucideIcon;
+  permission?: Permission;
 };
 
 export const navItems: NavItem[] = [
@@ -29,4 +33,10 @@ export const navItems: NavItem[] = [
   { label: "Adalet Raporu", href: "/adalet-raporu", icon: Scale },
   { label: "Denetim Kayıtları", href: "/denetim-kayitlari", icon: History },
   { label: "Vatandaş Ekranı", href: "/vatandas", icon: Globe },
+  {
+    label: "Kullanıcılar",
+    href: "/kullanicilar",
+    icon: Users,
+    permission: "manageUsers",
+  },
 ];

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
+import { ROLE_LABELS } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ const ENTITY_LABELS: Record<string, string> = {
   Unavailability: "Mazeret",
   DutySchedule: "Nöbet Çizelgesi",
   DutyAssignment: "Nöbet Ataması",
+  User: "Kullanıcı",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -77,6 +79,42 @@ function describeDutyScheduleChange(
   return oldStatus ? `${oldStatus} → ${newStatus}` : newStatus;
 }
 
+type UserChange = {
+  name?: string;
+  email?: string;
+  role?: string;
+  isActive?: boolean;
+  passwordChanged?: boolean;
+};
+
+function describeUserChange(before: string | null, after: string | null): string | null {
+  const beforeValue = parseJson(before) as UserChange | null;
+  const afterValue = parseJson(after) as UserChange | null;
+  if (!afterValue) return null;
+
+  if (!beforeValue) {
+    return `${afterValue.name} (${afterValue.email})`;
+  }
+
+  const parts: string[] = [];
+  if (beforeValue.role !== afterValue.role) {
+    const oldRole = beforeValue.role ? (ROLE_LABELS[beforeValue.role as keyof typeof ROLE_LABELS] ?? beforeValue.role) : "-";
+    const newRole = afterValue.role ? (ROLE_LABELS[afterValue.role as keyof typeof ROLE_LABELS] ?? afterValue.role) : "-";
+    parts.push(`Rol: ${oldRole} → ${newRole}`);
+  }
+  if (beforeValue.isActive !== afterValue.isActive) {
+    parts.push(`Durum: ${beforeValue.isActive ? "Aktif" : "Pasif"} → ${afterValue.isActive ? "Aktif" : "Pasif"}`);
+  }
+  if (beforeValue.email !== afterValue.email) {
+    parts.push(`E-posta: ${beforeValue.email} → ${afterValue.email}`);
+  }
+  if (afterValue.passwordChanged) {
+    parts.push("Şifre değiştirildi");
+  }
+
+  return parts.length > 0 ? parts.join("; ") : `${afterValue.name} (${afterValue.email})`;
+}
+
 export default async function DenetimKayitlariPage() {
   const auditLogs = await prisma.auditLog.findMany({
     include: { user: true },
@@ -121,6 +159,8 @@ export default async function DenetimKayitlariPage() {
                     detail = describeDutyAssignmentChange(log.before, log.after);
                   } else if (log.entity === "DutySchedule") {
                     detail = describeDutyScheduleChange(log.before, log.after);
+                  } else if (log.entity === "User") {
+                    detail = describeUserChange(log.before, log.after);
                   }
 
                   return (

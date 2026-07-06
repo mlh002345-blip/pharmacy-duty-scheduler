@@ -26,18 +26,31 @@ export async function requirePermissionOrState(
 
 /**
  * For server actions that redirect on failure instead of returning state
- * (delete/toggle/publish-style actions bound to a row button).
+ * (delete/toggle/publish-style actions bound to a row button), or for
+ * guarding a page itself with a custom unauthorized message.
  */
-export async function requirePermissionOrRedirect(
+export async function requirePermissionOrRedirectWithMessage(
   permission: Permission,
-  redirectPath: string
+  redirectPath: string,
+  message: string
 ): Promise<User> {
   const user = await getCurrentUser();
   if (!user) {
     redirect("/giris");
   }
   if (!hasPermission(user.role, permission)) {
-    redirectWithMessage(redirectPath, "error", UNAUTHORIZED_MESSAGE);
+    redirectWithMessage(redirectPath, "error", message);
   }
   return user;
+}
+
+export async function requirePermissionOrRedirect(
+  permission: Permission,
+  redirectPath: string
+): Promise<User> {
+  return requirePermissionOrRedirectWithMessage(
+    permission,
+    redirectPath,
+    UNAUTHORIZED_MESSAGE
+  );
 }

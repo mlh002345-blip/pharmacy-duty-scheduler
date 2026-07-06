@@ -73,6 +73,7 @@ async function main() {
           name: user.name,
           email: user.email,
           role: user.role,
+          isActive: true,
           passwordHash: await hashPassword(user.password),
         },
       })
