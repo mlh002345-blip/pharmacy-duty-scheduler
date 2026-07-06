@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
+import { requirePermissionOrRedirect } from "@/lib/auth/guard";
 import { RegionForm } from "../../region-form";
 import { updateRegionAction } from "../../actions";
 
@@ -10,6 +11,7 @@ export default async function BolgeDuzenlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requirePermissionOrRedirect("manageSetupData", "/bolgeler");
   const { id } = await params;
   const region = await prisma.region.findUnique({ where: { id } });
   if (!region) notFound();

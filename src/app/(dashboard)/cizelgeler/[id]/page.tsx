@@ -22,6 +22,8 @@ import {
   toDateKey,
 } from "@/lib/scheduling/date-tr";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
+import { getCurrentUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 import { publishDutyScheduleAction, unpublishDutyScheduleAction } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +47,10 @@ export default async function CizelgeDetayPage({
 }) {
   const { id } = await params;
   const { success, error } = await searchParams;
+
+  const user = await getCurrentUser();
+  const canPublish = !!user && hasPermission(user.role, "publishSchedule");
+  const canEditAssignment = !!user && hasPermission(user.role, "editAssignment");
 
   const schedule = await prisma.dutySchedule.findUnique({
     where: { id },
@@ -119,17 +125,18 @@ export default async function CizelgeDetayPage({
           <Button variant="outline" asChild>
             <a href={`/cizelgeler/${schedule.id}/export/pdf`}>PDF İndir</a>
           </Button>
-          {schedule.status === "DRAFT" ? (
-            <form action={publishDutyScheduleAction.bind(null, schedule.id)}>
-              <Button type="submit">Yayınla</Button>
-            </form>
-          ) : (
-            <form action={unpublishDutyScheduleAction.bind(null, schedule.id)}>
-              <Button type="submit" variant="secondary">
-                Yayından Kaldır
-              </Button>
-            </form>
-          )}
+          {canPublish &&
+            (schedule.status === "DRAFT" ? (
+              <form action={publishDutyScheduleAction.bind(null, schedule.id)}>
+                <Button type="submit">Yayınla</Button>
+              </form>
+            ) : (
+              <form action={unpublishDutyScheduleAction.bind(null, schedule.id)}>
+                <Button type="submit" variant="secondary">
+                  Yayından Kaldır
+                </Button>
+              </form>
+            ))}
         </div>
       </div>
 
@@ -231,11 +238,15 @@ export default async function CizelgeDetayPage({
                   <TableCell>{assignment.weight}</TableCell>
                   <TableCell>{assignment.note ?? "-"}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/cizelgeler/${schedule.id}/atama/${assignment.id}/duzenle`}>
-                        Düzenle
-                      </Link>
-                    </Button>
+                    {canEditAssignment ? (
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/cizelgeler/${schedule.id}/atama/${assignment.id}/duzenle`}>
+                          Düzenle
+                        </Link>
+                      </Button>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">-</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

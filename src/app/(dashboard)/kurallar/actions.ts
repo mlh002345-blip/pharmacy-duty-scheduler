@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/current-user";
+import { requirePermissionOrState } from "@/lib/auth/guard";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { dutyRuleSchema } from "@/lib/validations/duty-rule";
@@ -14,6 +14,10 @@ export async function upsertDutyRuleAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const guard = await requirePermissionOrState("manageSetupData");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
   const parsed = dutyRuleSchema.safeParse({
     minDaysBetweenDuties: formData.get("minDaysBetweenDuties"),
     weekdayWeight: formData.get("weekdayWeight"),
@@ -42,9 +46,8 @@ export async function upsertDutyRuleAction(
     update: parsed.data,
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: before ? "UPDATE" : "CREATE",
     entity: "DutyRule",
     entityId: rule.id,

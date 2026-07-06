@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/current-user";
+import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { unavailabilitySchema } from "@/lib/validations/unavailability";
@@ -22,6 +22,10 @@ export async function createUnavailabilityAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const guard = await requirePermissionOrState("manageSetupData");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
   const parsed = parseUnavailabilityForm(formData);
   if (!parsed.success) {
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
@@ -36,9 +40,8 @@ export async function createUnavailabilityAction(
     },
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "CREATE",
     entity: "Unavailability",
     entityId: unavailability.id,
@@ -54,6 +57,10 @@ export async function updateUnavailabilityAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const guard = await requirePermissionOrState("manageSetupData");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
   const parsed = parseUnavailabilityForm(formData);
   if (!parsed.success) {
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
@@ -74,9 +81,8 @@ export async function updateUnavailabilityAction(
     },
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "UPDATE",
     entity: "Unavailability",
     entityId: unavailability.id,
@@ -89,6 +95,8 @@ export async function updateUnavailabilityAction(
 }
 
 export async function deleteUnavailabilityAction(id: string) {
+  const user = await requirePermissionOrRedirect("manageSetupData", "/mazeretler");
+
   const unavailability = await prisma.unavailability.findUnique({ where: { id } });
   if (!unavailability) {
     redirectWithMessage("/mazeretler", "error", "Mazeret kaydı bulunamadı.");
@@ -96,9 +104,8 @@ export async function deleteUnavailabilityAction(id: string) {
 
   await prisma.unavailability.delete({ where: { id } });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "DELETE",
     entity: "Unavailability",
     entityId: id,

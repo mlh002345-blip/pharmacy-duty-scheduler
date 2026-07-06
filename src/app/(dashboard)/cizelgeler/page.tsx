@@ -16,6 +16,8 @@ import { DeleteButton } from "@/components/layout/delete-button";
 import { prisma } from "@/lib/prisma";
 import { getTurkishMonthName } from "@/lib/scheduling/date-tr";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
+import { getCurrentUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 import { deleteDutyScheduleAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +28,10 @@ export default async function CizelgelerPage({
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { success, error } = await searchParams;
+
+  const user = await getCurrentUser();
+  const canGenerate = !!user && hasPermission(user.role, "generateSchedule");
+  const canDelete = !!user && hasPermission(user.role, "deleteSchedule");
 
   const schedules = await prisma.dutySchedule.findMany({
     include: { region: true, _count: { select: { assignments: true } } },
@@ -41,9 +47,11 @@ export default async function CizelgelerPage({
             Aylık nöbet çizelgeleri ve atamalar.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/cizelgeler/yeni">Yeni Ekle</Link>
-        </Button>
+        {canGenerate && (
+          <Button asChild>
+            <Link href="/cizelgeler/yeni">Yeni Ekle</Link>
+          </Button>
+        )}
       </div>
 
       <ListBanner success={success} error={error} />
@@ -100,7 +108,7 @@ export default async function CizelgelerPage({
                         <Button variant="outline" size="sm" asChild>
                           <a href={`/cizelgeler/${schedule.id}/export/pdf`}>PDF</a>
                         </Button>
-                        {schedule.status === "DRAFT" && (
+                        {schedule.status === "DRAFT" && canDelete && (
                           <DeleteButton
                             action={deleteDutyScheduleAction.bind(null, schedule.id)}
                             confirmMessage={`${schedule.region.name} ${getTurkishMonthName(schedule.month)} ${schedule.year} çizelgesini silmek istediğinize emin misiniz?`}

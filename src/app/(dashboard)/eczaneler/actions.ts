@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/current-user";
+import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { pharmacySchema } from "@/lib/validations/pharmacy";
@@ -27,6 +27,10 @@ export async function createPharmacyAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const guard = await requirePermissionOrState("manageSetupData");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
   const parsed = parsePharmacyForm(formData);
   if (!parsed.success) {
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
@@ -37,9 +41,8 @@ export async function createPharmacyAction(
     data: { ...rest, mapUrl: mapUrl || null },
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "CREATE",
     entity: "Pharmacy",
     entityId: pharmacy.id,
@@ -55,6 +58,10 @@ export async function updatePharmacyAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const guard = await requirePermissionOrState("manageSetupData");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
   const parsed = parsePharmacyForm(formData);
   if (!parsed.success) {
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
@@ -71,9 +78,8 @@ export async function updatePharmacyAction(
     data: { ...rest, mapUrl: mapUrl || null },
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "UPDATE",
     entity: "Pharmacy",
     entityId: pharmacy.id,
@@ -86,6 +92,8 @@ export async function updatePharmacyAction(
 }
 
 export async function togglePharmacyStatusAction(id: string) {
+  const user = await requirePermissionOrRedirect("manageSetupData", "/eczaneler");
+
   const pharmacy = await prisma.pharmacy.findUnique({ where: { id } });
   if (!pharmacy) {
     redirectWithMessage("/eczaneler", "error", "Eczane bulunamadı.");
@@ -96,9 +104,8 @@ export async function togglePharmacyStatusAction(id: string) {
     data: { isActive: !pharmacy.isActive },
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "UPDATE",
     entity: "Pharmacy",
     entityId: id,
@@ -115,6 +122,8 @@ export async function togglePharmacyStatusAction(id: string) {
 }
 
 export async function deletePharmacyAction(id: string) {
+  const user = await requirePermissionOrRedirect("manageSetupData", "/eczaneler");
+
   const assignmentCount = await prisma.dutyAssignment.count({
     where: { pharmacyId: id },
   });
@@ -133,9 +142,8 @@ export async function deletePharmacyAction(id: string) {
 
   await prisma.pharmacy.delete({ where: { id } });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "DELETE",
     entity: "Pharmacy",
     entityId: id,

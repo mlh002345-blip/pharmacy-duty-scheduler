@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
+import { requirePermissionOrRedirect } from "@/lib/auth/guard";
 import { PharmacyForm } from "../../pharmacy-form";
 import { updatePharmacyAction } from "../../actions";
 
@@ -10,6 +11,7 @@ export default async function EczaneDuzenlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  await requirePermissionOrRedirect("manageSetupData", "/eczaneler");
   const { id } = await params;
   const [pharmacy, regions] = await Promise.all([
     prisma.pharmacy.findUnique({ where: { id } }),

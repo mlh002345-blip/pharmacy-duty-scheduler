@@ -15,6 +15,8 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { prisma } from "@/lib/prisma";
 import { HOLIDAY_TYPE_LABELS } from "@/lib/validations/holiday";
+import { getCurrentUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 import { deleteHolidayAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +27,10 @@ export default async function TatilGunleriPage({
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { success, error } = await searchParams;
+
+  const user = await getCurrentUser();
+  const canManage = !!user && hasPermission(user.role, "manageSetupData");
+
   const holidays = await prisma.holiday.findMany({ orderBy: { date: "asc" } });
 
   return (
@@ -36,9 +42,11 @@ export default async function TatilGunleriPage({
             Resmi ve dini bayram günleri, nöbet ağırlık hesabında kullanılır.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/tatil-gunleri/yeni">Yeni Ekle</Link>
-        </Button>
+        {canManage && (
+          <Button asChild>
+            <Link href="/tatil-gunleri/yeni">Yeni Ekle</Link>
+          </Button>
+        )}
       </div>
 
       <ListBanner success={success} error={error} />
@@ -69,15 +77,19 @@ export default async function TatilGunleriPage({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/tatil-gunleri/${holiday.id}/duzenle`}>Düzenle</Link>
-                      </Button>
-                      <DeleteButton
-                        action={deleteHolidayAction.bind(null, holiday.id)}
-                        confirmMessage={`"${holiday.name}" tatil gününü silmek istediğinize emin misiniz?`}
-                      />
-                    </div>
+                    {canManage ? (
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/tatil-gunleri/${holiday.id}/duzenle`}>Düzenle</Link>
+                        </Button>
+                        <DeleteButton
+                          action={deleteHolidayAction.bind(null, holiday.id)}
+                          confirmMessage={`"${holiday.name}" tatil gününü silmek istediğinize emin misiniz?`}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground text-right text-sm">-</div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

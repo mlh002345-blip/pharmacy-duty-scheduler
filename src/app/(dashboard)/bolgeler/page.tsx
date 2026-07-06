@@ -15,6 +15,8 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { StatusToggleButton } from "@/components/layout/status-toggle-button";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 import { deleteRegionAction, toggleRegionStatusAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +27,9 @@ export default async function BolgelerPage({
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { success, error } = await searchParams;
+
+  const user = await getCurrentUser();
+  const canManage = !!user && hasPermission(user.role, "manageSetupData");
 
   const regions = await prisma.region.findMany({
     include: { _count: { select: { pharmacies: true } } },
@@ -40,9 +45,11 @@ export default async function BolgelerPage({
             Eczanelerin gruplandığı nöbet bölgeleri.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/bolgeler/yeni">Yeni Ekle</Link>
-        </Button>
+        {canManage && (
+          <Button asChild>
+            <Link href="/bolgeler/yeni">Yeni Ekle</Link>
+          </Button>
+        )}
       </div>
 
       <ListBanner success={success} error={error} />
@@ -77,19 +84,23 @@ export default async function BolgelerPage({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/bolgeler/${region.id}/duzenle`}>Düzenle</Link>
-                      </Button>
-                      <StatusToggleButton
-                        action={toggleRegionStatusAction.bind(null, region.id)}
-                        isActive={region.isActive}
-                      />
-                      <DeleteButton
-                        action={deleteRegionAction.bind(null, region.id)}
-                        confirmMessage={`"${region.name}" bölgesini silmek istediğinize emin misiniz?`}
-                      />
-                    </div>
+                    {canManage ? (
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/bolgeler/${region.id}/duzenle`}>Düzenle</Link>
+                        </Button>
+                        <StatusToggleButton
+                          action={toggleRegionStatusAction.bind(null, region.id)}
+                          isActive={region.isActive}
+                        />
+                        <DeleteButton
+                          action={deleteRegionAction.bind(null, region.id)}
+                          confirmMessage={`"${region.name}" bölgesini silmek istediğinize emin misiniz?`}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground text-right text-sm">-</div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

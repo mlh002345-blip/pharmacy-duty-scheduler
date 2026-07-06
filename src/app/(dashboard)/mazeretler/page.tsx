@@ -13,6 +13,8 @@ import {
 import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 import { deleteUnavailabilityAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +25,9 @@ export default async function MazeretlerPage({
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { success, error } = await searchParams;
+
+  const user = await getCurrentUser();
+  const canManage = !!user && hasPermission(user.role, "manageSetupData");
 
   const unavailabilities = await prisma.unavailability.findMany({
     include: { pharmacy: true },
@@ -38,9 +43,11 @@ export default async function MazeretlerPage({
             Eczanelerin nöbet tutamayacağı tarih aralıkları.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/mazeretler/yeni">Yeni Ekle</Link>
-        </Button>
+        {canManage && (
+          <Button asChild>
+            <Link href="/mazeretler/yeni">Yeni Ekle</Link>
+          </Button>
+        )}
       </div>
 
       <ListBanner success={success} error={error} />
@@ -69,15 +76,19 @@ export default async function MazeretlerPage({
                   <TableCell>{item.endDate.toLocaleDateString("tr-TR")}</TableCell>
                   <TableCell>{item.reason ?? "-"}</TableCell>
                   <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/mazeretler/${item.id}/duzenle`}>Düzenle</Link>
-                      </Button>
-                      <DeleteButton
-                        action={deleteUnavailabilityAction.bind(null, item.id)}
-                        confirmMessage={`"${item.pharmacy.name}" eczanesine ait mazeret kaydını silmek istediğinize emin misiniz?`}
-                      />
-                    </div>
+                    {canManage ? (
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/mazeretler/${item.id}/duzenle`}>Düzenle</Link>
+                        </Button>
+                        <DeleteButton
+                          action={deleteUnavailabilityAction.bind(null, item.id)}
+                          confirmMessage={`"${item.pharmacy.name}" eczanesine ait mazeret kaydını silmek istediğinize emin misiniz?`}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground text-right text-sm">-</div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

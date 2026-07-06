@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { redirect } from "next/navigation";
 
+import { getCurrentUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 import { buildDutyScheduleExcel } from "@/lib/scheduling/build-schedule-excel";
 import {
   buildDutyScheduleExportFilename,
@@ -10,6 +13,15 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/giris");
+  if (!hasPermission(user.role, "exportSchedule")) {
+    return NextResponse.json(
+      { message: "Bu işlem için yetkiniz bulunmuyor." },
+      { status: 403 }
+    );
+  }
+
   const { id } = await params;
   const schedule = await loadDutyScheduleForExport(id);
   if (!schedule) {

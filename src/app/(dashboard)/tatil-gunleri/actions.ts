@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/current-user";
+import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { holidaySchema } from "@/lib/validations/holiday";
@@ -21,6 +21,10 @@ export async function createHolidayAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const guard = await requirePermissionOrState("manageSetupData");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
   const parsed = parseHolidayForm(formData);
   if (!parsed.success) {
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
@@ -34,9 +38,8 @@ export async function createHolidayAction(
     },
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "CREATE",
     entity: "Holiday",
     entityId: holiday.id,
@@ -52,6 +55,10 @@ export async function updateHolidayAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const guard = await requirePermissionOrState("manageSetupData");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
   const parsed = parseHolidayForm(formData);
   if (!parsed.success) {
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
@@ -71,9 +78,8 @@ export async function updateHolidayAction(
     },
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "UPDATE",
     entity: "Holiday",
     entityId: holiday.id,
@@ -86,6 +92,8 @@ export async function updateHolidayAction(
 }
 
 export async function deleteHolidayAction(id: string) {
+  const user = await requirePermissionOrRedirect("manageSetupData", "/tatil-gunleri");
+
   const holiday = await prisma.holiday.findUnique({ where: { id } });
   if (!holiday) {
     redirectWithMessage("/tatil-gunleri", "error", "Tatil günü bulunamadı.");
@@ -93,9 +101,8 @@ export async function deleteHolidayAction(id: string) {
 
   await prisma.holiday.delete({ where: { id } });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "DELETE",
     entity: "Holiday",
     entityId: id,

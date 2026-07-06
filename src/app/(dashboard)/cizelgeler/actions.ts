@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/current-user";
+import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { createDutyScheduleSchema } from "@/lib/validations/duty-schedule";
@@ -18,6 +18,10 @@ export async function createDutyScheduleAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const guard = await requirePermissionOrState("generateSchedule");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
   const parsed = createDutyScheduleSchema.safeParse({
     month: formData.get("month"),
     year: formData.get("year"),
@@ -88,9 +92,8 @@ export async function createDutyScheduleAction(
     throw error;
   }
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "CREATE",
     entity: "DutySchedule",
     entityId: scheduleId,
@@ -106,6 +109,8 @@ export async function createDutyScheduleAction(
 }
 
 export async function deleteDutyScheduleAction(id: string) {
+  const user = await requirePermissionOrRedirect("deleteSchedule", "/cizelgeler");
+
   const schedule = await prisma.dutySchedule.findUnique({ where: { id } });
   if (!schedule) {
     redirectWithMessage("/cizelgeler", "error", "Nöbet çizelgesi bulunamadı.");
@@ -124,9 +129,8 @@ export async function deleteDutyScheduleAction(id: string) {
     prisma.dutySchedule.delete({ where: { id } }),
   ]);
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "DELETE",
     entity: "DutySchedule",
     entityId: id,
@@ -138,6 +142,8 @@ export async function deleteDutyScheduleAction(id: string) {
 }
 
 export async function publishDutyScheduleAction(id: string) {
+  const user = await requirePermissionOrRedirect("publishSchedule", `/cizelgeler/${id}`);
+
   const schedule = await prisma.dutySchedule.findUnique({ where: { id } });
   if (!schedule) {
     redirectWithMessage("/cizelgeler", "error", "Nöbet çizelgesi bulunamadı.");
@@ -151,9 +157,8 @@ export async function publishDutyScheduleAction(id: string) {
     data: { status: "PUBLISHED" },
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "UPDATE",
     entity: "DutySchedule",
     entityId: id,
@@ -168,6 +173,8 @@ export async function publishDutyScheduleAction(id: string) {
 }
 
 export async function unpublishDutyScheduleAction(id: string) {
+  const user = await requirePermissionOrRedirect("publishSchedule", `/cizelgeler/${id}`);
+
   const schedule = await prisma.dutySchedule.findUnique({ where: { id } });
   if (!schedule) {
     redirectWithMessage("/cizelgeler", "error", "Nöbet çizelgesi bulunamadı.");
@@ -181,9 +188,8 @@ export async function unpublishDutyScheduleAction(id: string) {
     data: { status: "DRAFT" },
   });
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "UPDATE",
     entity: "DutySchedule",
     entityId: id,

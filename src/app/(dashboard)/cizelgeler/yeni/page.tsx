@@ -1,8 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
+import { requirePermissionOrRedirect } from "@/lib/auth/guard";
 import { DutyScheduleForm } from "../duty-schedule-form";
 
 export default async function YeniCizelgePage() {
+  await requirePermissionOrRedirect("generateSchedule", "/cizelgeler");
   const regions = await prisma.region.findMany({
     where: { isActive: true },
     orderBy: { name: "asc" },

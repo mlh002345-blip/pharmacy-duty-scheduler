@@ -1,6 +1,8 @@
 import { PrismaClient, HolidayType } from "@prisma/client";
 import { faker } from "@faker-js/faker/locale/tr";
 
+import { hashPassword } from "../src/lib/auth/password";
+
 const prisma = new PrismaClient();
 
 const REGIONS = [
@@ -11,10 +13,26 @@ const REGIONS = [
   { name: "Şişli", district: "Şişli" },
 ];
 
+// Demo-only credentials, never use these in a real deployment.
 const USERS = [
-  { name: "Ayşe Yılmaz", email: "ayse.yilmaz@eczaciodasi.org.tr", role: "ADMIN" as const },
-  { name: "Mehmet Demir", email: "mehmet.demir@eczaciodasi.org.tr", role: "OPERATOR" as const },
-  { name: "Zeynep Kaya", email: "zeynep.kaya@eczaciodasi.org.tr", role: "OPERATOR" as const },
+  {
+    name: "Ayşe Yılmaz",
+    email: "admin@example.com",
+    password: "Admin123!",
+    role: "ADMIN" as const,
+  },
+  {
+    name: "Mehmet Demir",
+    email: "staff@example.com",
+    password: "Staff123!",
+    role: "STAFF" as const,
+  },
+  {
+    name: "Zeynep Kaya",
+    email: "viewer@example.com",
+    password: "Viewer123!",
+    role: "VIEWER" as const,
+  },
 ];
 
 const HOLIDAYS_2026: { name: string; date: string; type: HolidayType }[] = [
@@ -37,6 +55,7 @@ const HOLIDAYS_2026: { name: string; date: string; type: HolidayType }[] = [
 async function main() {
   console.log("Seeding database...");
 
+  await prisma.session.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.dutyAssignment.deleteMany();
   await prisma.dutySchedule.deleteMany();
@@ -47,7 +66,18 @@ async function main() {
   await prisma.region.deleteMany();
   await prisma.user.deleteMany();
 
-  await prisma.user.createMany({ data: USERS });
+  await Promise.all(
+    USERS.map(async (user) =>
+      prisma.user.create({
+        data: {
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          passwordHash: await hashPassword(user.password),
+        },
+      })
+    )
+  );
 
   const regions = await Promise.all(
     REGIONS.map((region) =>
@@ -129,6 +159,11 @@ async function main() {
   console.log(`- ${pharmacyData.length} pharmacies`);
   console.log(`- ${HOLIDAYS_2026.length} holidays`);
   console.log(`- ${sampleUnavailablePharmacies.length} unavailability records`);
+  console.log("");
+  console.log("Demo login credentials (local development only):");
+  for (const user of USERS) {
+    console.log(`- ${user.role}: ${user.email} / ${user.password}`);
+  }
 }
 
 main()

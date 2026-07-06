@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { getCurrentUserId } from "@/lib/current-user";
+import { requirePermissionOrState } from "@/lib/auth/guard";
 import { writeAuditLog } from "@/lib/audit";
 import { editDutyAssignmentSchema } from "@/lib/validations/duty-assignment";
 import { zodErrorState } from "@/lib/action-state";
@@ -21,6 +21,10 @@ export async function editDutyAssignmentAction(
   _prevState: EditAssignmentActionState,
   formData: FormData
 ): Promise<EditAssignmentActionState> {
+  const guard = await requirePermissionOrState("editAssignment");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
   const parsed = editDutyAssignmentSchema.safeParse({
     pharmacyId: formData.get("pharmacyId"),
     reason: formData.get("reason"),
@@ -140,9 +144,8 @@ export async function editDutyAssignmentAction(
     reason,
   };
 
-  const userId = await getCurrentUserId();
   await writeAuditLog({
-    userId,
+    userId: user.id,
     action: "UPDATE",
     entity: "DutyAssignment",
     entityId: assignment.id,

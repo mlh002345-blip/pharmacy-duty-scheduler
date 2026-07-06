@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +24,9 @@ export default async function KurallarPage({
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
   const { success, error } = await searchParams;
+
+  const user = await getCurrentUser();
+  const canManage = !!user && hasPermission(user.role, "manageSetupData");
 
   const regions = await prisma.region.findMany({
     include: { dutyRule: true },
@@ -77,11 +82,15 @@ export default async function KurallarPage({
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/kurallar/${region.id}/duzenle`}>
-                        {region.dutyRule ? "Düzenle" : "Kural Oluştur"}
-                      </Link>
-                    </Button>
+                    {canManage ? (
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/kurallar/${region.id}/duzenle`}>
+                          {region.dutyRule ? "Düzenle" : "Kural Oluştur"}
+                        </Link>
+                      </Button>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">-</span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

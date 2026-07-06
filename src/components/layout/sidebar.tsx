@@ -5,8 +5,15 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 import { navItems } from "@/lib/nav-items";
+import { logoutAction } from "@/lib/auth/actions";
 
-export function Sidebar() {
+export function Sidebar({
+  userName,
+  roleLabel,
+}: {
+  userName: string;
+  roleLabel: string;
+}) {
   const pathname = usePathname();
 
   return (
@@ -39,6 +46,20 @@ export function Sidebar() {
           );
         })}
       </nav>
+      <div className="border-t p-3">
+        <div className="px-1 pb-2">
+          <p className="truncate text-sm font-medium">{userName}</p>
+          <p className="text-sidebar-foreground/60 text-xs">{roleLabel}</p>
+        </div>
+        <form action={logoutAction}>
+          <button
+            type="submit"
+            className="text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground w-full rounded-md px-3 py-2 text-left text-sm font-medium transition-colors"
+          >
+            Çıkış Yap
+          </button>
+        </form>
+      </div>
     </aside>
   );
 }

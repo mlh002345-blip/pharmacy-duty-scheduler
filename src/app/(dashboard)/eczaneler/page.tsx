@@ -18,6 +18,8 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { StatusToggleButton } from "@/components/layout/status-toggle-button";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 import { deletePharmacyAction, togglePharmacyStatusAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +36,9 @@ export default async function EczanelerPage({
   }>;
 }) {
   const { success, error, q, regionId, status } = await searchParams;
+
+  const user = await getCurrentUser();
+  const canManage = !!user && hasPermission(user.role, "manageSetupData");
 
   const where: Prisma.PharmacyWhereInput = {};
   if (q) {
@@ -69,9 +74,11 @@ export default async function EczanelerPage({
             Sisteme kayıtlı eczaneler ({pharmacies.length} kayıt).
           </p>
         </div>
-        <Button asChild>
-          <Link href="/eczaneler/yeni">Yeni Ekle</Link>
-        </Button>
+        {canManage && (
+          <Button asChild>
+            <Link href="/eczaneler/yeni">Yeni Ekle</Link>
+          </Button>
+        )}
       </div>
 
       <ListBanner success={success} error={error} />
@@ -154,19 +161,23 @@ export default async function EczanelerPage({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/eczaneler/${pharmacy.id}/duzenle`}>Düzenle</Link>
-                      </Button>
-                      <StatusToggleButton
-                        action={togglePharmacyStatusAction.bind(null, pharmacy.id)}
-                        isActive={pharmacy.isActive}
-                      />
-                      <DeleteButton
-                        action={deletePharmacyAction.bind(null, pharmacy.id)}
-                        confirmMessage={`"${pharmacy.name}" eczanesini silmek istediğinize emin misiniz?`}
-                      />
-                    </div>
+                    {canManage ? (
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/eczaneler/${pharmacy.id}/duzenle`}>Düzenle</Link>
+                        </Button>
+                        <StatusToggleButton
+                          action={togglePharmacyStatusAction.bind(null, pharmacy.id)}
+                          isActive={pharmacy.isActive}
+                        />
+                        <DeleteButton
+                          action={deletePharmacyAction.bind(null, pharmacy.id)}
+                          confirmMessage={`"${pharmacy.name}" eczanesini silmek istediğinize emin misiniz?`}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground text-right text-sm">-</div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
