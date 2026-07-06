@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { CalendarRange } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/layout/empty-state";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Table,
@@ -79,9 +81,18 @@ export default async function CizelgelerPage({
         </CardHeader>
         <CardContent>
           {schedules.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              Henüz oluşturulmuş bir nöbet çizelgesi bulunmuyor.
-            </p>
+            <EmptyState
+              icon={CalendarRange}
+              title="Henüz oluşturulmuş bir nöbet çizelgesi bulunmuyor."
+              description="Nöbet çizelgesi oluşturmak için önce bölge ve eczane bilgilerini tamamlayın."
+              action={
+                canGenerate ? (
+                  <Button asChild size="sm">
+                    <Link href="/cizelgeler/yeni">Yeni Nöbet Çizelgesi Oluştur</Link>
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <Table>
               <TableHeader>
@@ -106,7 +117,7 @@ export default async function CizelgelerPage({
                       {getTurkishMonthName(schedule.month)} {schedule.year}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={schedule.status === "DRAFT" ? "secondary" : "default"}>
+                      <Badge variant={schedule.status === "DRAFT" ? "warning" : "success"}>
                         {DUTY_SCHEDULE_STATUS_LABELS[schedule.status] ?? schedule.status}
                       </Badge>
                     </TableCell>

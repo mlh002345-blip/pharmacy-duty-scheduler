@@ -7,6 +7,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { History } from "lucide-react";
+
+import { EmptyState } from "@/components/layout/empty-state";
 import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
@@ -158,9 +161,11 @@ export default async function DenetimKayitlariPage({
         </CardHeader>
         <CardContent>
           {auditLogs.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              Henüz bir denetim kaydı bulunmuyor.
-            </p>
+            <EmptyState
+              icon={History}
+              title="Henüz bir denetim kaydı bulunmuyor."
+              description="Sistemde yapılan oluşturma, güncelleme ve silme işlemleri burada listelenecek."
+            />
           ) : (
             <Table>
               <TableHeader>

@@ -79,7 +79,7 @@ export default async function BolgelerPage({
                   <TableCell>{region.dailyDutyCount}</TableCell>
                   <TableCell>{region._count.pharmacies}</TableCell>
                   <TableCell>
-                    <Badge variant={region.isActive ? "default" : "secondary"}>
+                    <Badge variant={region.isActive ? "success" : "secondary"}>
                       {region.isActive ? "Aktif" : "Pasif"}
                     </Badge>
                   </TableCell>

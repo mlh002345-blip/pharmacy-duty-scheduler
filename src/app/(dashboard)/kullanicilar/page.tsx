@@ -91,7 +91,7 @@ export default async function KullanicilarPage({
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{ROLE_LABELS[user.role]}</TableCell>
                   <TableCell>
-                    <Badge variant={user.isActive ? "default" : "secondary"}>
+                    <Badge variant={user.isActive ? "success" : "secondary"}>
                       {user.isActive ? "Aktif" : "Pasif"}
                     </Badge>
                   </TableCell>

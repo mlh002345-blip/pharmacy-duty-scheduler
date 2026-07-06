@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AlertTriangle, CalendarCheck, CalendarRange, MapPin, Scale } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { StatCard } from "@/components/layout/stat-card";
 import {
   Table,
   TableBody,
@@ -123,25 +125,45 @@ export default async function CizelgeDetayPage({
   const fairnessRows = Array.from(fairnessMap.values()).sort((a, b) =>
     a.name.localeCompare(b.name, "tr")
   );
+  const maxLoadScore = fairnessRows.reduce(
+    (max, row) => Math.max(max, row.totalLoadScore),
+    0
+  );
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">
-            {schedule.region.name} {getTurkishMonthName(schedule.month)} {schedule.year} Nöbet
-            Çizelgesi
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {getTurkishMonthName(schedule.month)} {schedule.year} dönemi nöbet ataması.
-          </p>
+        <div className="flex items-start gap-3">
+          <div className="bg-primary/10 text-primary mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl">
+            <CalendarRange className="size-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {schedule.region.name} {getTurkishMonthName(schedule.month)} {schedule.year}
+              </h1>
+              <Badge variant={schedule.status === "DRAFT" ? "warning" : "success"}>
+                {DUTY_SCHEDULE_STATUS_LABELS[schedule.status] ?? schedule.status}
+              </Badge>
+            </div>
+            <p className="text-muted-foreground mt-0.5 text-sm">
+              {getTurkishMonthName(schedule.month)} {schedule.year} dönemi nöbet çizelgesi.
+            </p>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <ExportButton
-            href={`/cizelgeler/${schedule.id}/export/excel`}
-            label="Excel'e Aktar"
-          />
-          <ExportButton href={`/cizelgeler/${schedule.id}/export/pdf`} label="PDF İndir" />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-2 rounded-xl border bg-white p-1.5 shadow-sm">
+            <ExportButton
+              href={`/cizelgeler/${schedule.id}/export/excel`}
+              label="Excel'e Aktar"
+              size="sm"
+            />
+            <ExportButton
+              href={`/cizelgeler/${schedule.id}/export/pdf`}
+              label="PDF İndir"
+              size="sm"
+            />
+          </div>
           {canPublish &&
             (schedule.status === "DRAFT" ? (
               <form action={publishDutyScheduleAction.bind(null, schedule.id)}>
@@ -157,61 +179,45 @@ export default async function CizelgeDetayPage({
 
       <ListBanner success={success} error={error} />
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        <Card>
-          <CardHeader>
-            <CardDescription>Toplam Gün</CardDescription>
-            <CardTitle className="text-2xl">{totalDays}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Toplam Nöbet Ataması</CardDescription>
-            <CardTitle className="text-2xl">{schedule.assignments.length}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Uyarılı Gün Sayısı</CardDescription>
-            <CardTitle className="text-2xl">{schedule.warnings.length}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Bölge</CardDescription>
-            <CardTitle className="text-2xl">{schedule.region.name}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Durum</CardDescription>
-            <CardTitle className="text-2xl">
-              <Badge variant={schedule.status === "DRAFT" ? "secondary" : "default"}>
-                {DUTY_SCHEDULE_STATUS_LABELS[schedule.status] ?? schedule.status}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Toplam Gün" value={totalDays} icon={CalendarRange} accent="navy" />
+        <StatCard
+          label="Toplam Nöbet Ataması"
+          value={schedule.assignments.length}
+          icon={CalendarCheck}
+          accent="green"
+        />
+        <StatCard
+          label="Uyarılı Gün Sayısı"
+          value={schedule.warnings.length}
+          icon={AlertTriangle}
+          accent="amber"
+        />
+        <StatCard label="Bölge" value={schedule.region.name} icon={MapPin} accent="sky" />
       </div>
 
       {schedule.warnings.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Uyarılar</CardTitle>
-            <CardDescription>
-              Bu tarihlerde yeterli sayıda uygun eczane bulunamadı.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="flex flex-col gap-1 text-sm">
-              {schedule.warnings.map((warning) => (
-                <li key={warning.id} className="text-destructive">
-                  {warning.date.toLocaleDateString("tr-TR")} — {warning.message}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-amber-300/60 bg-amber-50 p-5">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="size-5 shrink-0 text-amber-600" />
+            <div>
+              <p className="font-semibold text-amber-900">Uyarılar</p>
+              <p className="text-sm text-amber-800/80">
+                Bu tarihlerde yeterli sayıda uygun eczane bulunamadı.
+              </p>
+            </div>
+          </div>
+          <ul className="mt-3 flex flex-col gap-1.5 pl-1 text-sm text-amber-900">
+            {schedule.warnings.map((warning) => (
+              <li key={warning.id} className="flex items-baseline gap-2">
+                <span className="font-medium whitespace-nowrap">
+                  {warning.date.toLocaleDateString("tr-TR")}
+                </span>
+                <span className="text-amber-800/90">{warning.message}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <Card>
@@ -236,14 +242,21 @@ export default async function CizelgeDetayPage({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {schedule.assignments.map((assignment) => (
+              {schedule.assignments.map((assignment) => {
+                const dayOfWeek = assignment.date.getUTCDay();
+                const isWeekendDay = dayOfWeek === 0 || dayOfWeek === 6;
+                return (
                 <TableRow key={assignment.id}>
                   <TableCell>{assignment.date.toLocaleDateString("tr-TR")}</TableCell>
-                  <TableCell>{getTurkishDayName(assignment.date)}</TableCell>
+                  <TableCell
+                    className={isWeekendDay ? "font-medium text-amber-700" : undefined}
+                  >
+                    {getTurkishDayName(assignment.date)}
+                  </TableCell>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       {assignment.pharmacy.name}
-                      {assignment.isManual && <Badge variant="outline">Manuel</Badge>}
+                      {assignment.isManual && <Badge variant="info">Manuel</Badge>}
                     </div>
                   </TableCell>
                   <TableCell>{assignment.pharmacy.phone}</TableCell>
@@ -251,7 +264,18 @@ export default async function CizelgeDetayPage({
                     {assignment.pharmacy.address}
                   </TableCell>
                   <TableCell>{assignment.weight}</TableCell>
-                  <TableCell>{assignment.note ?? "-"}</TableCell>
+                  <TableCell className="max-w-[200px]">
+                    {assignment.note ? (
+                      <span
+                        title={assignment.note}
+                        className="text-muted-foreground block truncate text-sm italic"
+                      >
+                        {assignment.note}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/50">-</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     {canEditAssignment ? (
                       <Button variant="outline" size="sm" asChild>
@@ -264,7 +288,8 @@ export default async function CizelgeDetayPage({
                     )}
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
               {schedule.assignments.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-muted-foreground text-center">
@@ -279,8 +304,13 @@ export default async function CizelgeDetayPage({
 
       <Card id="adalet-raporu">
         <CardHeader>
-          <CardTitle>Adalet Raporu</CardTitle>
-          <CardDescription>Bu çizelgedeki atamalara göre eczane bazlı özet.</CardDescription>
+          <CardTitle className="flex items-center gap-2">
+            <Scale className="text-primary size-4.5" />
+            Adalet Raporu
+          </CardTitle>
+          <CardDescription>
+            Bu çizelgedeki atamalara göre eczane bazlı yük dağılımı.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -301,7 +331,21 @@ export default async function CizelgeDetayPage({
                   <TableCell>{row.totalDuties}</TableCell>
                   <TableCell>{row.weekendDuties}</TableCell>
                   <TableCell>{row.holidayDuties}</TableCell>
-                  <TableCell>{row.totalLoadScore}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-8 font-medium tabular-nums">
+                        {row.totalLoadScore}
+                      </span>
+                      <div className="bg-muted h-1.5 w-24 overflow-hidden rounded-full">
+                        <div
+                          className="bg-primary h-full rounded-full"
+                          style={{
+                            width: `${maxLoadScore > 0 ? (row.totalLoadScore / maxLoadScore) * 100 : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </TableCell>
                   <TableCell>{row.lastDutyDate.toLocaleDateString("tr-TR")}</TableCell>
                 </TableRow>
               ))}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Building2 } from "lucide-react";
 import type { Prisma } from "@prisma/client";
 
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
+import { PageHeader } from "@/components/layout/page-header";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { StatusToggleButton } from "@/components/layout/status-toggle-button";
 import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
@@ -81,19 +83,18 @@ export default async function EczanelerPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Eczaneler</h1>
-          <p className="text-muted-foreground text-sm">
-            Sisteme kayıtlı eczaneler ({totalCount} kayıt).
-          </p>
-        </div>
-        {canManage && (
-          <Button asChild>
-            <Link href="/eczaneler/yeni">Yeni Ekle</Link>
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Eczaneler"
+        description={`Sisteme kayıtlı eczaneler (${totalCount} kayıt).`}
+        icon={Building2}
+        actions={
+          canManage ? (
+            <Button asChild>
+              <Link href="/eczaneler/yeni">Yeni Ekle</Link>
+            </Button>
+          ) : undefined
+        }
+      />
 
       <ListBanner success={success} error={error} />
 
@@ -170,7 +171,7 @@ export default async function EczanelerPage({
                   <TableCell>{pharmacy.region.name}</TableCell>
                   <TableCell>{pharmacy.phone}</TableCell>
                   <TableCell>
-                    <Badge variant={pharmacy.isActive ? "default" : "secondary"}>
+                    <Badge variant={pharmacy.isActive ? "success" : "secondary"}>
                       {pharmacy.isActive ? "Aktif" : "Pasif"}
                     </Badge>
                   </TableCell>
@@ -197,8 +198,10 @@ export default async function EczanelerPage({
               ))}
               {pharmacies.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground text-center">
-                    Filtreye uygun eczane bulunamadı.
+                  <TableCell colSpan={6} className="text-muted-foreground py-8 text-center">
+                    {totalCount === 0
+                      ? "Henüz eczane kaydı bulunmuyor."
+                      : "Filtreye uygun eczane bulunamadı."}
                   </TableCell>
                 </TableRow>
               )}

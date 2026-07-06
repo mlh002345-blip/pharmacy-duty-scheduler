@@ -177,13 +177,21 @@ async function main() {
     const firstName = faker.person.firstName();
     const lastName = faker.person.lastName();
 
+    const name = pharmacyName(lastName);
+    const address = turkishAddress(regionConfig.district);
+
     return {
-      name: pharmacyName(lastName),
+      name,
       pharmacistName: `${firstName} ${lastName}`,
-      address: turkishAddress(regionConfig.district),
+      address,
       phone: turkishLandlinePhone(regionConfig.areaCode),
       city: "İstanbul",
       district: regionConfig.district,
+      // API anahtarı gerektirmeyen basit bir harita arama bağlantısı;
+      // vatandaş ekranındaki "Yol Tarifi Al" butonu bu alanı kullanır.
+      mapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${name} ${address}`
+      )}`,
       isActive: faker.datatype.boolean({ probability: 0.9 }),
       regionId: region.id,
     };
