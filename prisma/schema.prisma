@@ -35,8 +35,9 @@ model Region {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  pharmacies Pharmacy[]
-  dutyRule   DutyRule?
+  pharmacies    Pharmacy[]
+  dutyRule      DutyRule?
+  dutySchedules DutySchedule[]
 }
 
 model Pharmacy {
@@ -120,20 +121,25 @@ model DutySchedule {
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
-  assignments DutyAssignment[]
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
 
-  @@unique([year, month])
+  assignments DutyAssignment[]
+  warnings    DutyScheduleWarning[]
+
+  @@unique([year, month, regionId])
 }
 
 model DutyAssignment {
   id        String   @id @default(cuid())
   date      DateTime
   weight    Float    @default(1)
+  note      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   dutyScheduleId String
-  dutySchedule   DutySchedule @relation(fields: [dutyScheduleId], references: [id])
+  dutySchedule   DutySchedule @relation(fields: [dutyScheduleId], references: [id], onDelete: Cascade)
 
   pharmacyId String
   pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
@@ -142,6 +148,18 @@ model DutyAssignment {
 
   @@index([dutyScheduleId])
   @@index([pharmacyId])
+}
+
+model DutyScheduleWarning {
+  id        String   @id @default(cuid())
+  date      DateTime
+  message   String
+  createdAt DateTime @default(now())
+
+  scheduleId String
+  schedule   DutySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId])
 }
 
 enum AuditAction {

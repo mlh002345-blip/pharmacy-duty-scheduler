@@ -1,0 +1,247 @@
+import { notFound } from "next/navigation";
+
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ListBanner } from "@/components/layout/list-banner";
+import { prisma } from "@/lib/prisma";
+import { daysInMonth, getTurkishDayName, getTurkishMonthName } from "@/lib/scheduling/date-tr";
+
+export const dynamic = "force-dynamic";
+
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Taslak",
+  PUBLISHED: "Yayınlandı",
+};
+
+type FairnessRow = {
+  pharmacyId: string;
+  name: string;
+  totalDuties: number;
+  weekendDuties: number;
+  holidayDuties: number;
+  totalLoadScore: number;
+  lastDutyDate: Date;
+};
+
+export default async function CizelgeDetayPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ success?: string; error?: string }>;
+}) {
+  const { id } = await params;
+  const { success, error } = await searchParams;
+
+  const schedule = await prisma.dutySchedule.findUnique({
+    where: { id },
+    include: {
+      region: true,
+      assignments: {
+        include: { pharmacy: true },
+        orderBy: [{ date: "asc" }, { pharmacy: { name: "asc" } }],
+      },
+      warnings: { orderBy: { date: "asc" } },
+    },
+  });
+
+  if (!schedule) notFound();
+
+  const totalDays = daysInMonth(schedule.year, schedule.month);
+
+  const fairnessMap = new Map<string, FairnessRow>();
+  for (const assignment of schedule.assignments) {
+    const isWeekendDate =
+      assignment.date.getUTCDay() === 0 || assignment.date.getUTCDay() === 6;
+    const existing = fairnessMap.get(assignment.pharmacyId);
+    if (!existing) {
+      fairnessMap.set(assignment.pharmacyId, {
+        pharmacyId: assignment.pharmacyId,
+        name: assignment.pharmacy.name,
+        totalDuties: 1,
+        weekendDuties: isWeekendDate ? 1 : 0,
+        holidayDuties: assignment.note ? 1 : 0,
+        totalLoadScore: assignment.weight,
+        lastDutyDate: assignment.date,
+      });
+    } else {
+      existing.totalDuties += 1;
+      if (isWeekendDate) existing.weekendDuties += 1;
+      if (assignment.note) existing.holidayDuties += 1;
+      existing.totalLoadScore += assignment.weight;
+      if (assignment.date > existing.lastDutyDate) {
+        existing.lastDutyDate = assignment.date;
+      }
+    }
+  }
+  const fairnessRows = Array.from(fairnessMap.values()).sort((a, b) =>
+    a.name.localeCompare(b.name, "tr")
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold">
+          {schedule.region.name} {getTurkishMonthName(schedule.month)} {schedule.year} Nöbet
+          Çizelgesi
+        </h1>
+        <p className="text-muted-foreground text-sm">
+          {getTurkishMonthName(schedule.month)} {schedule.year} dönemi nöbet ataması.
+        </p>
+      </div>
+
+      <ListBanner success={success} error={error} />
+
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <Card>
+          <CardHeader>
+            <CardDescription>Toplam Gün</CardDescription>
+            <CardTitle className="text-2xl">{totalDays}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Toplam Nöbet Ataması</CardDescription>
+            <CardTitle className="text-2xl">{schedule.assignments.length}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Uyarılı Gün Sayısı</CardDescription>
+            <CardTitle className="text-2xl">{schedule.warnings.length}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Bölge</CardDescription>
+            <CardTitle className="text-2xl">{schedule.region.name}</CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Durum</CardDescription>
+            <CardTitle className="text-2xl">
+              <Badge variant={schedule.status === "DRAFT" ? "secondary" : "default"}>
+                {STATUS_LABELS[schedule.status] ?? schedule.status}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+        </Card>
+      </div>
+
+      {schedule.warnings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Uyarılar</CardTitle>
+            <CardDescription>
+              Bu tarihlerde yeterli sayıda uygun eczane bulunamadı.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col gap-1 text-sm">
+              {schedule.warnings.map((warning) => (
+                <li key={warning.id} className="text-destructive">
+                  {warning.date.toLocaleDateString("tr-TR")} — {warning.message}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Günlük Atamalar</CardTitle>
+          <CardDescription>
+            Bölgenin günlük nöbetçi eczane sayısı: {schedule.region.dailyDutyCount}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tarih</TableHead>
+                <TableHead>Gün</TableHead>
+                <TableHead>Nöbetçi Eczane</TableHead>
+                <TableHead>Telefon</TableHead>
+                <TableHead>Adres</TableHead>
+                <TableHead>Ağırlık</TableHead>
+                <TableHead>Not</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {schedule.assignments.map((assignment) => (
+                <TableRow key={assignment.id}>
+                  <TableCell>{assignment.date.toLocaleDateString("tr-TR")}</TableCell>
+                  <TableCell>{getTurkishDayName(assignment.date)}</TableCell>
+                  <TableCell className="font-medium">{assignment.pharmacy.name}</TableCell>
+                  <TableCell>{assignment.pharmacy.phone}</TableCell>
+                  <TableCell className="max-w-xs truncate">
+                    {assignment.pharmacy.address}
+                  </TableCell>
+                  <TableCell>{assignment.weight}</TableCell>
+                  <TableCell>{assignment.note ?? "-"}</TableCell>
+                </TableRow>
+              ))}
+              {schedule.assignments.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-muted-foreground text-center">
+                    Bu çizelge için atama bulunmuyor.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Adalet Raporu</CardTitle>
+          <CardDescription>Bu çizelgedeki atamalara göre eczane bazlı özet.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Eczane</TableHead>
+                <TableHead>Toplam Nöbet</TableHead>
+                <TableHead>Hafta Sonu Nöbeti</TableHead>
+                <TableHead>Tatil/Bayram Nöbeti</TableHead>
+                <TableHead>Toplam Yük Puanı</TableHead>
+                <TableHead>Son Nöbet Tarihi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {fairnessRows.map((row) => (
+                <TableRow key={row.pharmacyId}>
+                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell>{row.totalDuties}</TableCell>
+                  <TableCell>{row.weekendDuties}</TableCell>
+                  <TableCell>{row.holidayDuties}</TableCell>
+                  <TableCell>{row.totalLoadScore}</TableCell>
+                  <TableCell>{row.lastDutyDate.toLocaleDateString("tr-TR")}</TableCell>
+                </TableRow>
+              ))}
+              {fairnessRows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-muted-foreground text-center">
+                    Bu çizelge için veri bulunmuyor.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
