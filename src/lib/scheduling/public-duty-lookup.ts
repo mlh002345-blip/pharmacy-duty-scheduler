@@ -25,7 +25,16 @@ export async function getPublishedAssignmentsForDate(regionId: string, date: Dat
     where: { dutyScheduleId: schedule.id, date },
     select: {
       id: true,
-      pharmacy: { select: { name: true, phone: true, address: true, mapUrl: true } },
+      pharmacy: {
+        select: {
+          name: true,
+          phone: true,
+          address: true,
+          district: true,
+          city: true,
+          mapUrl: true,
+        },
+      },
     },
     orderBy: { pharmacy: { name: "asc" } },
   });
