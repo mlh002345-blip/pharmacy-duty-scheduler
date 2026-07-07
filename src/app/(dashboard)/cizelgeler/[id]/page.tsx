@@ -69,6 +69,7 @@ export default async function CizelgeDetayPage({
       month: true,
       year: true,
       status: true,
+      regionId: true,
       region: { select: { name: true, dailyDutyCount: true } },
       assignments: {
         select: {
@@ -101,6 +102,28 @@ export default async function CizelgeDetayPage({
   });
   const holidayDateKeys = new Set(holidaysInMonth.map((h) => toDateKey(h.date)));
   const isHolidayDate = (date: Date) => holidayDateKeys.has(toDateKey(date));
+
+  // Dikkate Alınan Nöbet Talepleri: bu dönemle çakışan, ilgili bölgedeki
+  // talepler (yalnızca özet gösterim amaçlı, çizelgeyi tekrar hesaplamaz).
+  const dutyRequestCounts = await prisma.dutyRequest.groupBy({
+    by: ["requestType", "status"],
+    where: {
+      pharmacy: { regionId: schedule.regionId },
+      startDate: { lte: monthEnd },
+      endDate: { gte: monthStart },
+    },
+    _count: { _all: true },
+  });
+  const countFor = (requestType: string, status: string) =>
+    dutyRequestCounts.find((c) => c.requestType === requestType && c.status === status)
+      ?._count._all ?? 0;
+  const approvedCannotDutyCount = countFor("CANNOT_DUTY", "APPROVED");
+  const approvedEmergencyCount = countFor("EMERGENCY_EXCUSE", "APPROVED");
+  const pendingCount =
+    countFor("CANNOT_DUTY", "PENDING") +
+    countFor("EMERGENCY_EXCUSE", "PENDING") +
+    countFor("PREFER_DUTY", "PENDING") +
+    countFor("SWAP_REQUEST", "PENDING");
 
   const fairnessMap = new Map<string, FairnessRow>();
   for (const assignment of schedule.assignments) {
@@ -245,6 +268,29 @@ export default async function CizelgeDetayPage({
         />
         <StatCard label="Bölge" value={schedule.region.name} icon={MapPin} accent="sky" />
       </div>
+
+      {(approvedCannotDutyCount > 0 || approvedEmergencyCount > 0 || pendingCount > 0) && (
+        <div className="rounded-xl border bg-white p-5 shadow-sm">
+          <p className="font-semibold">Dikkate Alınan Nöbet Talepleri</p>
+          <p className="text-muted-foreground mt-0.5 text-sm">
+            Bu dönemle çakışan onaylı nöbet talepleri çizelge oluşturulurken dikkate
+            alındı.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {approvedCannotDutyCount > 0 && (
+              <Badge variant="success">
+                {approvedCannotDutyCount} onaylı nöbet tutamama
+              </Badge>
+            )}
+            {approvedEmergencyCount > 0 && (
+              <Badge variant="success">{approvedEmergencyCount} onaylı acil mazeret</Badge>
+            )}
+            {pendingCount > 0 && (
+              <Badge variant="warning">{pendingCount} bekleyen talep</Badge>
+            )}
+          </div>
+        </div>
+      )}
 
       {schedule.warnings.length > 0 && (
         <div className="rounded-xl border border-amber-300/60 bg-amber-50 p-5">

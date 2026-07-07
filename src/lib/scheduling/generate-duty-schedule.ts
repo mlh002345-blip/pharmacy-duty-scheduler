@@ -44,6 +44,14 @@ export type DutyRuleWeights = {
   religiousHolidayWeight: number;
 };
 
+export type DutyRequestInput = {
+  pharmacyId: string;
+  requestType: "CANNOT_DUTY" | "PREFER_DUTY" | "SWAP_REQUEST" | "EMERGENCY_EXCUSE";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "LATE";
+  startDate: Date;
+  endDate: Date;
+};
+
 export type GenerateDutyScheduleParams = {
   month: number;
   year: number;
@@ -58,6 +66,10 @@ export type GenerateDutyScheduleParams = {
   // denge düzeltmeleri. Tarihsiz toplam puandır; yalnızca denge skorunu
   // etkiler, asgari nöbet aralığı hesabına karışmaz.
   openingBalance?: Map<string, number>;
+  // Nöbet talepleri: yalnızca APPROVED durumundakiler etki eder.
+  // CANNOT_DUTY ve EMERGENCY_EXCUSE tarih aralığında atamayı engeller (kesin
+  // kısıt); PREFER_DUTY eşit yük durumunda önceliklendirir (esnek tercih).
+  dutyRequests?: DutyRequestInput[];
 };
 
 export type GeneratedAssignment = {
@@ -139,6 +151,7 @@ export function generateDutySchedule(
     unavailabilities,
     historicalAssignments,
     openingBalance,
+    dutyRequests,
   } = params;
 
   // Hard rule: only active pharmacies in the selected region are eligible.
@@ -154,6 +167,35 @@ export function generateDutySchedule(
     entry.totalLoadScore = openingBalance?.get(pharmacy.id) ?? 0;
     metrics.set(pharmacy.id, entry);
   }
+
+  // Yalnızca onaylı talepler etki eder.
+  const approvedRequests = (dutyRequests ?? []).filter(
+    (request) => request.status === "APPROVED"
+  );
+  const blockingRequests = approvedRequests.filter(
+    (request) =>
+      request.requestType === "CANNOT_DUTY" ||
+      request.requestType === "EMERGENCY_EXCUSE"
+  );
+  const preferRequests = approvedRequests.filter(
+    (request) => request.requestType === "PREFER_DUTY"
+  );
+
+  const isBlockedByRequest = (pharmacyId: string, date: Date) =>
+    blockingRequests.some(
+      (request) =>
+        request.pharmacyId === pharmacyId &&
+        request.startDate.getTime() <= date.getTime() &&
+        request.endDate.getTime() >= date.getTime()
+    );
+
+  const hasPreferenceForDate = (pharmacyId: string, date: Date) =>
+    preferRequests.some(
+      (request) =>
+        request.pharmacyId === pharmacyId &&
+        request.startDate.getTime() <= date.getTime() &&
+        request.endDate.getTime() >= date.getTime()
+    );
 
   for (const historical of historicalAssignments) {
     const entry = metrics.get(historical.pharmacyId);
@@ -183,7 +225,9 @@ export function generateDutySchedule(
     const dateIsWeekend = isWeekend(date);
 
     const availableToday = eligiblePharmacies.filter(
-      (p) => !isUnavailable(p.id, date, unavailabilities)
+      (p) =>
+        !isUnavailable(p.id, date, unavailabilities) &&
+        !isBlockedByRequest(p.id, date)
     );
 
     const strictlyEligible = availableToday.filter((p) => {
@@ -203,6 +247,13 @@ export function generateDutySchedule(
 
       if (metricsA.totalLoadScore !== metricsB.totalLoadScore) {
         return metricsA.totalLoadScore - metricsB.totalLoadScore;
+      }
+      // Onaylı "Nöbet Tercihi": denge bozulmadan (eşit yükte) tarih
+      // aralığını tercih eden eczaneye öncelik verilir.
+      const prefersA = hasPreferenceForDate(a.id, date);
+      const prefersB = hasPreferenceForDate(b.id, date);
+      if (prefersA !== prefersB) {
+        return prefersA ? -1 : 1;
       }
       if (metricsA.totalDuties !== metricsB.totalDuties) {
         return metricsA.totalDuties - metricsB.totalDuties;
@@ -253,6 +304,11 @@ export function generateDutySchedule(
   );
   if (hasOpeningBalance) {
     info.push("Geçmiş nöbet yükleri denge skoruna dahil edildi.");
+  }
+  if (blockingRequests.length > 0) {
+    info.push(
+      `Onaylı nöbet talepleri çizelge oluşturulurken dikkate alındı. Bu çizelgede ${blockingRequests.length} onaylı nöbet tutamama talebi dikkate alındı.`
+    );
   }
 
   return { assignments, warnings, info };

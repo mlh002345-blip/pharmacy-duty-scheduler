@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { PrismaClient, HolidayType } from "@prisma/client";
 import { faker } from "@faker-js/faker/locale/tr";
 
@@ -125,6 +127,7 @@ async function main() {
 
   await prisma.session.deleteMany();
   await prisma.auditLog.deleteMany();
+  await prisma.dutyRequest.deleteMany();
   await prisma.dutyBalanceAdjustment.deleteMany();
   await prisma.historicalDutyRecord.deleteMany();
   await prisma.historicalDutyImportBatch.deleteMany();
@@ -138,7 +141,7 @@ async function main() {
   await prisma.region.deleteMany();
   await prisma.user.deleteMany();
 
-  await Promise.all(
+  const createdUsers = await Promise.all(
     USERS.map(async (user) =>
       prisma.user.create({
         data: {
@@ -151,6 +154,7 @@ async function main() {
       })
     )
   );
+  const adminUser = createdUsers.find((u) => u.role === "ADMIN")!;
 
   const regions = await Promise.all(
     REGIONS.map((region) =>
@@ -199,6 +203,9 @@ async function main() {
       )}`,
       isActive: faker.datatype.boolean({ probability: 0.9 }),
       regionId: region.id,
+      // Herkese açık nöbet talep formu (/eczane-talep/[token]) için
+      // tahmin edilemez, eczaneye özel bağlantı anahtarı.
+      requestToken: randomBytes(16).toString("hex"),
     };
   });
 
@@ -326,6 +333,71 @@ async function main() {
     },
   });
 
+  // Örnek nöbet talepleri: eczacı odasının inceleyeceği bekleyen talepler,
+  // çizelge oluşturmayı gerçekten etkileyecek onaylı bir nöbet tutamama
+  // talebi ve reddedilmiş bir örnek.
+  const dutyRequestSamplePharmacies = faker.helpers.arrayElements(
+    historicalPharmacies,
+    Math.min(4, historicalPharmacies.length)
+  );
+  const dutyRequestScheduleStart = new Date(Date.UTC(currentYear, currentMonth - 1, 5));
+  const dutyRequestScheduleEnd = new Date(Date.UTC(currentYear, currentMonth - 1, 7));
+
+  await prisma.dutyRequest.create({
+    data: {
+      pharmacyId: dutyRequestSamplePharmacies[0].id,
+      regionId: publishedRegion.id,
+      requestType: "CANNOT_DUTY",
+      startDate: dutyRequestScheduleStart,
+      endDate: dutyRequestScheduleEnd,
+      explanation: "Tadilat nedeniyle bu tarihlerde nöbet tutulamayacaktır.",
+      status: "PENDING",
+      source: "PUBLIC_LINK",
+    },
+  });
+  await prisma.dutyRequest.create({
+    data: {
+      pharmacyId: dutyRequestSamplePharmacies[1 % dutyRequestSamplePharmacies.length].id,
+      regionId: publishedRegion.id,
+      requestType: "PREFER_DUTY",
+      startDate: new Date(Date.UTC(currentYear, currentMonth - 1, 14)),
+      endDate: new Date(Date.UTC(currentYear, currentMonth - 1, 14)),
+      explanation: "Bu tarihte nöbet tutmayı tercih ediyoruz.",
+      status: "PENDING",
+      source: "ADMIN_ENTRY",
+    },
+  });
+  await prisma.dutyRequest.create({
+    data: {
+      pharmacyId: dutyRequestSamplePharmacies[2 % dutyRequestSamplePharmacies.length].id,
+      regionId: publishedRegion.id,
+      requestType: "CANNOT_DUTY",
+      startDate: new Date(Date.UTC(currentYear, currentMonth - 1, 20)),
+      endDate: new Date(Date.UTC(currentYear, currentMonth - 1, 21)),
+      explanation: "Aile ferdinin sağlık durumu nedeniyle nöbet tutulamayacaktır.",
+      status: "APPROVED",
+      source: "ADMIN_ENTRY",
+      reviewedById: adminUser.id,
+      reviewedAt: new Date(),
+      reviewNote: "Onaylandı; bu tarihlerde çizelgede bu eczaneye atama yapılmayacak.",
+    },
+  });
+  await prisma.dutyRequest.create({
+    data: {
+      pharmacyId: dutyRequestSamplePharmacies[3 % dutyRequestSamplePharmacies.length].id,
+      regionId: publishedRegion.id,
+      requestType: "SWAP_REQUEST",
+      startDate: new Date(Date.UTC(currentYear, currentMonth - 1, 10)),
+      endDate: new Date(Date.UTC(currentYear, currentMonth - 1, 10)),
+      explanation: "Başka bir eczane ile nöbet değişimi talep ediyoruz.",
+      status: "REJECTED",
+      source: "ADMIN_ENTRY",
+      reviewedById: adminUser.id,
+      reviewedAt: new Date(),
+      reviewNote: "Değişim için karşı eczane onayı sağlanamadı.",
+    },
+  });
+
   const { schedule: publishedSchedule } = await generateAndSaveDutySchedule({
     month: currentMonth,
     year: currentYear,
@@ -352,6 +424,9 @@ async function main() {
     `- ${daysInPrevMonth} matched + 1 unmatched historical duty records (${prevMonth}/${prevYear}, ${publishedRegion.name})`
   );
   console.log(`- 1 manual balance adjustment (+5, ${historicalPharmacies[0].name})`);
+  console.log(
+    "- 4 duty requests (2 pending, 1 approved nöbet tutamama, 1 rejected)"
+  );
   console.log(
     `- 1 published schedule (${publishedRegion.name}, ${currentMonth}/${currentYear})`
   );

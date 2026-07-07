@@ -43,7 +43,7 @@ export async function generateAndSaveDutySchedule({
 
   const pharmacyIds = pharmacies.map((p) => p.id);
 
-  const [holidays, unavailabilities, historicalAssignments, openingBalance] =
+  const [holidays, unavailabilities, historicalAssignments, openingBalance, dutyRequests] =
     await Promise.all([
       prisma.holiday.findMany({
         where: { date: { gte: monthStart, lte: monthEnd } },
@@ -65,6 +65,15 @@ export async function generateAndSaveDutySchedule({
       // Başlangıç nöbet dengesi: içe aktarılan geçmiş nöbet puanları +
       // manuel denge düzeltmeleri.
       getOpeningBalanceByPharmacy(regionId),
+      // Yalnızca onaylı nöbet talepleri çizelge oluşturmayı etkiler.
+      prisma.dutyRequest.findMany({
+        where: {
+          pharmacyId: { in: pharmacyIds },
+          status: "APPROVED",
+          startDate: { lte: monthEnd },
+          endDate: { gte: monthStart },
+        },
+      }),
     ]);
 
   const result = generateDutySchedule({
@@ -78,6 +87,7 @@ export async function generateAndSaveDutySchedule({
     unavailabilities,
     historicalAssignments,
     openingBalance,
+    dutyRequests,
   });
 
   const schedule = await prisma.$transaction(async (tx) => {

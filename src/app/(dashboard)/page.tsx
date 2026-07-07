@@ -44,6 +44,7 @@ export default async function PanelPage() {
     todayDuty,
     lastManualChange,
     recentSchedules,
+    pendingDutyRequestCount,
   ] = await Promise.all([
     prisma.pharmacy.count(),
     prisma.pharmacy.count({ where: { isActive: true } }),
@@ -76,6 +77,7 @@ export default async function PanelPage() {
       orderBy: { createdAt: "desc" },
       take: 4,
     }),
+    prisma.dutyRequest.count({ where: { status: "PENDING" } }),
   ]);
 
   const todayLabel = new Date().toLocaleDateString("tr-TR", {
@@ -90,6 +92,11 @@ export default async function PanelPage() {
     { label: "Eczaneler kaydedildi", done: pharmacyCount > 0, href: "/eczaneler" },
     { label: "Nöbet kuralları belirlendi", done: dutyRuleCount > 0, href: "/kurallar" },
     { label: "Tatil günleri girildi", done: holidayCount > 0, href: "/tatil-gunleri" },
+    {
+      label: "Nöbet talepleri incelendi mi?",
+      done: pendingDutyRequestCount === 0,
+      href: "/nobet-talepleri",
+    },
     {
       label: "Nöbet çizelgesi oluşturuldu",
       done: draftScheduleCount + publishedScheduleCount > 0,

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
 import { requirePermissionOrRedirect } from "@/lib/auth/guard";
 import { PharmacyForm } from "../../pharmacy-form";
@@ -32,6 +32,24 @@ export default async function EczaneDuzenlePage({
           <PharmacyForm action={action} pharmacy={pharmacy} regions={regions} />
         </CardContent>
       </Card>
+
+      {pharmacy.requestToken && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Nöbet Talep Bağlantısı</CardTitle>
+            <CardDescription>
+              Bu bağlantıyı eczaneyle paylaşın; eczane, nöbet tutamama/tercih/değişiklik
+              taleplerini giriş yapmadan bu form üzerinden iletebilir. Bağlantı eczaneye
+              özeldir, üçüncü kişilerle paylaşılmamalıdır.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <code className="bg-muted block overflow-x-auto rounded-lg px-3 py-2 text-sm">
+              /eczane-talep/{pharmacy.requestToken}
+            </code>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

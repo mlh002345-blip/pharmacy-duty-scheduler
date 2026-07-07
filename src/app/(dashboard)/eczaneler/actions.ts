@@ -1,5 +1,7 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
@@ -38,7 +40,12 @@ export async function createPharmacyAction(
 
   const { mapUrl, ...rest } = parsed.data;
   const pharmacy = await prisma.pharmacy.create({
-    data: { ...rest, mapUrl: mapUrl || null },
+    data: {
+      ...rest,
+      mapUrl: mapUrl || null,
+      // Herkese açık nöbet talep formu bağlantısı için eczaneye özel token.
+      requestToken: randomBytes(16).toString("hex"),
+    },
   });
 
   await writeAuditLog({

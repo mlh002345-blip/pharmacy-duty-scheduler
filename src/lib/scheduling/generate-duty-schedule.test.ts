@@ -280,3 +280,166 @@ describe("generateDutySchedule — başlangıç nöbet dengesi (geçmiş yük)",
     expect(result.assignments.length).toBe(daysInMonth(YEAR, MONTH));
   });
 });
+
+describe("generateDutySchedule — nöbet talepleri", () => {
+  it("blocks assignment during an approved CANNOT_DUTY request date range", () => {
+    const blockedStart = dateAtUtcMidnight(YEAR, MONTH, 5);
+    const blockedEnd = dateAtUtcMidnight(YEAR, MONTH, 10);
+
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      dutyRequests: [
+        {
+          pharmacyId: "a",
+          requestType: "CANNOT_DUTY",
+          status: "APPROVED",
+          startDate: blockedStart,
+          endDate: blockedEnd,
+        },
+      ],
+    });
+
+    const duringBlock = result.assignments.filter(
+      (a) => a.date >= blockedStart && a.date <= blockedEnd
+    );
+    expect(duringBlock.every((a) => a.pharmacyId === "b")).toBe(true);
+    expect(duringBlock.length).toBe(6);
+    expect(result.info.join(" ")).toContain(
+      "Onaylı nöbet talepleri çizelge oluşturulurken dikkate alındı."
+    );
+  });
+
+  it("blocks assignment during an approved EMERGENCY_EXCUSE request date range", () => {
+    const blockedDate = dateAtUtcMidnight(YEAR, MONTH, 12);
+
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      dutyRequests: [
+        {
+          pharmacyId: "a",
+          requestType: "EMERGENCY_EXCUSE",
+          status: "APPROVED",
+          startDate: blockedDate,
+          endDate: blockedDate,
+        },
+      ],
+    });
+
+    const onBlockedDate = result.assignments.find(
+      (a) => a.date.getTime() === blockedDate.getTime()
+    );
+    expect(onBlockedDate?.pharmacyId).toBe("b");
+  });
+
+  it("does not block assignment for PENDING or REJECTED requests", () => {
+    const requestedStart = dateAtUtcMidnight(YEAR, MONTH, 5);
+    const requestedEnd = dateAtUtcMidnight(YEAR, MONTH, 6);
+
+    for (const status of ["PENDING", "REJECTED", "CANCELLED", "LATE"] as const) {
+      const result = generateDutySchedule({
+        month: MONTH,
+        year: YEAR,
+        regionId: REGION_ID,
+        dailyDutyCount: 1,
+        dutyRule: BASE_DUTY_RULE,
+        pharmacies: [pharmacy("only-one")],
+        holidays: [],
+        unavailabilities: [],
+        historicalAssignments: [],
+        dutyRequests: [
+          {
+            pharmacyId: "only-one",
+            requestType: "CANNOT_DUTY",
+            status,
+            startDate: requestedStart,
+            endDate: requestedEnd,
+          },
+        ],
+      });
+
+      const inRange = result.assignments.filter(
+        (a) => a.date >= requestedStart && a.date <= requestedEnd
+      );
+      expect(inRange.every((a) => a.pharmacyId === "only-one")).toBe(true);
+      expect(inRange.length).toBe(2);
+    }
+  });
+
+  it("prefers a pharmacy with an approved PREFER_DUTY request when load is tied", () => {
+    const equalWeightRule = {
+      minDaysBetweenDuties: 0,
+      weekdayWeight: 1,
+      saturdayWeight: 1,
+      sundayWeight: 1,
+      officialHolidayWeight: 1,
+      religiousHolidayWeight: 1,
+    };
+    const preferredDate = dateAtUtcMidnight(YEAR, MONTH, 1);
+
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: equalWeightRule,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      dutyRequests: [
+        {
+          pharmacyId: "b",
+          requestType: "PREFER_DUTY",
+          status: "APPROVED",
+          startDate: preferredDate,
+          endDate: preferredDate,
+        },
+      ],
+    });
+
+    const firstDay = result.assignments.find(
+      (a) => a.date.getTime() === preferredDate.getTime()
+    );
+    expect(firstDay?.pharmacyId).toBe("b");
+  });
+
+  it("does not emit the duty-request info message when there are no approved blocking requests", () => {
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      dutyRequests: [
+        {
+          pharmacyId: "a",
+          requestType: "CANNOT_DUTY",
+          status: "PENDING",
+          startDate: dateAtUtcMidnight(YEAR, MONTH, 1),
+          endDate: dateAtUtcMidnight(YEAR, MONTH, 1),
+        },
+      ],
+    });
+    expect(result.info).toEqual([]);
+  });
+});

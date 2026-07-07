@@ -30,6 +30,7 @@ model User {
   sessions                 Session[]
   historicalImportBatches  HistoricalDutyImportBatch[]
   dutyBalanceAdjustments   DutyBalanceAdjustment[]
+  reviewedDutyRequests     DutyRequest[]
 }
 
 model Session {
@@ -57,6 +58,7 @@ model Region {
   dutyRule              DutyRule?
   dutySchedules         DutySchedule[]
   historicalDutyRecords HistoricalDutyRecord[]
+  dutyRequests          DutyRequest[]
 }
 
 model Pharmacy {
@@ -68,6 +70,9 @@ model Pharmacy {
   city           String
   district       String
   mapUrl         String?
+  // Herkese açık nöbet talep formu (/eczane-talep/[token]) için
+  // tahmin edilemez, eczaneye özel bağlantı anahtarı.
+  requestToken   String?  @unique
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -79,6 +84,7 @@ model Pharmacy {
   dutyAssignments        DutyAssignment[]
   historicalDutyRecords  HistoricalDutyRecord[]
   dutyBalanceAdjustments DutyBalanceAdjustment[]
+  dutyRequests           DutyRequest[]
 
   @@index([regionId])
   @@index([isActive])
@@ -281,4 +287,55 @@ model DutyBalanceAdjustment {
   createdBy   User?   @relation(fields: [createdById], references: [id])
 
   @@index([pharmacyId])
+}
+
+enum DutyRequestType {
+  CANNOT_DUTY
+  PREFER_DUTY
+  SWAP_REQUEST
+  EMERGENCY_EXCUSE
+}
+
+enum DutyRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  LATE
+}
+
+enum DutyRequestSource {
+  ADMIN_ENTRY
+  PUBLIC_LINK
+  IMPORT
+}
+
+model DutyRequest {
+  id          String            @id @default(cuid())
+  requestType DutyRequestType
+  startDate   DateTime
+  endDate     DateTime
+  explanation String
+  status      DutyRequestStatus @default(PENDING)
+  source      DutyRequestSource @default(ADMIN_ENTRY)
+  reviewNote  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+
+  regionId String?
+  region   Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
+
+  reviewedById String?
+  reviewedBy   User?   @relation(fields: [reviewedById], references: [id])
+
+  @@index([pharmacyId])
+  @@index([regionId])
+  @@index([status])
+  @@index([requestType])
+  @@index([startDate])
+  @@index([endDate])
 }
