@@ -14,6 +14,7 @@ import {
   generateAndSaveDutySchedule,
 } from "@/lib/scheduling/generate-and-save-duty-schedule";
 import { findScheduleConflicts } from "@/lib/scheduling/duty-assignment-edit";
+import { getSchedulePreCheck } from "@/lib/scheduling/schedule-precheck";
 
 export async function createDutyScheduleAction(
   _prevState: ActionState,
@@ -82,12 +83,27 @@ export async function createDutyScheduleAction(
     };
   }
 
+  const preCheck = await getSchedulePreCheck({
+    regionId,
+    month,
+    year,
+    dailyDutyCount: region.dailyDutyCount,
+    hasDutyRule: !!region.dutyRule,
+    activePharmacyIds: region.pharmacies.map((p) => p.id),
+  });
+  if (!preCheck.canGenerate) {
+    return {
+      success: false,
+      message: preCheck.criticalErrors.join(" "),
+    };
+  }
+
   let scheduleId: string;
   let infoMessages: string[];
   try {
     const result = await generateAndSaveDutySchedule({ month, year, regionId });
     scheduleId = result.schedule.id;
-    infoMessages = result.info;
+    infoMessages = [...preCheck.warnings, ...result.info];
   } catch (error) {
     if (error instanceof DutyScheduleGenerationError) {
       return { success: false, message: error.message };

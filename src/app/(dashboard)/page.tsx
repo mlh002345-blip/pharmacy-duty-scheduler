@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowRight,
   Building2,
   CalendarCheck,
@@ -23,6 +24,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permissions";
 import { getTurkishMonthName, todayAtUtcMidnight } from "@/lib/scheduling/date-tr";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
+import { getDataHealthReport } from "@/lib/health/data-health";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +47,7 @@ export default async function PanelPage() {
     lastManualChange,
     recentSchedules,
     pendingDutyRequestCount,
+    historicalRecordCount,
   ] = await Promise.all([
     prisma.pharmacy.count(),
     prisma.pharmacy.count({ where: { isActive: true } }),
@@ -78,7 +81,13 @@ export default async function PanelPage() {
       take: 4,
     }),
     prisma.dutyRequest.count({ where: { status: "PENDING" } }),
+    prisma.historicalDutyRecord.count(),
   ]);
+
+  // Veri kontrolü yapıldı mı? — /veri-kontrol ile aynı sağlık raporunu
+  // yeniden kullanır; oda ölçeğindeki veri hacminde ("düzine" seviyesinde
+  // kayıt) bu sorgu setinin panelde de çalıştırılması hafif kalır.
+  const dataHealthReport = await getDataHealthReport();
 
   const todayLabel = new Date().toLocaleDateString("tr-TR", {
     weekday: "long",
@@ -87,24 +96,60 @@ export default async function PanelPage() {
     year: "numeric",
   });
 
-  const checklist = [
-    { label: "Nöbet bölgeleri tanımlandı", done: activeRegionCount > 0, href: "/bolgeler" },
-    { label: "Eczaneler kaydedildi", done: pharmacyCount > 0, href: "/eczaneler" },
-    { label: "Nöbet kuralları belirlendi", done: dutyRuleCount > 0, href: "/kurallar" },
-    { label: "Tatil günleri girildi", done: holidayCount > 0, href: "/tatil-gunleri" },
+  type ChecklistState = "done" | "missing" | "warning";
+  const checklist: { label: string; state: ChecklistState; href: string }[] = [
     {
-      label: "Nöbet talepleri incelendi mi?",
-      done: pendingDutyRequestCount === 0,
+      label: "Bölge tanımlandı mı?",
+      state: activeRegionCount > 0 ? "done" : "missing",
+      href: "/bolgeler",
+    },
+    {
+      label: "Eczaneler eklendi mi?",
+      state: pharmacyCount > 0 ? "done" : "missing",
+      href: "/eczaneler",
+    },
+    {
+      label: "Nöbet kuralları tanımlandı mı?",
+      state:
+        dutyRuleCount === 0
+          ? "missing"
+          : dutyRuleCount < activeRegionCount
+            ? "warning"
+            : "done",
+      href: "/kurallar",
+    },
+    {
+      label: "Tatil günleri yüklendi mi?",
+      state: holidayCount > 0 ? "done" : "warning",
+      href: "/tatil-gunleri",
+    },
+    {
+      label: "Geçmiş nöbetler aktarıldı mı?",
+      state: historicalRecordCount > 0 ? "done" : "warning",
+      href: "/gecmis-nobetler",
+    },
+    {
+      label: "Bekleyen nöbet talepleri incelendi mi?",
+      state: pendingDutyRequestCount === 0 ? "done" : "warning",
       href: "/nobet-talepleri",
     },
     {
-      label: "Nöbet çizelgesi oluşturuldu",
-      done: draftScheduleCount + publishedScheduleCount > 0,
+      label: "Veri kontrolü yapıldı mı?",
+      state:
+        dataHealthReport.critical.length > 0
+          ? "missing"
+          : dataHealthReport.warnings.length > 0
+            ? "warning"
+            : "done",
+      href: "/veri-kontrol",
+    },
+    {
+      label: "Yayında çizelge var mı?",
+      state: publishedScheduleCount > 0 ? "done" : "missing",
       href: "/cizelgeler",
     },
-    { label: "Çizelge yayınlandı", done: publishedScheduleCount > 0, href: "/cizelgeler" },
   ];
-  const completedSteps = checklist.filter((item) => item.done).length;
+  const completedSteps = checklist.filter((item) => item.state === "done").length;
 
   const quickActions = [
     ...(canGenerate
@@ -336,21 +381,43 @@ export default async function PanelPage() {
             <ul className="flex flex-col gap-2.5">
               {checklist.map((item) => (
                 <li key={item.label}>
-                  <Link href={item.href} className="group flex items-center gap-2.5 text-sm">
-                    {item.done ? (
-                      <CheckCircle2 className="size-4.5 shrink-0 text-emerald-600" />
-                    ) : (
-                      <Circle className="text-muted-foreground/40 size-4.5 shrink-0" />
-                    )}
-                    <span
-                      className={
-                        item.done
-                          ? "text-muted-foreground"
-                          : "font-medium group-hover:underline"
+                  <Link
+                    href={item.href}
+                    className="group flex items-center justify-between gap-2.5 text-sm"
+                  >
+                    <span className="flex items-center gap-2.5">
+                      {item.state === "done" ? (
+                        <CheckCircle2 className="size-4.5 shrink-0 text-emerald-600" />
+                      ) : item.state === "warning" ? (
+                        <AlertTriangle className="size-4.5 shrink-0 text-amber-600" />
+                      ) : (
+                        <Circle className="text-muted-foreground/40 size-4.5 shrink-0" />
+                      )}
+                      <span
+                        className={
+                          item.state === "done"
+                            ? "text-muted-foreground"
+                            : "font-medium group-hover:underline"
+                        }
+                      >
+                        {item.label}
+                      </span>
+                    </span>
+                    <Badge
+                      variant={
+                        item.state === "done"
+                          ? "success"
+                          : item.state === "warning"
+                            ? "warning"
+                            : "secondary"
                       }
                     >
-                      {item.label}
-                    </span>
+                      {item.state === "done"
+                        ? "Tamamlandı"
+                        : item.state === "warning"
+                          ? "Uyarı"
+                          : "Eksik"}
+                    </Badge>
                   </Link>
                 </li>
               ))}

@@ -12,6 +12,7 @@ import {
   History,
   Globe,
   Users,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,6 +36,7 @@ export const navItems: NavItem[] = [
   { label: "Geçmiş Nöbetler", href: "/gecmis-nobetler", icon: Archive },
   { label: "Nöbet Çizelgeleri", href: "/cizelgeler", icon: CalendarRange },
   { label: "Nöbet Dengesi", href: "/nobet-dengesi", icon: Scale },
+  { label: "Veri Kontrol", href: "/veri-kontrol", icon: ShieldCheck },
   { label: "Denetim Kayıtları", href: "/denetim-kayitlari", icon: History },
   { label: "Vatandaş Ekranı", href: "/vatandas", icon: Globe },
   {
