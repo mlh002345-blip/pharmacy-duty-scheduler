@@ -214,3 +214,69 @@ describe("generateDutySchedule", () => {
     expect(repeats).toBeLessThanOrEqual(1);
   });
 });
+
+describe("generateDutySchedule — başlangıç nöbet dengesi (geçmiş yük)", () => {
+  it("includes opening balance (historical load) in assignment priority", () => {
+    // "yuklu" eczanesi yüksek başlangıç yüküyle başlar; yük eşitlenene
+    // kadar öncelik "yeni" eczanede olmalıdır.
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("yuklu"), pharmacy("yeni")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      openingBalance: new Map([
+        ["yuklu", 10],
+        ["yeni", 0],
+      ]),
+    });
+
+    const firstFive = result.assignments.slice(0, 5);
+    expect(firstFive.every((a) => a.pharmacyId === "yeni")).toBe(true);
+    const yeniCount = result.assignments.filter((a) => a.pharmacyId === "yeni").length;
+    const yukluCount = result.assignments.filter((a) => a.pharmacyId === "yuklu").length;
+    expect(yeniCount).toBeGreaterThan(yukluCount);
+    expect(result.info.join(" ")).toContain(
+      "Geçmiş nöbet yükleri denge skoruna dahil edildi."
+    );
+  });
+
+  it("does not emit the historical info message when opening balance is empty", () => {
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+    });
+    expect(result.info).toEqual([]);
+  });
+
+  it("opening balance never adds assignments — historical records stay out of the schedule", () => {
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      openingBalance: new Map([
+        ["a", 42],
+        ["b", 3],
+      ]),
+    });
+    // Atama sayısı yalnızca ay günü kadardır; geçmiş kayıtlar atamaya dönüşmez.
+    expect(result.assignments.length).toBe(daysInMonth(YEAR, MONTH));
+  });
+});

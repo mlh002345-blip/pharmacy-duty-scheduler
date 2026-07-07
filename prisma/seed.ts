@@ -125,6 +125,9 @@ async function main() {
 
   await prisma.session.deleteMany();
   await prisma.auditLog.deleteMany();
+  await prisma.dutyBalanceAdjustment.deleteMany();
+  await prisma.historicalDutyRecord.deleteMany();
+  await prisma.historicalDutyImportBatch.deleteMany();
   await prisma.dutyAssignment.deleteMany();
   await prisma.dutyScheduleWarning.deleteMany();
   await prisma.dutySchedule.deleteMany();
@@ -250,7 +253,80 @@ async function main() {
   const publishedRegion = regionsByName[0];
   const draftRegion = regionsByName[1];
 
-  const publishedSchedule = await generateAndSaveDutySchedule({
+  // Örnek geçmiş nöbet aktarımı: yayınlanacak bölgenin eczaneleri için bir
+  // önceki ayın nöbet listesi "içe aktarılmış" gibi kaydedilir. Böylece
+  // /gecmis-nobetler dolu gelir ve çizelge üretimi (aşağıda) geçmiş yükü
+  // denge skoruna gerçekten dahil eder. Kayıtlar DutyAssignment'a dönüşmez.
+  const prevMonthDate = new Date(Date.UTC(currentYear, currentMonth - 2, 1));
+  const prevMonth = prevMonthDate.getUTCMonth() + 1;
+  const prevYear = prevMonthDate.getUTCFullYear();
+  const daysInPrevMonth = new Date(Date.UTC(prevYear, prevMonth, 0)).getUTCDate();
+
+  const historicalPharmacies = pharmacies.filter(
+    (p) => p.regionId === publishedRegion.id && p.isActive
+  );
+  const historicalBatch = await prisma.historicalDutyImportBatch.create({
+    data: {
+      fileName: "ornek-gecmis-nobet-listesi.xlsx",
+      note: "Demo verisi: bir önceki ayın nöbet listesi",
+      rowCount: daysInPrevMonth + 1,
+      matchedCount: daysInPrevMonth,
+      unmatchedCount: 1,
+      warningCount: 1,
+    },
+  });
+
+  await prisma.historicalDutyRecord.createMany({
+    data: Array.from({ length: daysInPrevMonth }).map((_, dayIndex) => {
+      const dutyDate = new Date(Date.UTC(prevYear, prevMonth - 1, dayIndex + 1));
+      const dayOfWeek = dutyDate.getUTCDay();
+      const weight = dayOfWeek === 0 ? 1.3 : dayOfWeek === 6 ? 1.2 : 1.0;
+      const pharmacy = historicalPharmacies[dayIndex % historicalPharmacies.length];
+      return {
+        batchId: historicalBatch.id,
+        rowNumber: dayIndex + 2,
+        dutyDate,
+        rawPharmacyName: pharmacy.name,
+        rawRegionName: publishedRegion.name,
+        rawDutyType:
+          dayOfWeek === 0 || dayOfWeek === 6 ? "Hafta Sonu" : "Normal",
+        dutyType: dayOfWeek === 0 || dayOfWeek === 6 ? "Hafta Sonu" : "Normal",
+        weight,
+        matchStatus: "MATCHED" as const,
+        pharmacyId: pharmacy.id,
+        regionId: publishedRegion.id,
+      };
+    }),
+  });
+
+  // Eşleşmeyen örnek kayıt: kapanmış bir eczane — denge skoruna katılmaz.
+  await prisma.historicalDutyRecord.create({
+    data: {
+      batchId: historicalBatch.id,
+      rowNumber: daysInPrevMonth + 2,
+      dutyDate: new Date(Date.UTC(prevYear, prevMonth - 1, 15)),
+      rawPharmacyName: "Kapanmış Eczane",
+      rawRegionName: publishedRegion.name,
+      rawDutyType: "Normal",
+      dutyType: "Normal",
+      weight: 1.0,
+      matchStatus: "UNMATCHED",
+      warningMessage: "Bu ada sahip bir eczane sistemde bulunamadı.",
+      regionId: publishedRegion.id,
+    },
+  });
+
+  // Örnek manuel denge düzeltmesi.
+  await prisma.dutyBalanceAdjustment.create({
+    data: {
+      pharmacyId: historicalPharmacies[0].id,
+      points: 5,
+      reason:
+        "Daha eski kayıtlar sisteme aktarılamadığı için +5 başlangıç yükü eklendi.",
+    },
+  });
+
+  const { schedule: publishedSchedule } = await generateAndSaveDutySchedule({
     month: currentMonth,
     year: currentYear,
     regionId: publishedRegion.id,
@@ -272,6 +348,10 @@ async function main() {
   console.log(`- ${pharmacyData.length} pharmacies`);
   console.log(`- ${HOLIDAYS_2026.length} holidays`);
   console.log(`- ${sampleUnavailablePharmacies.length} unavailability records`);
+  console.log(
+    `- ${daysInPrevMonth} matched + 1 unmatched historical duty records (${prevMonth}/${prevYear}, ${publishedRegion.name})`
+  );
+  console.log(`- 1 manual balance adjustment (+5, ${historicalPharmacies[0].name})`);
   console.log(
     `- 1 published schedule (${publishedRegion.name}, ${currentMonth}/${currentYear})`
   );

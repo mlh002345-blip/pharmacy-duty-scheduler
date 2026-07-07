@@ -82,9 +82,11 @@ export async function createDutyScheduleAction(
   }
 
   let scheduleId: string;
+  let infoMessages: string[];
   try {
-    const schedule = await generateAndSaveDutySchedule({ month, year, regionId });
-    scheduleId = schedule.id;
+    const result = await generateAndSaveDutySchedule({ month, year, regionId });
+    scheduleId = result.schedule.id;
+    infoMessages = result.info;
   } catch (error) {
     if (error instanceof DutyScheduleGenerationError) {
       return { success: false, message: error.message };
@@ -103,7 +105,7 @@ export async function createDutyScheduleAction(
   revalidatePath("/cizelgeler");
   redirect(
     `/cizelgeler/${scheduleId}?success=${encodeURIComponent(
-      "Taslak olarak oluşturuldu."
+      ["Taslak olarak oluşturuldu.", ...infoMessages].join(" ")
     )}`
   );
 }

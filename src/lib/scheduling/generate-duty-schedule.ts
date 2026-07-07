@@ -54,6 +54,10 @@ export type GenerateDutyScheduleParams = {
   holidays: HolidayInput[];
   unavailabilities: UnavailabilityInput[];
   historicalAssignments: HistoricalAssignmentInput[];
+  // Başlangıç nöbet dengesi: içe aktarılan geçmiş nöbet puanları + manuel
+  // denge düzeltmeleri. Tarihsiz toplam puandır; yalnızca denge skorunu
+  // etkiler, asgari nöbet aralığı hesabına karışmaz.
+  openingBalance?: Map<string, number>;
 };
 
 export type GeneratedAssignment = {
@@ -71,6 +75,8 @@ export type GeneratedWarning = {
 export type GenerateDutyScheduleResult = {
   assignments: GeneratedAssignment[];
   warnings: GeneratedWarning[];
+  // Kullanıcıya gösterilecek bilgilendirme mesajları (uyarı değildir).
+  info: string[];
 };
 
 type PharmacyMetrics = {
@@ -132,6 +138,7 @@ export function generateDutySchedule(
     holidays,
     unavailabilities,
     historicalAssignments,
+    openingBalance,
   } = params;
 
   // Hard rule: only active pharmacies in the selected region are eligible.
@@ -141,7 +148,11 @@ export function generateDutySchedule(
 
   const metrics = new Map<string, PharmacyMetrics>();
   for (const pharmacy of eligiblePharmacies) {
-    metrics.set(pharmacy.id, createEmptyMetrics());
+    const entry = createEmptyMetrics();
+    // Başlangıç nöbet dengesi doğrudan denge skoruna eklenir; tarih
+    // içermediği için minDaysBetweenDuties hesabını etkilemez.
+    entry.totalLoadScore = openingBalance?.get(pharmacy.id) ?? 0;
+    metrics.set(pharmacy.id, entry);
   }
 
   for (const historical of historicalAssignments) {
@@ -236,5 +247,13 @@ export function generateDutySchedule(
     }
   }
 
-  return { assignments, warnings };
+  const info: string[] = [];
+  const hasOpeningBalance = eligiblePharmacies.some(
+    (p) => (openingBalance?.get(p.id) ?? 0) !== 0
+  );
+  if (hasOpeningBalance) {
+    info.push("Geçmiş nöbet yükleri denge skoruna dahil edildi.");
+  }
+
+  return { assignments, warnings, info };
 }

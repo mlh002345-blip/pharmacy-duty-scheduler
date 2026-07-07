@@ -26,8 +26,10 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  auditLogs AuditLog[]
-  sessions  Session[]
+  auditLogs                AuditLog[]
+  sessions                 Session[]
+  historicalImportBatches  HistoricalDutyImportBatch[]
+  dutyBalanceAdjustments   DutyBalanceAdjustment[]
 }
 
 model Session {
@@ -51,9 +53,10 @@ model Region {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  pharmacies    Pharmacy[]
-  dutyRule      DutyRule?
-  dutySchedules DutySchedule[]
+  pharmacies            Pharmacy[]
+  dutyRule              DutyRule?
+  dutySchedules         DutySchedule[]
+  historicalDutyRecords HistoricalDutyRecord[]
 }
 
 model Pharmacy {
@@ -72,8 +75,10 @@ model Pharmacy {
   regionId String
   region   Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
 
-  unavailabilities Unavailability[]
-  dutyAssignments  DutyAssignment[]
+  unavailabilities       Unavailability[]
+  dutyAssignments        DutyAssignment[]
+  historicalDutyRecords  HistoricalDutyRecord[]
+  dutyBalanceAdjustments DutyBalanceAdjustment[]
 
   @@index([regionId])
   @@index([isActive])
@@ -207,4 +212,73 @@ model AuditLog {
   @@index([userId])
   @@index([entity, entityId])
   @@index([createdAt])
+}
+
+enum HistoricalMatchStatus {
+  MATCHED
+  UNMATCHED
+  IGNORED
+}
+
+model HistoricalDutyImportBatch {
+  id             String   @id @default(cuid())
+  fileName       String
+  rowCount       Int      @default(0)
+  matchedCount   Int      @default(0)
+  unmatchedCount Int      @default(0)
+  warningCount   Int      @default(0)
+  note           String?
+  createdAt      DateTime @default(now())
+
+  importedById String?
+  importedBy   User?   @relation(fields: [importedById], references: [id])
+
+  records HistoricalDutyRecord[]
+}
+
+model HistoricalDutyRecord {
+  id              String                @id @default(cuid())
+  rowNumber       Int
+  dutyDate        DateTime
+  rawPharmacyName String
+  rawRegionName   String?
+  rawDutyType     String?
+  rawPhone        String?
+  rawAddress      String?
+  rawNote         String?
+  dutyType        String
+  weight          Float                 @default(1)
+  matchStatus     HistoricalMatchStatus @default(UNMATCHED)
+  warningMessage  String?
+  createdAt       DateTime              @default(now())
+
+  batchId String
+  batch   HistoricalDutyImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  pharmacyId String?
+  pharmacy   Pharmacy? @relation(fields: [pharmacyId], references: [id], onDelete: SetNull)
+
+  regionId String?
+  region   Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
+
+  @@index([pharmacyId])
+  @@index([regionId])
+  @@index([dutyDate])
+  @@index([batchId])
+  @@index([matchStatus])
+}
+
+model DutyBalanceAdjustment {
+  id        String   @id @default(cuid())
+  points    Float
+  reason    String
+  createdAt DateTime @default(now())
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id])
+
+  @@index([pharmacyId])
 }
