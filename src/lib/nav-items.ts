@@ -30,7 +30,7 @@ export const navItems: NavItem[] = [
   { label: "Tatil Günleri", href: "/tatil-gunleri", icon: CalendarDays },
   { label: "Mazeretler", href: "/mazeretler", icon: UserX },
   { label: "Nöbet Çizelgeleri", href: "/cizelgeler", icon: CalendarRange },
-  { label: "Adalet Raporu", href: "/adalet-raporu", icon: Scale },
+  { label: "Nöbet Dengesi", href: "/nobet-dengesi", icon: Scale },
   { label: "Denetim Kayıtları", href: "/denetim-kayitlari", icon: History },
   { label: "Vatandaş Ekranı", href: "/vatandas", icon: Globe },
   {

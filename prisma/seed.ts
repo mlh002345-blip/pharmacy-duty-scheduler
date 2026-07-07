@@ -20,7 +20,9 @@ const REGIONS = [
 // Demo-only credentials, never use these in a real deployment.
 const USERS = [
   {
-    name: "Ayşe Yılmaz",
+    // Kurum adı: panel "Hoş geldiniz, Eczacı Odası" göstersin diye
+    // yönetici görünen adı kişi adı değil kurum adıdır.
+    name: "Eczacı Odası",
     email: "admin@example.com",
     password: "Admin123!",
     role: "ADMIN" as const,

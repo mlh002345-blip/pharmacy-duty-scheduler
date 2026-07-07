@@ -75,8 +75,8 @@ export default async function GirisPage() {
               Nöbet çizelgeleri artık tek merkezden
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-white/65">
-              Eczane, bölge ve kural yönetiminden otomatik çizelgelemeye; adalet raporundan
-              vatandaş ekranına kadar tüm nöbet süreci tek sistemde.
+              Eczane, bölge ve kural yönetiminden otomatik çizelgelemeye; nöbet yükü
+              analizinden vatandaş ekranına kadar tüm nöbet süreci tek sistemde.
             </p>
           </div>
           <ul className="flex flex-col gap-3">

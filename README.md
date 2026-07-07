@@ -9,7 +9,7 @@ nöbet planlamasının yerine geçer:
 - tatil günü ve mazeret (uygun olmama) kaydı
 - kural tabanlı otomatik aylık nöbet çizelgesi oluşturma
 - manuel nöbet ataması değişikliği (gerekçe ile)
-- adalet (yük dağılımı) raporu
+- nöbet dengesi / nöbet yükü analizi
 - Excel ve PDF olarak dışa aktarma
 - taslak/yayın durumu yönetimi
 - rol tabanlı yetkilendirme ile kullanıcı yönetimi
@@ -115,7 +115,7 @@ gözden geçirilmesi gereken güvenlik maddeleri için bkz.
 1. `admin@example.com` ile `/giris` üzerinden giriş yapın.
 2. Panel, Eczaneler, Nöbet Bölgeleri ve Nöbet Kuralları sayfalarını inceleyin.
 3. `/cizelgeler/yeni` üzerinden yeni bir nöbet çizelgesi oluşturun.
-4. Çizelge detay sayfasında adalet raporunu, manuel değişiklik ve dışa
+4. Çizelge detay sayfasında nöbet dengesini, manuel değişiklik ve dışa
    aktarma (Excel/PDF) seçeneklerini gösterin.
 5. Çizelgeyi yayınlayın ve `/vatandas` sayfasında sonucu gösterin.
 6. `/denetim-kayitlari` sayfasında yapılan işlemlerin kaydını gösterin.
@@ -154,7 +154,7 @@ gözden geçirilmesi gereken güvenlik maddeleri için bkz.
 
 - Kullanıcı silme (hard delete) uygulanmadı; denetim kaydı bütünlüğünü
   korumak için sadece aktif/pasif geçişi desteklenir.
-- Adalet raporu şu an yalnızca tek bir çizelge bazında hesaplanıyor; tüm
+- Çizelge bazlı nöbet yükü analizi tek dönem içindir; tüm
   dönemleri kapsayan genel bir rapor henüz yok.
 - Şifre sıfırlama e-posta akışı yok; şifre değişikliği sadece ADMIN
   tarafından kullanıcı düzenleme ekranından yapılabilir.

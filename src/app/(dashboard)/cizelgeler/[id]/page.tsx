@@ -302,14 +302,14 @@ export default async function CizelgeDetayPage({
         </CardContent>
       </Card>
 
-      <Card id="adalet-raporu">
+      <Card id="nobet-dengesi">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Scale className="text-primary size-4.5" />
-            Adalet Raporu
+            Nöbet Dengesi
           </CardTitle>
           <CardDescription>
-            Bu çizelgedeki atamalara göre eczane bazlı yük dağılımı.
+            Bu çizelgedeki atamalara göre eczane bazlı nöbet yükü analizi.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -320,7 +320,7 @@ export default async function CizelgeDetayPage({
                 <TableHead>Toplam Nöbet</TableHead>
                 <TableHead>Hafta Sonu Nöbeti</TableHead>
                 <TableHead>Tatil/Bayram Nöbeti</TableHead>
-                <TableHead>Toplam Yük Puanı</TableHead>
+                <TableHead>Denge Skoru</TableHead>
                 <TableHead>Son Nöbet Tarihi</TableHead>
               </TableRow>
             </TableHeader>

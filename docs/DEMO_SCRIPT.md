@@ -65,14 +65,14 @@ dikkate alarak günlük atamaları belirliyor."
 - (Varsa) uyarı listesini gösterip "yetersiz eczane olan günlerde sistem
   çökmüyor, sadece uyarı veriyor" diyerek açıklayın.
 
-## 7. Adalet Raporu (1 dk)
+## 7. Nöbet Dengesi (1 dk)
 
 "Çizelgenin altında, her eczanenin kaç nöbet tuttuğunu, kaçının hafta
 sonuna, kaçının tatil gününe denk geldiğini ve toplam yük puanını gösteren
-bir adalet raporu var. Bu sayede nöbet dağılımının dengeli olduğunu
+bir nöbet yükü analizi var. Bu sayede nöbet dağılımının dengeli olduğunu
 kanıtlayabiliyoruz."
 
-- Aynı sayfada "Adalet Raporu" tablosuna kaydırın.
+- Aynı sayfada "Nöbet Dengesi" tablosuna kaydırın.
 
 ## 8. Manuel Değişiklik ve Gerekçe (1.5 dk)
 
