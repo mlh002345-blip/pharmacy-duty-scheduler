@@ -76,6 +76,18 @@ const GENERIC_PHARMACY_NAMES = [
   "Yıldız Eczanesi",
   "Çınar Eczanesi",
   "Barış Eczanesi",
+  "Yaşam Eczanesi",
+  "Dost Eczanesi",
+  "Kardelen Eczanesi",
+  "Vefa Eczanesi",
+  "Gül Eczanesi",
+  "Nur Eczanesi",
+  "İmge Eczanesi",
+  "Ada Eczanesi",
+  "Cihan Eczanesi",
+  "Zafer Eczanesi",
+  "Selvi Eczanesi",
+  "Vadi Eczanesi",
 ];
 
 function turkishLandlinePhone(areaCode: string): string {
@@ -89,13 +101,37 @@ function turkishAddress(district: string): string {
   return `${faker.location.streetAddress()}, ${district}/İstanbul`;
 }
 
-function pharmacyName(lastName: string): string {
-  // Most Turkish pharmacies are named after the pharmacist's surname.
-  const useGenericName = faker.datatype.boolean({ probability: 0.25 });
-  if (useGenericName) {
-    return faker.helpers.arrayElement(GENERIC_PHARMACY_NAMES);
+// Eczane adları veri sağlık kontrolünün "aynı isimle birden fazla eczane
+// kaydı" kritik hatasını tetiklememesi için demo genelinde benzersiz
+// üretilir. Önce ortak/jenerik isim havuzundan (henüz kullanılmamışsa),
+// yoksa soyadı tabanlı bir isimle — soyadı çakışırsa yeni bir soyadıyla
+// tekrar denenir.
+function generateUniquePharmacyName(usedNames: Set<string>): {
+  name: string;
+  firstName: string;
+  lastName: string;
+} {
+  const firstName = faker.person.firstName();
+  const preferGeneric = faker.datatype.boolean({ probability: 0.25 });
+
+  if (preferGeneric) {
+    const availableGeneric = GENERIC_PHARMACY_NAMES.find((n) => !usedNames.has(n));
+    if (availableGeneric) {
+      usedNames.add(availableGeneric);
+      return { name: availableGeneric, firstName, lastName: faker.person.lastName() };
+    }
   }
-  return `${lastName} Eczanesi`;
+
+  let lastName = faker.person.lastName();
+  let name = `${lastName} Eczanesi`;
+  let attempts = 0;
+  while (usedNames.has(name) && attempts < 100) {
+    lastName = faker.person.lastName();
+    name = `${lastName} Eczanesi`;
+    attempts += 1;
+  }
+  usedNames.add(name);
+  return { name, firstName, lastName };
 }
 
 // Bu script veritabanını tamamen temizleyip sahte demo verisiyle doldurur.
@@ -180,13 +216,11 @@ async function main() {
     )
   );
 
+  const usedPharmacyNames = new Set<string>();
   const pharmacyData = Array.from({ length: 100 }).map((_, i) => {
     const regionConfig = REGIONS[i % REGIONS.length];
     const region = regions[i % regions.length];
-    const firstName = faker.person.firstName();
-    const lastName = faker.person.lastName();
-
-    const name = pharmacyName(lastName);
+    const { name, firstName, lastName } = generateUniquePharmacyName(usedPharmacyNames);
     const address = turkishAddress(regionConfig.district);
 
     return {
