@@ -279,7 +279,7 @@ export default async function CizelgeDetayPage({
           {canPublish &&
             (schedule.status === "DRAFT" ? (
               <form action={publishDutyScheduleAction.bind(null, schedule.id)}>
-                <SubmitButton>Yayınla</SubmitButton>
+                <SubmitButton disabled={requestConflicts.length > 0}>Yayınla</SubmitButton>
               </form>
             ) : (
               <form action={unpublishDutyScheduleAction.bind(null, schedule.id)}>
@@ -290,6 +290,13 @@ export default async function CizelgeDetayPage({
       </div>
 
       <ListBanner success={success} error={error} />
+
+      {requestConflicts.length > 0 && schedule.status === "DRAFT" && (
+        <p className="text-destructive text-sm font-medium">
+          Bu çizelgede onaylı nöbet talebiyle çakışan atamalar bulunduğu için
+          yayınlama yapılamaz. Lütfen çakışmaları giderin.
+        </p>
+      )}
 
       {requestConflicts.length > 0 && (
         <div className="border-destructive/50 bg-destructive/10 rounded-xl border p-5">

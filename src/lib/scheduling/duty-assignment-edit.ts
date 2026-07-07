@@ -121,6 +121,31 @@ export function findDutyRequestConflicts(params: {
   return conflicts;
 }
 
+export type DutyRequestForConflictCheck = {
+  pharmacyId: string;
+  requestType: "CANNOT_DUTY" | "EMERGENCY_EXCUSE" | "PREFER_DUTY" | "SWAP_REQUEST";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "LATE";
+  startDate: Date;
+  endDate: Date;
+};
+
+/**
+ * findDutyRequestConflicts'ın, status/requestType filtresini de kendi
+ * içinde uygulayan hâli — yayınlama gibi, tüm nöbet taleplerinin (herhangi
+ * bir durum/tür) ham hâlini elinde bulunduran çağrı yerleri için.
+ */
+export function findScheduleConflicts(params: {
+  assignments: ExistingAssignment[];
+  dutyRequests: DutyRequestForConflictCheck[];
+}): ConflictingAssignment[] {
+  const blocking: ApprovedBlockingDutyRequest[] = params.dutyRequests.filter(
+    (r): r is DutyRequestForConflictCheck & { requestType: HardBlockingRequestType } =>
+      r.status === "APPROVED" &&
+      (r.requestType === "CANNOT_DUTY" || r.requestType === "EMERGENCY_EXCUSE")
+  );
+  return findDutyRequestConflicts({ assignments: params.assignments, dutyRequests: blocking });
+}
+
 /**
  * Returns the smallest gap in days between the candidate date and any other
  * duty of the candidate pharmacy, if that gap is shorter than

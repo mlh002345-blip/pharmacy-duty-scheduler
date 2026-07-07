@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   findDutyRequestConflicts,
   findMinDaysBetweenDutiesViolation,
+  findScheduleConflicts,
   isAlreadyAssignedOnDate,
   isBlockedByApprovedDutyRequest,
   isEligibleReplacementPharmacy,
@@ -213,6 +214,78 @@ describe("findDutyRequestConflicts", () => {
       ],
     });
     expect(conflicts.length).toBe(0);
+  });
+});
+
+describe("findScheduleConflicts — yayınlama engelleme kontrolü", () => {
+  const assignmentDate = dateAtUtcMidnight(2026, 4, 10);
+  const assignments = [{ id: "a1", pharmacyId: "p1", date: assignmentDate }];
+  const requestRange = {
+    startDate: dateAtUtcMidnight(2026, 4, 5),
+    endDate: dateAtUtcMidnight(2026, 4, 15),
+  };
+
+  it("rejects (finds a conflict) when an approved CANNOT_DUTY request overlaps an assignment", () => {
+    const conflicts = findScheduleConflicts({
+      assignments,
+      dutyRequests: [
+        { pharmacyId: "p1", requestType: "CANNOT_DUTY", status: "APPROVED", ...requestRange },
+      ],
+    });
+    expect(conflicts.length).toBe(1);
+  });
+
+  it("rejects (finds a conflict) when an approved EMERGENCY_EXCUSE request overlaps an assignment", () => {
+    const conflicts = findScheduleConflicts({
+      assignments,
+      dutyRequests: [
+        {
+          pharmacyId: "p1",
+          requestType: "EMERGENCY_EXCUSE",
+          status: "APPROVED",
+          ...requestRange,
+        },
+      ],
+    });
+    expect(conflicts.length).toBe(1);
+  });
+
+  it("allows publishing when the only matching requests are PENDING/REJECTED/CANCELLED/LATE", () => {
+    for (const status of ["PENDING", "REJECTED", "CANCELLED", "LATE"] as const) {
+      const conflicts = findScheduleConflicts({
+        assignments,
+        dutyRequests: [
+          { pharmacyId: "p1", requestType: "CANNOT_DUTY", status, ...requestRange },
+        ],
+      });
+      expect(conflicts.length).toBe(0);
+    }
+  });
+
+  it("allows publishing when the only approved requests are PREFER_DUTY or SWAP_REQUEST", () => {
+    for (const requestType of ["PREFER_DUTY", "SWAP_REQUEST"] as const) {
+      const conflicts = findScheduleConflicts({
+        assignments,
+        dutyRequests: [
+          { pharmacyId: "p1", requestType, status: "APPROVED", ...requestRange },
+        ],
+      });
+      expect(conflicts.length).toBe(0);
+    }
+  });
+
+  it("allows publishing again once the conflicting assignment has been corrected", () => {
+    const dutyRequests = [
+      { pharmacyId: "p1", requestType: "CANNOT_DUTY" as const, status: "APPROVED" as const, ...requestRange },
+    ];
+    const before = findScheduleConflicts({ assignments, dutyRequests });
+    expect(before.length).toBe(1);
+
+    // Correction: the assignment is moved to a different pharmacy not
+    // covered by the approved request.
+    const correctedAssignments = [{ id: "a1", pharmacyId: "p2", date: assignmentDate }];
+    const after = findScheduleConflicts({ assignments: correctedAssignments, dutyRequests });
+    expect(after.length).toBe(0);
   });
 });
 

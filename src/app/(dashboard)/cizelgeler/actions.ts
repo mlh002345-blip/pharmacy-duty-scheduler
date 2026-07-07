@@ -13,6 +13,7 @@ import {
   DutyScheduleGenerationError,
   generateAndSaveDutySchedule,
 } from "@/lib/scheduling/generate-and-save-duty-schedule";
+import { findScheduleConflicts } from "@/lib/scheduling/duty-assignment-edit";
 
 export async function createDutyScheduleAction(
   _prevState: ActionState,
@@ -146,12 +147,32 @@ export async function deleteDutyScheduleAction(id: string) {
 export async function publishDutyScheduleAction(id: string) {
   const user = await requirePermissionOrRedirect("publishSchedule", `/cizelgeler/${id}`);
 
-  const schedule = await prisma.dutySchedule.findUnique({ where: { id } });
+  const schedule = await prisma.dutySchedule.findUnique({
+    where: { id },
+    include: { assignments: { select: { id: true, pharmacyId: true, date: true } } },
+  });
   if (!schedule) {
     redirectWithMessage("/cizelgeler", "error", "Nöbet çizelgesi bulunamadı.");
   }
   if (schedule.status === "PUBLISHED") {
     redirectWithMessage(`/cizelgeler/${id}`, "error", "Çizelge zaten yayında.");
+  }
+
+  const assignmentPharmacyIds = [...new Set(schedule.assignments.map((a) => a.pharmacyId))];
+  const dutyRequests = await prisma.dutyRequest.findMany({
+    where: { pharmacyId: { in: assignmentPharmacyIds } },
+    select: { pharmacyId: true, requestType: true, status: true, startDate: true, endDate: true },
+  });
+  const conflicts = findScheduleConflicts({
+    assignments: schedule.assignments,
+    dutyRequests,
+  });
+  if (conflicts.length > 0) {
+    redirectWithMessage(
+      `/cizelgeler/${id}`,
+      "error",
+      "Bu çizelgede onaylı nöbet talebiyle çakışan atamalar bulunduğu için yayınlama yapılamaz. Lütfen çakışmaları giderin."
+    );
   }
 
   const updated = await prisma.dutySchedule.update({
