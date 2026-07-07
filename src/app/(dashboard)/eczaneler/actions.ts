@@ -1,5 +1,7 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
@@ -18,9 +20,38 @@ function parsePharmacyForm(formData: FormData) {
     city: formData.get("city"),
     district: formData.get("district"),
     regionId: formData.get("regionId"),
+    email: formData.get("email"),
     mapUrl: formData.get("mapUrl"),
     isActive: formData.get("isActive") === "on",
   });
+}
+
+// Denetim kaydına yazılacak alanlar: requestToken gibi gizli alanlar
+// bilinçli olarak dışarıda bırakılır.
+function pharmacyAuditPayload(pharmacy: {
+  name: string;
+  pharmacistName: string;
+  phone: string;
+  address: string;
+  city: string;
+  district: string;
+  email: string | null;
+  mapUrl: string | null;
+  isActive: boolean;
+  regionId: string;
+}) {
+  return {
+    name: pharmacy.name,
+    pharmacistName: pharmacy.pharmacistName,
+    phone: pharmacy.phone,
+    address: pharmacy.address,
+    city: pharmacy.city,
+    district: pharmacy.district,
+    email: pharmacy.email,
+    mapUrl: pharmacy.mapUrl,
+    isActive: pharmacy.isActive,
+    regionId: pharmacy.regionId,
+  };
 }
 
 export async function createPharmacyAction(
@@ -36,9 +67,15 @@ export async function createPharmacyAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  const { mapUrl, ...rest } = parsed.data;
+  const { mapUrl, email, ...rest } = parsed.data;
   const pharmacy = await prisma.pharmacy.create({
-    data: { ...rest, mapUrl: mapUrl || null },
+    data: {
+      ...rest,
+      mapUrl: mapUrl || null,
+      email: email || null,
+      // Herkese açık nöbet talep formu bağlantısı için eczaneye özel token.
+      requestToken: randomBytes(16).toString("hex"),
+    },
   });
 
   await writeAuditLog({
@@ -46,7 +83,7 @@ export async function createPharmacyAction(
     action: "CREATE",
     entity: "Pharmacy",
     entityId: pharmacy.id,
-    after: pharmacy,
+    after: pharmacyAuditPayload(pharmacy),
   });
 
   revalidatePath("/eczaneler");
@@ -72,10 +109,10 @@ export async function updatePharmacyAction(
     return { success: false, message: "Eczane bulunamadı." };
   }
 
-  const { mapUrl, ...rest } = parsed.data;
+  const { mapUrl, email, ...rest } = parsed.data;
   const pharmacy = await prisma.pharmacy.update({
     where: { id },
-    data: { ...rest, mapUrl: mapUrl || null },
+    data: { ...rest, mapUrl: mapUrl || null, email: email || null },
   });
 
   await writeAuditLog({
@@ -83,8 +120,8 @@ export async function updatePharmacyAction(
     action: "UPDATE",
     entity: "Pharmacy",
     entityId: pharmacy.id,
-    before,
-    after: pharmacy,
+    before: pharmacyAuditPayload(before),
+    after: pharmacyAuditPayload(pharmacy),
   });
 
   revalidatePath("/eczaneler");
@@ -109,8 +146,8 @@ export async function togglePharmacyStatusAction(id: string) {
     action: "UPDATE",
     entity: "Pharmacy",
     entityId: id,
-    before: pharmacy,
-    after: updated,
+    before: pharmacyAuditPayload(pharmacy),
+    after: pharmacyAuditPayload(updated),
   });
 
   revalidatePath("/eczaneler");
@@ -147,7 +184,7 @@ export async function deletePharmacyAction(id: string) {
     action: "DELETE",
     entity: "Pharmacy",
     entityId: id,
-    before: pharmacy,
+    before: pharmacyAuditPayload(pharmacy),
   });
 
   revalidatePath("/eczaneler");

@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { PrismaClient, HolidayType } from "@prisma/client";
 import { faker } from "@faker-js/faker/locale/tr";
 
@@ -18,9 +20,11 @@ const REGIONS = [
 ];
 
 // Demo-only credentials, never use these in a real deployment.
+// The admin display name is intentionally the institution ("Eczacı Odası")
+// so the dashboard greets with "Hoş geldiniz, Eczacı Odası" in demos.
 const USERS = [
   {
-    name: "Ayşe Yılmaz",
+    name: "Eczacı Odası",
     email: "admin@example.com",
     password: "Admin123!",
     role: "ADMIN" as const,
@@ -187,11 +191,18 @@ async function main() {
       phone: turkishLandlinePhone(regionConfig.areaCode),
       city: "İstanbul",
       district: regionConfig.district,
+      // Bildirim önizlemesinde "e-posta bilgisi eksik" durumunu da
+      // gösterebilmek için eczanelerin bir kısmı e-postasız bırakılır.
+      email: faker.datatype.boolean({ probability: 0.85 })
+        ? faker.internet.email({ provider: "example.com" }).toLowerCase()
+        : null,
       // API anahtarı gerektirmeyen basit bir harita arama bağlantısı;
       // vatandaş ekranındaki "Yol Tarifi Al" butonu bu alanı kullanır.
       mapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
         `${name} ${address}`
       )}`,
+      // Herkese açık nöbet talep formu bağlantısı için eczaneye özel token.
+      requestToken: randomBytes(16).toString("hex"),
       isActive: faker.datatype.boolean({ probability: 0.9 }),
       regionId: region.id,
     };
@@ -248,7 +259,7 @@ async function main() {
   const publishedRegion = regionsByName[0];
   const draftRegion = regionsByName[1];
 
-  const publishedSchedule = await generateAndSaveDutySchedule({
+  const { schedule: publishedSchedule } = await generateAndSaveDutySchedule({
     month: currentMonth,
     year: currentYear,
     regionId: publishedRegion.id,

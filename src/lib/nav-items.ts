@@ -10,6 +10,9 @@ import {
   History,
   Globe,
   Users,
+  Inbox,
+  Archive,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,8 +32,11 @@ export const navItems: NavItem[] = [
   { label: "Nöbet Kuralları", href: "/kurallar", icon: ListChecks },
   { label: "Tatil Günleri", href: "/tatil-gunleri", icon: CalendarDays },
   { label: "Mazeretler", href: "/mazeretler", icon: UserX },
+  { label: "Nöbet Talepleri", href: "/nobet-talepleri", icon: Inbox },
+  { label: "Geçmiş Nöbetler", href: "/gecmis-nobetler", icon: Archive },
   { label: "Nöbet Çizelgeleri", href: "/cizelgeler", icon: CalendarRange },
-  { label: "Adalet Raporu", href: "/adalet-raporu", icon: Scale },
+  { label: "Nöbet Dengesi", href: "/nobet-dengesi", icon: Scale },
+  { label: "Veri Kontrol", href: "/veri-kontrol", icon: ShieldCheck },
   { label: "Denetim Kayıtları", href: "/denetim-kayitlari", icon: History },
   { label: "Vatandaş Ekranı", href: "/vatandas", icon: Globe },
   {

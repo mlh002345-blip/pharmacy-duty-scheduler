@@ -13,6 +13,7 @@ import {
   DutyScheduleGenerationError,
   generateAndSaveDutySchedule,
 } from "@/lib/scheduling/generate-and-save-duty-schedule";
+import { runScheduleGenerationPreCheck } from "@/lib/scheduling/pre-check";
 
 export async function createDutyScheduleAction(
   _prevState: ActionState,
@@ -81,10 +82,21 @@ export async function createDutyScheduleAction(
     };
   }
 
+  // Ön kontrol: kritik hatalar oluşturmayı engeller, uyarılar bilgi verir.
+  const preCheck = await runScheduleGenerationPreCheck(regionId, month, year);
+  if (preCheck.critical.length > 0) {
+    return {
+      success: false,
+      message: `Çizelge oluşturulamadı: ${preCheck.critical.join(" ")}`,
+    };
+  }
+
   let scheduleId: string;
+  let infoMessages: string[];
   try {
-    const schedule = await generateAndSaveDutySchedule({ month, year, regionId });
-    scheduleId = schedule.id;
+    const result = await generateAndSaveDutySchedule({ month, year, regionId });
+    scheduleId = result.schedule.id;
+    infoMessages = result.info;
   } catch (error) {
     if (error instanceof DutyScheduleGenerationError) {
       return { success: false, message: error.message };
@@ -100,11 +112,15 @@ export async function createDutyScheduleAction(
     after: { month, year, regionId, status: "DRAFT" },
   });
 
+  const messageParts = [
+    "Taslak olarak oluşturuldu.",
+    ...infoMessages,
+    ...preCheck.warnings,
+  ];
+
   revalidatePath("/cizelgeler");
   redirect(
-    `/cizelgeler/${scheduleId}?success=${encodeURIComponent(
-      "Taslak olarak oluşturuldu."
-    )}`
+    `/cizelgeler/${scheduleId}?success=${encodeURIComponent(messageParts.join(" "))}`
   );
 }
 

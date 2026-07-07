@@ -26,8 +26,12 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  auditLogs AuditLog[]
-  sessions  Session[]
+  auditLogs                AuditLog[]
+  sessions                 Session[]
+  historicalImportBatches  HistoricalDutyImportBatch[]
+  dutyBalanceAdjustments   DutyBalanceAdjustment[]
+  reviewedDutyRequests     DutyRequest[]
+  notificationLogs         NotificationLog[]
 }
 
 model Session {
@@ -51,9 +55,11 @@ model Region {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  pharmacies    Pharmacy[]
-  dutyRule      DutyRule?
-  dutySchedules DutySchedule[]
+  pharmacies            Pharmacy[]
+  dutyRule              DutyRule?
+  dutySchedules         DutySchedule[]
+  historicalDutyRecords HistoricalDutyRecord[]
+  dutyRequests          DutyRequest[]
 }
 
 model Pharmacy {
@@ -64,7 +70,11 @@ model Pharmacy {
   address        String
   city           String
   district       String
+  email          String?
   mapUrl         String?
+  // Herkese açık nöbet talep formu (/eczane-talep/[token]) için
+  // tahmin edilemez, eczaneye özel bağlantı anahtarı.
+  requestToken   String?  @unique
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -72,8 +82,12 @@ model Pharmacy {
   regionId String
   region   Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
 
-  unavailabilities Unavailability[]
-  dutyAssignments  DutyAssignment[]
+  unavailabilities       Unavailability[]
+  dutyAssignments        DutyAssignment[]
+  historicalDutyRecords  HistoricalDutyRecord[]
+  dutyBalanceAdjustments DutyBalanceAdjustment[]
+  dutyRequests           DutyRequest[]
+  notificationLogs       NotificationLog[]
 
   @@index([regionId])
   @@index([isActive])
@@ -141,8 +155,9 @@ model DutySchedule {
   regionId String
   region   Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
 
-  assignments DutyAssignment[]
-  warnings    DutyScheduleWarning[]
+  assignments      DutyAssignment[]
+  warnings         DutyScheduleWarning[]
+  notificationLogs NotificationLog[]
 
   @@unique([year, month, regionId])
   @@index([regionId])
@@ -164,7 +179,8 @@ model DutyAssignment {
   pharmacyId String
   pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
 
-  auditLogs AuditLog[]
+  auditLogs        AuditLog[]
+  notificationLogs NotificationLog[]
 
   @@index([dutyScheduleId])
   @@index([pharmacyId])
@@ -206,5 +222,170 @@ model AuditLog {
 
   @@index([userId])
   @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+enum HistoricalMatchStatus {
+  MATCHED
+  UNMATCHED
+  IGNORED
+}
+
+model HistoricalDutyImportBatch {
+  id             String   @id @default(cuid())
+  fileName       String
+  rowCount       Int      @default(0)
+  matchedCount   Int      @default(0)
+  unmatchedCount Int      @default(0)
+  warningCount   Int      @default(0)
+  note           String?
+  createdAt      DateTime @default(now())
+
+  importedById String?
+  importedBy   User?   @relation(fields: [importedById], references: [id])
+
+  records HistoricalDutyRecord[]
+}
+
+model HistoricalDutyRecord {
+  id              String                @id @default(cuid())
+  rowNumber       Int
+  dutyDate        DateTime
+  rawPharmacyName String
+  rawRegionName   String?
+  rawDutyType     String?
+  rawPhone        String?
+  rawAddress      String?
+  rawNote         String?
+  dutyType        String
+  weight          Float                 @default(1)
+  matchStatus     HistoricalMatchStatus @default(UNMATCHED)
+  warningMessage  String?
+  createdAt       DateTime              @default(now())
+
+  batchId String
+  batch   HistoricalDutyImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  pharmacyId String?
+  pharmacy   Pharmacy? @relation(fields: [pharmacyId], references: [id], onDelete: SetNull)
+
+  regionId String?
+  region   Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
+
+  @@index([pharmacyId])
+  @@index([regionId])
+  @@index([dutyDate])
+  @@index([batchId])
+  @@index([matchStatus])
+}
+
+model DutyBalanceAdjustment {
+  id        String   @id @default(cuid())
+  points    Float
+  reason    String
+  createdAt DateTime @default(now())
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+
+  createdById String?
+  createdBy   User?   @relation(fields: [createdById], references: [id])
+
+  @@index([pharmacyId])
+}
+
+enum DutyRequestType {
+  CANNOT_DUTY
+  PREFER_DUTY
+  SWAP_REQUEST
+  EMERGENCY_EXCUSE
+}
+
+enum DutyRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  LATE
+}
+
+enum DutyRequestSource {
+  ADMIN_ENTRY
+  PUBLIC_LINK
+  IMPORT
+}
+
+model DutyRequest {
+  id          String            @id @default(cuid())
+  requestType DutyRequestType
+  startDate   DateTime
+  endDate     DateTime
+  explanation String
+  status      DutyRequestStatus @default(PENDING)
+  source      DutyRequestSource @default(ADMIN_ENTRY)
+  reviewNote  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+
+  regionId String?
+  region   Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
+
+  reviewedById String?
+  reviewedBy   User?   @relation(fields: [reviewedById], references: [id])
+
+  @@index([pharmacyId])
+  @@index([regionId])
+  @@index([status])
+  @@index([requestType])
+  @@index([startDate])
+  @@index([endDate])
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  PREVIEWED
+  SIMULATED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model NotificationLog {
+  id           String              @id @default(cuid())
+  channel      NotificationChannel
+  recipient    String
+  subject      String?
+  message      String
+  status       NotificationStatus
+  provider     String?
+  errorMessage String?
+  sentAt       DateTime?
+  createdAt    DateTime            @default(now())
+
+  scheduleId String?
+  schedule   DutySchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+
+  assignmentId String?
+  assignment   DutyAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+
+  pharmacyId String
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+
+  sentById String?
+  sentBy   User?   @relation(fields: [sentById], references: [id])
+
+  @@index([scheduleId])
+  @@index([assignmentId])
+  @@index([pharmacyId])
+  @@index([channel])
+  @@index([status])
   @@index([createdAt])
 }

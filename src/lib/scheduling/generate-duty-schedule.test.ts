@@ -214,3 +214,125 @@ describe("generateDutySchedule", () => {
     expect(repeats).toBeLessThanOrEqual(1);
   });
 });
+
+describe("generateDutySchedule — nöbet dengesi ve talepler", () => {
+  it("includes opening balance (historical load) in assignment priority", () => {
+    // "yuklu" eczanesi yüksek başlangıç yüküyle başlar; "yeni" eczane
+    // yük eşitlenene kadar öncelik almalıdır.
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("yuklu"), pharmacy("yeni")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      openingBalance: new Map([
+        ["yuklu", 10],
+        ["yeni", 0],
+      ]),
+    });
+
+    // Yük eşitlenene kadar tüm atamalar "yeni" eczaneye gitmeli.
+    const firstFive = result.assignments.slice(0, 5);
+    expect(firstFive.every((a) => a.pharmacyId === "yeni")).toBe(true);
+    const yeniCount = result.assignments.filter((a) => a.pharmacyId === "yeni").length;
+    const yukluCount = result.assignments.filter((a) => a.pharmacyId === "yuklu").length;
+    expect(yeniCount).toBeGreaterThan(yukluCount);
+    expect(result.info.join(" ")).toContain(
+      "Geçmiş nöbet yükleri denge skoruna dahil edildi."
+    );
+  });
+
+  it("blocks assignment for approved CANNOT_DUTY requests", () => {
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      dutyRequests: [
+        {
+          pharmacyId: "a",
+          requestType: "CANNOT_DUTY",
+          status: "APPROVED",
+          startDate: dateAtUtcMidnight(YEAR, MONTH, 1),
+          endDate: dateAtUtcMidnight(YEAR, MONTH, 31),
+        },
+      ],
+    });
+
+    expect(result.assignments.every((a) => a.pharmacyId === "b")).toBe(true);
+    expect(result.info.join(" ")).toContain("1 onaylı nöbet tutamama talebi");
+  });
+
+  it("ignores pending and rejected requests", () => {
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      dutyRequests: [
+        {
+          pharmacyId: "a",
+          requestType: "CANNOT_DUTY",
+          status: "PENDING",
+          startDate: dateAtUtcMidnight(YEAR, MONTH, 1),
+          endDate: dateAtUtcMidnight(YEAR, MONTH, 31),
+        },
+        {
+          pharmacyId: "a",
+          requestType: "EMERGENCY_EXCUSE",
+          status: "REJECTED",
+          startDate: dateAtUtcMidnight(YEAR, MONTH, 1),
+          endDate: dateAtUtcMidnight(YEAR, MONTH, 31),
+        },
+      ],
+    });
+
+    // Beklemede/reddedilmiş talepler etki etmez: "a" da atama alır.
+    expect(result.assignments.some((a) => a.pharmacyId === "a")).toBe(true);
+    expect(result.info.length).toBe(0);
+  });
+
+  it("blocks assignment for approved EMERGENCY_EXCUSE requests", () => {
+    const start = dateAtUtcMidnight(YEAR, MONTH, 10);
+    const end = dateAtUtcMidnight(YEAR, MONTH, 12);
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+      dutyRequests: [
+        {
+          pharmacyId: "a",
+          requestType: "EMERGENCY_EXCUSE",
+          status: "APPROVED",
+          startDate: start,
+          endDate: end,
+        },
+      ],
+    });
+
+    const inRange = result.assignments.filter(
+      (a) => a.date.getTime() >= start.getTime() && a.date.getTime() <= end.getTime()
+    );
+    expect(inRange.every((a) => a.pharmacyId === "b")).toBe(true);
+  });
+});

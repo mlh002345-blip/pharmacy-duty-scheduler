@@ -12,6 +12,9 @@ export const pharmacySchema = z.object({
   city: z.string().trim().min(1, "İl zorunludur."),
   district: z.string().trim().min(1, "İlçe zorunludur."),
   regionId: z.string().trim().min(1, "Nöbet bölgesi seçiniz."),
+  email: z
+    .union([z.literal(""), z.string().trim().email("Geçerli bir e-posta adresi giriniz.")])
+    .optional(),
   mapUrl: z
     .union([z.literal(""), z.string().trim().url("Geçerli bir bağlantı giriniz.")])
     .optional(),

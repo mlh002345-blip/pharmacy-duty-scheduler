@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
-import { SubmitButton } from "@/components/layout/submit-button";
+import { ConfirmSubmitForm } from "@/components/layout/confirm-submit-form";
 import { ExportButton } from "@/components/layout/export-button";
 import { prisma } from "@/lib/prisma";
 import {
@@ -28,7 +28,18 @@ import {
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permissions";
+import {
+  BALANCE_STATUS_LABELS,
+  classifyBalance,
+  formatPoints,
+  meanOf,
+} from "@/lib/balance/balance-status";
 import { publishDutyScheduleAction, unpublishDutyScheduleAction } from "../actions";
+import {
+  previewNotificationsAction,
+  simulateNotificationsAction,
+} from "./notification-actions";
+import { NotificationsSection } from "./notifications-section";
 
 export const dynamic = "force-dynamic";
 
@@ -130,6 +141,50 @@ export default async function CizelgeDetayPage({
     0
   );
 
+  // Nöbet dengesi bileşenleri: geçmiş nöbet puanı, manuel denge düzeltmesi
+  // ve yeni sistemdeki (tüm çizelgeler) toplam nöbet puanı.
+  const pharmacyIds = fairnessRows.map((row) => row.pharmacyId);
+  const [historicalGroups, adjustmentGroups, generatedGroups] = await Promise.all([
+    prisma.historicalDutyRecord.groupBy({
+      by: ["pharmacyId"],
+      where: { matchStatus: "MATCHED", pharmacyId: { in: pharmacyIds } },
+      _sum: { weight: true },
+    }),
+    prisma.dutyBalanceAdjustment.groupBy({
+      by: ["pharmacyId"],
+      where: { pharmacyId: { in: pharmacyIds } },
+      _sum: { points: true },
+    }),
+    prisma.dutyAssignment.groupBy({
+      by: ["pharmacyId"],
+      where: { pharmacyId: { in: pharmacyIds } },
+      _sum: { weight: true },
+    }),
+  ]);
+  const historicalByPharmacy = new Map(
+    historicalGroups.map((g) => [g.pharmacyId as string, g._sum.weight ?? 0])
+  );
+  const adjustmentByPharmacy = new Map(
+    adjustmentGroups.map((g) => [g.pharmacyId, g._sum.points ?? 0])
+  );
+  const generatedByPharmacy = new Map(
+    generatedGroups.map((g) => [g.pharmacyId, g._sum.weight ?? 0])
+  );
+
+  const balanceRows = fairnessRows.map((row) => {
+    const historicalPoints = historicalByPharmacy.get(row.pharmacyId) ?? 0;
+    const adjustmentPoints = adjustmentByPharmacy.get(row.pharmacyId) ?? 0;
+    const generatedPoints = generatedByPharmacy.get(row.pharmacyId) ?? 0;
+    return {
+      ...row,
+      historicalPoints,
+      adjustmentPoints,
+      generatedPoints,
+      totalBalance: historicalPoints + adjustmentPoints + generatedPoints,
+    };
+  });
+  const meanBalance = meanOf(balanceRows.map((row) => row.totalBalance));
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -166,13 +221,22 @@ export default async function CizelgeDetayPage({
           </div>
           {canPublish &&
             (schedule.status === "DRAFT" ? (
-              <form action={publishDutyScheduleAction.bind(null, schedule.id)}>
-                <SubmitButton>Yayınla</SubmitButton>
-              </form>
+              <ConfirmSubmitForm
+                action={publishDutyScheduleAction.bind(null, schedule.id)}
+                confirmMessage="Çizelge yayınlanacak ve vatandaş ekranında görünür olacak. Onaylıyor musunuz?"
+                pendingText="Yayınlanıyor..."
+              >
+                Yayınla
+              </ConfirmSubmitForm>
             ) : (
-              <form action={unpublishDutyScheduleAction.bind(null, schedule.id)}>
-                <SubmitButton variant="secondary">Yayından Kaldır</SubmitButton>
-              </form>
+              <ConfirmSubmitForm
+                action={unpublishDutyScheduleAction.bind(null, schedule.id)}
+                confirmMessage="Çizelge yayından kaldırılacak ve vatandaş ekranında görünmeyecek. Onaylıyor musunuz?"
+                pendingText="Kaldırılıyor..."
+                variant="secondary"
+              >
+                Yayından Kaldır
+              </ConfirmSubmitForm>
             ))}
         </div>
       </div>
@@ -302,14 +366,15 @@ export default async function CizelgeDetayPage({
         </CardContent>
       </Card>
 
-      <Card id="adalet-raporu">
+      <Card id="nobet-dengesi">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Scale className="text-primary size-4.5" />
-            Adalet Raporu
+            Nöbet Dengesi
           </CardTitle>
           <CardDescription>
-            Bu çizelgedeki atamalara göre eczane bazlı yük dağılımı.
+            Eczane bazlı nöbet yükü analizi: geçmiş nöbet yükü, manuel denge
+            düzeltmeleri ve yeni sistem nöbetleri birlikte değerlendirilir.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -317,41 +382,62 @@ export default async function CizelgeDetayPage({
             <TableHeader>
               <TableRow>
                 <TableHead>Eczane</TableHead>
-                <TableHead>Toplam Nöbet</TableHead>
-                <TableHead>Hafta Sonu Nöbeti</TableHead>
-                <TableHead>Tatil/Bayram Nöbeti</TableHead>
-                <TableHead>Toplam Yük Puanı</TableHead>
-                <TableHead>Son Nöbet Tarihi</TableHead>
+                <TableHead>Bu Dönem Nöbet Sayısı</TableHead>
+                <TableHead>Bu Dönem Yük Puanı</TableHead>
+                <TableHead>Geçmiş Nöbet Puanı</TableHead>
+                <TableHead>Manuel Denge Düzeltmesi</TableHead>
+                <TableHead>Yeni Sistem Nöbet Puanı</TableHead>
+                <TableHead>Toplam Denge Skoru</TableHead>
+                <TableHead>Denge Durumu</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {fairnessRows.map((row) => (
-                <TableRow key={row.pharmacyId}>
-                  <TableCell className="font-medium">{row.name}</TableCell>
-                  <TableCell>{row.totalDuties}</TableCell>
-                  <TableCell>{row.weekendDuties}</TableCell>
-                  <TableCell>{row.holidayDuties}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-8 font-medium tabular-nums">
-                        {row.totalLoadScore}
-                      </span>
-                      <div className="bg-muted h-1.5 w-24 overflow-hidden rounded-full">
-                        <div
-                          className="bg-primary h-full rounded-full"
-                          style={{
-                            width: `${maxLoadScore > 0 ? (row.totalLoadScore / maxLoadScore) * 100 : 0}%`,
-                          }}
-                        />
+              {balanceRows.map((row) => {
+                const status = classifyBalance(row.totalBalance, meanBalance);
+                return (
+                  <TableRow key={row.pharmacyId}>
+                    <TableCell className="font-medium">{row.name}</TableCell>
+                    <TableCell>{row.totalDuties}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-8 font-medium tabular-nums">
+                          {formatPoints(row.totalLoadScore)}
+                        </span>
+                        <div className="bg-muted h-1.5 w-20 overflow-hidden rounded-full">
+                          <div
+                            className="bg-primary h-full rounded-full"
+                            style={{
+                              width: `${maxLoadScore > 0 ? (row.totalLoadScore / maxLoadScore) * 100 : 0}%`,
+                            }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{row.lastDutyDate.toLocaleDateString("tr-TR")}</TableCell>
-                </TableRow>
-              ))}
-              {fairnessRows.length === 0 && (
+                    </TableCell>
+                    <TableCell>{formatPoints(row.historicalPoints)}</TableCell>
+                    <TableCell>{formatPoints(row.adjustmentPoints)}</TableCell>
+                    <TableCell>{formatPoints(row.generatedPoints)}</TableCell>
+                    <TableCell className="font-medium">
+                      {formatPoints(row.totalBalance)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          status === "HIGH"
+                            ? "warning"
+                            : status === "LOW"
+                              ? "info"
+                              : "success"
+                        }
+                      >
+                        {BALANCE_STATUS_LABELS[status]}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {balanceRows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground text-center">
+                  <TableCell colSpan={8} className="text-muted-foreground text-center">
                     Bu çizelge için veri bulunmuyor.
                   </TableCell>
                 </TableRow>
@@ -360,6 +446,12 @@ export default async function CizelgeDetayPage({
           </Table>
         </CardContent>
       </Card>
+
+      <NotificationsSection
+        isPublished={schedule.status === "PUBLISHED"}
+        previewAction={previewNotificationsAction.bind(null, schedule.id)}
+        simulateAction={simulateNotificationsAction.bind(null, schedule.id)}
+      />
     </div>
   );
 }

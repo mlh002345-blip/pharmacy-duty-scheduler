@@ -83,6 +83,18 @@ export function PharmacyForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
+        <Label htmlFor="email">E-posta (opsiyonel)</Label>
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          placeholder="eczane@ornek.com"
+          defaultValue={pharmacy?.email ?? ""}
+        />
+        <FieldError message={fieldError(state, "email")} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
         <Label htmlFor="mapUrl">Harita Bağlantısı (opsiyonel)</Label>
         <Input
           id="mapUrl"

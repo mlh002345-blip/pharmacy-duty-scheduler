@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getOpeningBalanceByPharmacy } from "@/lib/balance/duty-balance";
 import { dateAtUtcMidnight, daysInMonth } from "./date-tr";
 import { generateDutySchedule } from "./generate-duty-schedule";
 
@@ -42,25 +43,44 @@ export async function generateAndSaveDutySchedule({
 
   const pharmacyIds = pharmacies.map((p) => p.id);
 
-  const [holidays, unavailabilities, historicalAssignments] = await Promise.all([
-    prisma.holiday.findMany({
-      where: { date: { gte: monthStart, lte: monthEnd } },
-    }),
-    prisma.unavailability.findMany({
-      where: {
-        pharmacyId: { in: pharmacyIds },
-        startDate: { lte: monthEnd },
-        endDate: { gte: monthStart },
-      },
-    }),
-    prisma.dutyAssignment.findMany({
-      where: {
-        pharmacyId: { in: pharmacyIds },
-        date: { lt: monthStart },
-      },
-      orderBy: { date: "asc" },
-    }),
-  ]);
+  const [holidays, unavailabilities, historicalAssignments, openingBalance, dutyRequests] =
+    await Promise.all([
+      prisma.holiday.findMany({
+        where: { date: { gte: monthStart, lte: monthEnd } },
+      }),
+      prisma.unavailability.findMany({
+        where: {
+          pharmacyId: { in: pharmacyIds },
+          startDate: { lte: monthEnd },
+          endDate: { gte: monthStart },
+        },
+      }),
+      prisma.dutyAssignment.findMany({
+        where: {
+          pharmacyId: { in: pharmacyIds },
+          date: { lt: monthStart },
+        },
+        orderBy: { date: "asc" },
+      }),
+      // Başlangıç nöbet dengesi: geçmiş nöbet puanları + manuel düzeltmeler.
+      getOpeningBalanceByPharmacy(regionId),
+      // Ay ile kesişen onaylı talepler (algoritma yalnızca APPROVED işler).
+      prisma.dutyRequest.findMany({
+        where: {
+          pharmacyId: { in: pharmacyIds },
+          status: "APPROVED",
+          startDate: { lte: monthEnd },
+          endDate: { gte: monthStart },
+        },
+        select: {
+          pharmacyId: true,
+          requestType: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+        },
+      }),
+    ]);
 
   const result = generateDutySchedule({
     month,
@@ -72,6 +92,8 @@ export async function generateAndSaveDutySchedule({
     holidays,
     unavailabilities,
     historicalAssignments,
+    openingBalance,
+    dutyRequests,
   });
 
   const schedule = await prisma.$transaction(async (tx) => {
@@ -104,5 +126,5 @@ export async function generateAndSaveDutySchedule({
     return created;
   });
 
-  return schedule;
+  return { schedule, info: result.info };
 }

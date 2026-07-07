@@ -1,5 +1,6 @@
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowRight,
   Building2,
   CalendarCheck,
@@ -41,6 +42,9 @@ export default async function PanelPage() {
     holidayCount,
     draftScheduleCount,
     publishedScheduleCount,
+    matchedHistoricalCount,
+    pendingRequestCount,
+    regionsWithoutRuleCount,
     todayDuty,
     lastManualChange,
     recentSchedules,
@@ -52,6 +56,9 @@ export default async function PanelPage() {
     prisma.holiday.count(),
     prisma.dutySchedule.count({ where: { status: "DRAFT" } }),
     prisma.dutySchedule.count({ where: { status: "PUBLISHED" } }),
+    prisma.historicalDutyRecord.count({ where: { matchStatus: "MATCHED" } }),
+    prisma.dutyRequest.count({ where: { status: "PENDING" } }),
+    prisma.region.count({ where: { isActive: true, dutyRule: { is: null } } }),
     prisma.dutyAssignment.findFirst({
       where: { date: today, dutySchedule: { status: "PUBLISHED" } },
       select: {
@@ -85,19 +92,59 @@ export default async function PanelPage() {
     year: "numeric",
   });
 
-  const checklist = [
-    { label: "Nöbet bölgeleri tanımlandı", done: activeRegionCount > 0, href: "/bolgeler" },
-    { label: "Eczaneler kaydedildi", done: pharmacyCount > 0, href: "/eczaneler" },
-    { label: "Nöbet kuralları belirlendi", done: dutyRuleCount > 0, href: "/kurallar" },
-    { label: "Tatil günleri girildi", done: holidayCount > 0, href: "/tatil-gunleri" },
+  type ChecklistState = "done" | "missing" | "warning";
+  const checklist: { label: string; state: ChecklistState; href: string; hint?: string }[] = [
     {
-      label: "Nöbet çizelgesi oluşturuldu",
-      done: draftScheduleCount + publishedScheduleCount > 0,
+      label: "Nöbet bölgeleri tanımlandı",
+      state: activeRegionCount > 0 ? "done" : "missing",
+      href: "/bolgeler",
+    },
+    {
+      label: "Eczaneler kaydedildi",
+      state: pharmacyCount > 0 ? "done" : "missing",
+      href: "/eczaneler",
+    },
+    {
+      label: "Nöbet kuralları tanımlandı",
+      state:
+        dutyRuleCount === 0 ? "missing" : regionsWithoutRuleCount > 0 ? "warning" : "done",
+      href: "/kurallar",
+      hint: regionsWithoutRuleCount > 0 ? `${regionsWithoutRuleCount} bölgede kural eksik` : undefined,
+    },
+    {
+      label: "Tatil günleri yüklendi",
+      state: holidayCount > 0 ? "done" : "missing",
+      href: "/tatil-gunleri",
+    },
+    {
+      label: "Geçmiş nöbetler aktarıldı",
+      state: matchedHistoricalCount > 0 ? "done" : "warning",
+      href: "/gecmis-nobetler",
+      hint: matchedHistoricalCount === 0 ? "Denge skoru sıfırdan başlar" : undefined,
+    },
+    {
+      label: "Nöbet talepleri incelendi",
+      state: pendingRequestCount > 0 ? "warning" : "done",
+      href: "/nobet-talepleri",
+      hint: pendingRequestCount > 0 ? `${pendingRequestCount} bekleyen talep` : undefined,
+    },
+    {
+      label: "Veri kontrolü yapıldı",
+      state: regionsWithoutRuleCount > 0 ? "warning" : "done",
+      href: "/veri-kontrol",
+    },
+    {
+      label: "İlk çizelge oluşturuldu",
+      state: draftScheduleCount + publishedScheduleCount > 0 ? "done" : "missing",
       href: "/cizelgeler",
     },
-    { label: "Çizelge yayınlandı", done: publishedScheduleCount > 0, href: "/cizelgeler" },
+    {
+      label: "Vatandaş ekranında yayında çizelge var",
+      state: publishedScheduleCount > 0 ? "done" : "missing",
+      href: "/cizelgeler",
+    },
   ];
-  const completedSteps = checklist.filter((item) => item.done).length;
+  const completedSteps = checklist.filter((item) => item.state === "done").length;
 
   const quickActions = [
     ...(canGenerate
@@ -330,19 +377,26 @@ export default async function PanelPage() {
               {checklist.map((item) => (
                 <li key={item.label}>
                   <Link href={item.href} className="group flex items-center gap-2.5 text-sm">
-                    {item.done ? (
+                    {item.state === "done" ? (
                       <CheckCircle2 className="size-4.5 shrink-0 text-emerald-600" />
+                    ) : item.state === "warning" ? (
+                      <AlertTriangle className="size-4.5 shrink-0 text-amber-500" />
                     ) : (
                       <Circle className="text-muted-foreground/40 size-4.5 shrink-0" />
                     )}
                     <span
                       className={
-                        item.done
+                        item.state === "done"
                           ? "text-muted-foreground"
                           : "font-medium group-hover:underline"
                       }
                     >
                       {item.label}
+                      {item.hint && (
+                        <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+                          ({item.hint})
+                        </span>
+                      )}
                     </span>
                   </Link>
                 </li>

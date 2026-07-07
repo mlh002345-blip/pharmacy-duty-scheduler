@@ -184,6 +184,7 @@ export default async function EczanelerPage({
                         <StatusToggleButton
                           action={togglePharmacyStatusAction.bind(null, pharmacy.id)}
                           isActive={pharmacy.isActive}
+                          confirmMessage={`"${pharmacy.name}" pasife alınacak ve yeni çizelgelerde nöbet almayacak. Onaylıyor musunuz?`}
                         />
                         <DeleteButton
                           action={deletePharmacyAction.bind(null, pharmacy.id)}
