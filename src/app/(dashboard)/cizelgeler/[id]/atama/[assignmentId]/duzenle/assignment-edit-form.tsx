@@ -28,7 +28,12 @@ export function AssignmentEditForm({
   action: EditAssignmentAction;
   scheduleId: string;
   currentPharmacyId: string;
-  candidatePharmacies: { id: string; name: string; pharmacistName: string }[];
+  candidatePharmacies: {
+    id: string;
+    name: string;
+    pharmacistName: string;
+    blocked: boolean;
+  }[];
 }) {
   const [state, formAction, isPending] = useActionState(
     action,
@@ -53,12 +58,23 @@ export function AssignmentEditForm({
           required
         >
           {candidatePharmacies.map((pharmacy) => (
-            <option key={pharmacy.id} value={pharmacy.id}>
+            <option
+              key={pharmacy.id}
+              value={pharmacy.id}
+              disabled={pharmacy.blocked && pharmacy.id !== currentPharmacyId}
+            >
               {pharmacy.name} — {pharmacy.pharmacistName}
+              {pharmacy.blocked
+                ? " (Onaylı nöbet tutamama/acil mazeret talebi var.)"
+                : ""}
             </option>
           ))}
         </Select>
         <FieldError message={fieldError(state, "pharmacyId")} />
+        <p className="text-muted-foreground text-xs">
+          Onaylı nöbet tutamama/acil mazeret talebi olan eczaneler bu tarih için
+          seçilemez.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1.5">

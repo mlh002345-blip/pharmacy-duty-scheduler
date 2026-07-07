@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  findDutyRequestConflicts,
   findMinDaysBetweenDutiesViolation,
   isAlreadyAssignedOnDate,
+  isBlockedByApprovedDutyRequest,
   isEligibleReplacementPharmacy,
   isUnavailableOnDate,
 } from "./duty-assignment-edit";
@@ -108,6 +110,109 @@ describe("isUnavailableOnDate", () => {
       ],
     });
     expect(result).toBe(false);
+  });
+});
+
+describe("isBlockedByApprovedDutyRequest", () => {
+  it("blocks a date covered by an approved CANNOT_DUTY request", () => {
+    const result = isBlockedByApprovedDutyRequest({
+      candidatePharmacyId: "p1",
+      date: dateAtUtcMidnight(2026, 4, 10),
+      dutyRequests: [
+        {
+          pharmacyId: "p1",
+          requestType: "CANNOT_DUTY",
+          startDate: dateAtUtcMidnight(2026, 4, 5),
+          endDate: dateAtUtcMidnight(2026, 4, 15),
+        },
+      ],
+    });
+    expect(result).toBe(true);
+  });
+
+  it("blocks a date covered by an approved EMERGENCY_EXCUSE request", () => {
+    const result = isBlockedByApprovedDutyRequest({
+      candidatePharmacyId: "p1",
+      date: dateAtUtcMidnight(2026, 4, 10),
+      dutyRequests: [
+        {
+          pharmacyId: "p1",
+          requestType: "EMERGENCY_EXCUSE",
+          startDate: dateAtUtcMidnight(2026, 4, 10),
+          endDate: dateAtUtcMidnight(2026, 4, 10),
+        },
+      ],
+    });
+    expect(result).toBe(true);
+  });
+
+  it("allows a date outside the approved request range", () => {
+    const result = isBlockedByApprovedDutyRequest({
+      candidatePharmacyId: "p1",
+      date: dateAtUtcMidnight(2026, 4, 20),
+      dutyRequests: [
+        {
+          pharmacyId: "p1",
+          requestType: "CANNOT_DUTY",
+          startDate: dateAtUtcMidnight(2026, 4, 5),
+          endDate: dateAtUtcMidnight(2026, 4, 15),
+        },
+      ],
+    });
+    expect(result).toBe(false);
+  });
+
+  it("allows a different pharmacy on the same blocked date", () => {
+    const result = isBlockedByApprovedDutyRequest({
+      candidatePharmacyId: "p2",
+      date: dateAtUtcMidnight(2026, 4, 10),
+      dutyRequests: [
+        {
+          pharmacyId: "p1",
+          requestType: "CANNOT_DUTY",
+          startDate: dateAtUtcMidnight(2026, 4, 5),
+          endDate: dateAtUtcMidnight(2026, 4, 15),
+        },
+      ],
+    });
+    expect(result).toBe(false);
+  });
+});
+
+describe("findDutyRequestConflicts", () => {
+  it("finds an existing assignment that conflicts with an approved CANNOT_DUTY request", () => {
+    const conflicts = findDutyRequestConflicts({
+      assignments: [
+        { id: "a1", pharmacyId: "p1", date: dateAtUtcMidnight(2026, 4, 10) },
+        { id: "a2", pharmacyId: "p2", date: dateAtUtcMidnight(2026, 4, 11) },
+      ],
+      dutyRequests: [
+        {
+          pharmacyId: "p1",
+          requestType: "CANNOT_DUTY",
+          startDate: dateAtUtcMidnight(2026, 4, 5),
+          endDate: dateAtUtcMidnight(2026, 4, 15),
+        },
+      ],
+    });
+    expect(conflicts.length).toBe(1);
+    expect(conflicts[0].assignmentId).toBe("a1");
+    expect(conflicts[0].requestType).toBe("CANNOT_DUTY");
+  });
+
+  it("returns no conflicts when no assignment overlaps an approved request", () => {
+    const conflicts = findDutyRequestConflicts({
+      assignments: [{ id: "a1", pharmacyId: "p1", date: dateAtUtcMidnight(2026, 4, 20) }],
+      dutyRequests: [
+        {
+          pharmacyId: "p1",
+          requestType: "CANNOT_DUTY",
+          startDate: dateAtUtcMidnight(2026, 4, 5),
+          endDate: dateAtUtcMidnight(2026, 4, 15),
+        },
+      ],
+    });
+    expect(conflicts.length).toBe(0);
   });
 });
 

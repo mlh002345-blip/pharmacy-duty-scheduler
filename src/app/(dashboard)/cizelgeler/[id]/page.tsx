@@ -26,6 +26,8 @@ import {
   toDateKey,
 } from "@/lib/scheduling/date-tr";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
+import { findDutyRequestConflicts } from "@/lib/scheduling/duty-assignment-edit";
+import { DUTY_REQUEST_TYPE_LABELS } from "@/lib/duty-requests/labels";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permissions";
 import {
@@ -47,6 +49,15 @@ type FairnessRow = {
   totalLoadScore: number;
   lastDutyDate: Date;
 };
+
+// Manuel atama gerekçesi tek kelimeyle "talep" gibi kısa girilmişse,
+// tabloda anlamı belirsiz kalmasın diye daha açık bir ifadeyle gösterilir.
+function formatAssignmentNote(note: string, isManual: boolean): string {
+  if (isManual && note.trim().toLocaleLowerCase("tr") === "talep") {
+    return "Talep doğrultusunda manuel atama";
+  }
+  return note;
+}
 
 export default async function CizelgeDetayPage({
   params,
@@ -124,6 +135,34 @@ export default async function CizelgeDetayPage({
     countFor("EMERGENCY_EXCUSE", "PENDING") +
     countFor("PREFER_DUTY", "PENDING") +
     countFor("SWAP_REQUEST", "PENDING");
+
+  // Nöbet Talebi Çakışması: bu düzeltmeden önce oluşmuş veya manuel olarak
+  // girilmiş, onaylı bir kesin kısıt talebiyle çakışan atamaları tespit eder.
+  const assignmentPharmacyIds = [
+    ...new Set(schedule.assignments.map((a) => a.pharmacyId)),
+  ];
+  const approvedBlockingRequests = await prisma.dutyRequest.findMany({
+    where: {
+      pharmacyId: { in: assignmentPharmacyIds },
+      status: "APPROVED",
+      requestType: { in: ["CANNOT_DUTY", "EMERGENCY_EXCUSE"] },
+    },
+    select: { pharmacyId: true, requestType: true, startDate: true, endDate: true },
+  });
+  const requestConflicts = findDutyRequestConflicts({
+    assignments: schedule.assignments.map((a) => ({
+      id: a.id,
+      pharmacyId: a.pharmacyId,
+      date: a.date,
+    })),
+    dutyRequests: approvedBlockingRequests as {
+      pharmacyId: string;
+      requestType: "CANNOT_DUTY" | "EMERGENCY_EXCUSE";
+      startDate: Date;
+      endDate: Date;
+    }[],
+  });
+  const assignmentById = new Map(schedule.assignments.map((a) => [a.id, a]));
 
   const fairnessMap = new Map<string, FairnessRow>();
   for (const assignment of schedule.assignments) {
@@ -252,6 +291,50 @@ export default async function CizelgeDetayPage({
 
       <ListBanner success={success} error={error} />
 
+      {requestConflicts.length > 0 && (
+        <div className="border-destructive/50 bg-destructive/10 rounded-xl border p-5">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="text-destructive size-5 shrink-0" />
+            <div>
+              <p className="text-destructive font-semibold">Nöbet Talebi Çakışması</p>
+              <p className="text-destructive/80 text-sm">
+                Bu çizelgede onaylı nöbet talebiyle çakışan manuel veya mevcut
+                atamalar bulunmaktadır.
+              </p>
+            </div>
+          </div>
+          <Table className="mt-3">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tarih</TableHead>
+                <TableHead>Eczane</TableHead>
+                <TableHead>Talep Türü</TableHead>
+                <TableHead>Talep Tarih Aralığı</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {requestConflicts.map((conflict) => {
+                const assignment = assignmentById.get(conflict.assignmentId);
+                return (
+                  <TableRow key={conflict.assignmentId}>
+                    <TableCell>{conflict.date.toLocaleDateString("tr-TR")}</TableCell>
+                    <TableCell className="font-medium">
+                      {assignment?.pharmacy.name ?? "-"}
+                    </TableCell>
+                    <TableCell>{DUTY_REQUEST_TYPE_LABELS[conflict.requestType]}</TableCell>
+                    <TableCell>
+                      {conflict.requestStartDate.toLocaleDateString("tr-TR")}
+                      {" – "}
+                      {conflict.requestEndDate.toLocaleDateString("tr-TR")}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Toplam Gün" value={totalDays} icon={CalendarRange} accent="navy" />
         <StatCard
@@ -366,7 +449,7 @@ export default async function CizelgeDetayPage({
                         title={assignment.note}
                         className="text-muted-foreground block truncate text-sm italic"
                       >
-                        {assignment.note}
+                        {formatAssignmentNote(assignment.note, assignment.isManual)}
                       </span>
                     ) : (
                       <span className="text-muted-foreground/50">-</span>

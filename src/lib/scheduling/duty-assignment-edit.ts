@@ -18,6 +18,15 @@ export type CandidatePharmacy = {
   regionId: string;
 };
 
+export type HardBlockingRequestType = "CANNOT_DUTY" | "EMERGENCY_EXCUSE";
+
+export type ApprovedBlockingDutyRequest = {
+  pharmacyId: string;
+  requestType: HardBlockingRequestType;
+  startDate: Date;
+  endDate: Date;
+};
+
 export function isEligibleReplacementPharmacy(
   candidate: CandidatePharmacy,
   regionId: string
@@ -50,6 +59,66 @@ export function isUnavailableOnDate(params: {
       u.startDate.getTime() <= params.date.getTime() &&
       u.endDate.getTime() >= params.date.getTime()
   );
+}
+
+/**
+ * Onaylı CANNOT_DUTY/EMERGENCY_EXCUSE talepleri manuel atamayı da
+ * engellemelidir; bu fonksiyon çağrıya yalnızca onaylı, kesin kısıt
+ * türündeki talepler geçirildiğini varsayar (status/requestType filtresi
+ * çağıran tarafta yapılır).
+ */
+export function isBlockedByApprovedDutyRequest(params: {
+  candidatePharmacyId: string;
+  date: Date;
+  dutyRequests: ApprovedBlockingDutyRequest[];
+}): boolean {
+  return params.dutyRequests.some(
+    (r) =>
+      r.pharmacyId === params.candidatePharmacyId &&
+      r.startDate.getTime() <= params.date.getTime() &&
+      r.endDate.getTime() >= params.date.getTime()
+  );
+}
+
+export type ConflictingAssignment = {
+  assignmentId: string;
+  pharmacyId: string;
+  date: Date;
+  requestType: HardBlockingRequestType;
+  requestStartDate: Date;
+  requestEndDate: Date;
+};
+
+/**
+ * Mevcut atamalar arasında onaylı bir kesin kısıt talebiyle (CANNOT_DUTY /
+ * EMERGENCY_EXCUSE) çakışanları bulur — bu fonksiyon uygulanmadan önce
+ * oluşturulmuş veya bu düzeltmeden önce manuel olarak girilmiş geçersiz
+ * atamaları tespit etmek içindir.
+ */
+export function findDutyRequestConflicts(params: {
+  assignments: ExistingAssignment[];
+  dutyRequests: ApprovedBlockingDutyRequest[];
+}): ConflictingAssignment[] {
+  const conflicts: ConflictingAssignment[] = [];
+  for (const assignment of params.assignments) {
+    const match = params.dutyRequests.find(
+      (r) =>
+        r.pharmacyId === assignment.pharmacyId &&
+        r.startDate.getTime() <= assignment.date.getTime() &&
+        r.endDate.getTime() >= assignment.date.getTime()
+    );
+    if (match) {
+      conflicts.push({
+        assignmentId: assignment.id,
+        pharmacyId: assignment.pharmacyId,
+        date: assignment.date,
+        requestType: match.requestType,
+        requestStartDate: match.startDate,
+        requestEndDate: match.endDate,
+      });
+    }
+  }
+  return conflicts;
 }
 
 /**

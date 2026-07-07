@@ -11,6 +11,7 @@ import { zodErrorState } from "@/lib/action-state";
 import {
   findMinDaysBetweenDutiesViolation,
   isAlreadyAssignedOnDate,
+  isBlockedByApprovedDutyRequest,
   isEligibleReplacementPharmacy,
   isUnavailableOnDate,
 } from "@/lib/scheduling/duty-assignment-edit";
@@ -99,6 +100,37 @@ export async function editDutyAssignmentAction(
       success: false,
       message: "Lütfen formdaki hataları düzeltin.",
       errors: { pharmacyId: ["Seçilen eczane bu tarihte mazeretli."] },
+    };
+  }
+
+  const approvedBlockingRequests = await prisma.dutyRequest.findMany({
+    where: {
+      pharmacyId: candidatePharmacyId,
+      status: "APPROVED",
+      requestType: { in: ["CANNOT_DUTY", "EMERGENCY_EXCUSE"] },
+    },
+    select: { pharmacyId: true, requestType: true, startDate: true, endDate: true },
+  });
+  if (
+    isBlockedByApprovedDutyRequest({
+      candidatePharmacyId,
+      date: assignment.date,
+      dutyRequests: approvedBlockingRequests as {
+        pharmacyId: string;
+        requestType: "CANNOT_DUTY" | "EMERGENCY_EXCUSE";
+        startDate: Date;
+        endDate: Date;
+      }[],
+    })
+  ) {
+    return {
+      success: false,
+      message: "Lütfen formdaki hataları düzeltin.",
+      errors: {
+        pharmacyId: [
+          "Bu eczanenin seçilen tarih için onaylı nöbet tutamama veya acil mazeret talebi bulunmaktadır. Manuel atama yapılamaz. Önce ilgili talebi iptal edin veya reddedin.",
+        ],
+      },
     };
   }
 

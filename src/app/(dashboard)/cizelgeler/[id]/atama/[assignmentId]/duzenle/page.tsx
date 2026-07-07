@@ -27,11 +27,27 @@ export default async function AtamaDuzenlePage({
   });
   if (!assignment || assignment.dutyScheduleId !== scheduleId) notFound();
 
-  const candidatePharmacies = await prisma.pharmacy.findMany({
-    where: { regionId: assignment.dutySchedule.regionId, isActive: true },
-    select: { id: true, name: true, pharmacistName: true },
-    orderBy: { name: "asc" },
-  });
+  const [candidatePharmacies, approvedBlockingRequests] = await Promise.all([
+    prisma.pharmacy.findMany({
+      where: { regionId: assignment.dutySchedule.regionId, isActive: true },
+      select: { id: true, name: true, pharmacistName: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.dutyRequest.findMany({
+      where: {
+        status: "APPROVED",
+        requestType: { in: ["CANNOT_DUTY", "EMERGENCY_EXCUSE"] },
+        startDate: { lte: assignment.date },
+        endDate: { gte: assignment.date },
+      },
+      select: { pharmacyId: true },
+    }),
+  ]);
+  const blockedPharmacyIds = new Set(approvedBlockingRequests.map((r) => r.pharmacyId));
+  const candidatesWithAvailability = candidatePharmacies.map((pharmacy) => ({
+    ...pharmacy,
+    blocked: blockedPharmacyIds.has(pharmacy.id),
+  }));
 
   const action = editDutyAssignmentAction.bind(null, assignmentId);
 
@@ -52,7 +68,7 @@ export default async function AtamaDuzenlePage({
             action={action}
             scheduleId={scheduleId}
             currentPharmacyId={assignment.pharmacyId}
-            candidatePharmacies={candidatePharmacies}
+            candidatePharmacies={candidatesWithAvailability}
           />
         </CardContent>
       </Card>
