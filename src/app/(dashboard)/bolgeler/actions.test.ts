@@ -13,6 +13,11 @@ class RedirectSignal extends Error {
 const prismaMock = {
   region: { findUnique: vi.fn(), delete: vi.fn() },
   pharmacy: { count: vi.fn() },
+  // Test double for an interactive transaction: runs the callback with the
+  // same mocked client standing in for `tx`, so the mutation + audit-log
+  // pair under test still executes as "one transaction" the way production
+  // code does, without needing a real database.
+  $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
 };
 const writeAuditLog = vi.fn();
 const revalidatePath = vi.fn();
@@ -94,5 +99,21 @@ describe("deleteRegionAction — deleteSetupData is ADMIN-only", () => {
       "Bu bölgeye kayıtlı eczaneler olduğu için silinemez."
     );
     expect(prismaMock.region.delete).not.toHaveBeenCalled();
+  });
+
+  it("propagates an audit-log failure instead of reporting success (transaction, not a swallowed error)", async () => {
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    prismaMock.region.findUnique.mockResolvedValue(region());
+    prismaMock.region.delete.mockResolvedValue(region());
+    writeAuditLog.mockRejectedValueOnce(new Error("db connection dropped"));
+
+    // The delete and the audit-log write both happen inside the same
+    // prisma.$transaction callback. If the audit write throws, the whole
+    // transaction rejects — deleteRegionAction must NOT swallow that and
+    // fall through to a success redirect (which would tell the admin the
+    // region was deleted-and-audited when only the delete happened, and,
+    // against a real database, would also mean the delete itself rolled
+    // back rather than silently landing unaudited).
+    await expect(deleteRegionAction("region-1")).rejects.toThrow("db connection dropped");
   });
 });

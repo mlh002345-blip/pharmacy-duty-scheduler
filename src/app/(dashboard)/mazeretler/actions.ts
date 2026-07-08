@@ -31,21 +31,22 @@ export async function createUnavailabilityAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  const unavailability = await prisma.unavailability.create({
-    data: {
-      pharmacyId: parsed.data.pharmacyId,
-      startDate: new Date(parsed.data.startDate),
-      endDate: new Date(parsed.data.endDate),
-      reason: parsed.data.reason || null,
-    },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "CREATE",
-    entity: "Unavailability",
-    entityId: unavailability.id,
-    after: unavailability,
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.unavailability.create({
+      data: {
+        pharmacyId: parsed.data.pharmacyId,
+        startDate: new Date(parsed.data.startDate),
+        endDate: new Date(parsed.data.endDate),
+        reason: parsed.data.reason || null,
+      },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "CREATE",
+      entity: "Unavailability",
+      entityId: created.id,
+      after: created,
+    });
   });
 
   revalidatePath("/mazeretler");
@@ -71,23 +72,24 @@ export async function updateUnavailabilityAction(
     return { success: false, message: "Mazeret kaydı bulunamadı." };
   }
 
-  const unavailability = await prisma.unavailability.update({
-    where: { id },
-    data: {
-      pharmacyId: parsed.data.pharmacyId,
-      startDate: new Date(parsed.data.startDate),
-      endDate: new Date(parsed.data.endDate),
-      reason: parsed.data.reason || null,
-    },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "UPDATE",
-    entity: "Unavailability",
-    entityId: unavailability.id,
-    before,
-    after: unavailability,
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.unavailability.update({
+      where: { id },
+      data: {
+        pharmacyId: parsed.data.pharmacyId,
+        startDate: new Date(parsed.data.startDate),
+        endDate: new Date(parsed.data.endDate),
+        reason: parsed.data.reason || null,
+      },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "UPDATE",
+      entity: "Unavailability",
+      entityId: updated.id,
+      before,
+      after: updated,
+    });
   });
 
   revalidatePath("/mazeretler");
@@ -102,14 +104,15 @@ export async function deleteUnavailabilityAction(id: string) {
     redirectWithMessage("/mazeretler", "error", "Mazeret kaydı bulunamadı.");
   }
 
-  await prisma.unavailability.delete({ where: { id } });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "DELETE",
-    entity: "Unavailability",
-    entityId: id,
-    before: unavailability,
+  await prisma.$transaction(async (tx) => {
+    await tx.unavailability.delete({ where: { id } });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "DELETE",
+      entity: "Unavailability",
+      entityId: id,
+      before: unavailability,
+    });
   });
 
   revalidatePath("/mazeretler");

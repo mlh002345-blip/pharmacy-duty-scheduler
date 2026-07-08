@@ -52,22 +52,23 @@ export async function createUserAction(
   }
 
   const passwordHash = await hashPassword(parsed.data.password);
-  const created = await prisma.user.create({
-    data: {
-      name: parsed.data.name,
-      email: parsed.data.email,
-      role: parsed.data.role,
-      isActive: parsed.data.isActive,
-      passwordHash,
-    },
-  });
-
-  await writeAuditLog({
-    userId: currentUser.id,
-    action: "CREATE",
-    entity: "User",
-    entityId: created.id,
-    after: sanitize(created),
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        role: parsed.data.role,
+        isActive: parsed.data.isActive,
+        passwordHash,
+      },
+    });
+    await writeAuditLog(tx, {
+      userId: currentUser.id,
+      action: "CREATE",
+      entity: "User",
+      entityId: created.id,
+      after: sanitize(created),
+    });
   });
 
   revalidatePath("/kullanicilar");
@@ -137,32 +138,38 @@ export async function updateUserAction(
 
   const password = parsed.data.password?.trim();
   const passwordChanged = !!password;
+  const newPasswordHash = passwordChanged ? await hashPassword(password) : undefined;
 
-  const updated = await prisma.user.update({
-    where: { id },
-    data: {
-      name: parsed.data.name,
-      email: parsed.data.email,
-      role: parsed.data.role,
-      isActive: parsed.data.isActive,
-      ...(passwordChanged ? { passwordHash: await hashPassword(password) } : {}),
-    },
-  });
+  // Şifre değişikliği ve o kullanıcının oturumlarının geçersiz kılınması aynı
+  // veritabanı işlemi (transaction) içinde yapılır: oturum silme adımı
+  // başarısız olursa şifre güncellemesi de geri alınır. Aksi halde, ikisi
+  // ayrı yazımlar olsaydı, şifre değişip oturum silme başarısız olduğunda
+  // eski (artık geçersiz kılınması gereken) oturum jetonları sessizce
+  // geçerli kalabilirdi — tam olarak bu değişikliğin önlemesi gereken durum.
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id },
+      data: {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        role: parsed.data.role,
+        isActive: parsed.data.isActive,
+        ...(passwordChanged ? { passwordHash: newPasswordHash } : {}),
+      },
+    });
 
-  if (passwordChanged) {
-    // Şifre değişikliği, o kullanıcının açık olan tüm oturumlarını
-    // geçersiz kılar — eski şifreyle alınmış bir oturum jetonu artık
-    // kullanılamaz.
-    await invalidateUserSessions(id);
-  }
+    if (passwordChanged) {
+      await invalidateUserSessions(id, tx);
+    }
 
-  await writeAuditLog({
-    userId: currentUser.id,
-    action: "UPDATE",
-    entity: "User",
-    entityId: updated.id,
-    before: sanitize(before),
-    after: { ...sanitize(updated), passwordChanged },
+    await writeAuditLog(tx, {
+      userId: currentUser.id,
+      action: "UPDATE",
+      entity: "User",
+      entityId: updated.id,
+      before: sanitize(before),
+      after: { ...sanitize(updated), passwordChanged },
+    });
   });
 
   revalidatePath("/kullanicilar");
@@ -171,7 +178,8 @@ export async function updateUserAction(
   if (isSelfPasswordChange) {
     // Kendi şifresini değiştiren yönetici için kendi oturumu da az önce
     // silindi; tarayıcıdaki artık geçersiz çerezi temizleyip doğrudan
-    // giriş ekranına yönlendir.
+    // giriş ekranına yönlendir. Bu adım işlem başarıyla tamamlandıktan
+    // SONRA çalışır — cookie/redirect asla bir transaction içine konmaz.
     await clearSessionCookie();
     redirectWithMessage(
       "/giris",
@@ -215,18 +223,20 @@ export async function toggleUserStatusAction(id: string) {
     }
   }
 
-  const updated = await prisma.user.update({
-    where: { id },
-    data: { isActive: nextIsActive },
-  });
-
-  await writeAuditLog({
-    userId: currentUser.id,
-    action: "UPDATE",
-    entity: "User",
-    entityId: id,
-    before: sanitize(user),
-    after: sanitize(updated),
+  const updated = await prisma.$transaction(async (tx) => {
+    const next = await tx.user.update({
+      where: { id },
+      data: { isActive: nextIsActive },
+    });
+    await writeAuditLog(tx, {
+      userId: currentUser.id,
+      action: "UPDATE",
+      entity: "User",
+      entityId: id,
+      before: sanitize(user),
+      after: sanitize(next),
+    });
+    return next;
   });
 
   revalidatePath("/kullanicilar");

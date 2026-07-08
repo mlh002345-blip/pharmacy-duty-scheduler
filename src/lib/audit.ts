@@ -1,16 +1,27 @@
-import { prisma } from "@/lib/prisma";
-import type { AuditAction } from "@prisma/client";
+import type { AuditAction, Prisma, PrismaClient } from "@prisma/client";
 
-export async function writeAuditLog(params: {
-  userId: string;
-  action: AuditAction;
-  entity: string;
-  entityId: string;
-  before?: unknown;
-  after?: unknown;
-  dutyAssignmentId?: string;
-}) {
-  await prisma.auditLog.create({
+// Kritik işlemler için: iş mutasyonu ile denetim kaydı aynı veritabanı
+// işlemi (transaction) içinde yazılmalıdır. Bu sayede denetim kaydı
+// başarısız olursa mutasyon da geri alınır — kısmen uygulanmış, denetimsiz
+// bir değişiklik asla kalıcı olmaz. Bu yüzden çağıran taraf ya global
+// `prisma` istemcisini (kritik olmayan, bağımsız bir yazım için) ya da açık
+// bir `tx` (transaction) istemcisini vermelidir; varsayılan bir istemciye
+// sessizce düşülmez.
+type PrismaClientOrTx = PrismaClient | Prisma.TransactionClient;
+
+export async function writeAuditLog(
+  client: PrismaClientOrTx,
+  params: {
+    userId: string;
+    action: AuditAction;
+    entity: string;
+    entityId: string;
+    before?: unknown;
+    after?: unknown;
+    dutyAssignmentId?: string;
+  }
+) {
+  await client.auditLog.create({
     data: {
       userId: params.userId,
       action: params.action,

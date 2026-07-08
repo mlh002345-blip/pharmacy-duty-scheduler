@@ -40,19 +40,20 @@ export async function upsertDutyRuleAction(
   }
 
   const before = region.dutyRule;
-  const rule = await prisma.dutyRule.upsert({
-    where: { regionId },
-    create: { ...parsed.data, regionId },
-    update: parsed.data,
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: before ? "UPDATE" : "CREATE",
-    entity: "DutyRule",
-    entityId: rule.id,
-    before: before ?? undefined,
-    after: rule,
+  await prisma.$transaction(async (tx) => {
+    const rule = await tx.dutyRule.upsert({
+      where: { regionId },
+      create: { ...parsed.data, regionId },
+      update: parsed.data,
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: before ? "UPDATE" : "CREATE",
+      entity: "DutyRule",
+      entityId: rule.id,
+      before: before ?? undefined,
+      after: rule,
+    });
   });
 
   revalidatePath("/kurallar");

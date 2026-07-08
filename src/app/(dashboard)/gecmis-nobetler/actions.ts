@@ -162,7 +162,7 @@ export async function historicalImportAction(
     );
   }
 
-  const batch = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     const created = await tx.historicalDutyImportBatch.create({
       data: {
         fileName,
@@ -194,21 +194,21 @@ export async function historicalImportAction(
       })),
     });
 
-    return created;
-  });
+    await writeAuditLog(tx, {
+      userId: guard.user.id,
+      action: "CREATE",
+      entity: "HistoricalDutyImportBatch",
+      entityId: created.id,
+      after: {
+        fileName,
+        rowCount: analysis.totalCount,
+        matchedCount: analysis.matchedCount,
+        unmatchedCount: analysis.totalCount - analysis.matchedCount,
+        warningCount: analysis.warningCount,
+      },
+    });
 
-  await writeAuditLog({
-    userId: guard.user.id,
-    action: "CREATE",
-    entity: "HistoricalDutyImportBatch",
-    entityId: batch.id,
-    after: {
-      fileName,
-      rowCount: analysis.totalCount,
-      matchedCount: analysis.matchedCount,
-      unmatchedCount: analysis.totalCount - analysis.matchedCount,
-      warningCount: analysis.warningCount,
-    },
+    return created;
   });
 
   redirectWithMessage(
@@ -255,25 +255,26 @@ export async function createBalanceAdjustmentAction(
     return { success: false, message: "Seçilen eczane bulunamadı." };
   }
 
-  const adjustment = await prisma.dutyBalanceAdjustment.create({
-    data: {
-      pharmacyId: parsed.data.pharmacyId,
-      points: parsed.data.points,
-      reason: parsed.data.reason,
-      createdById: guard.user.id,
-    },
-  });
-
-  await writeAuditLog({
-    userId: guard.user.id,
-    action: "CREATE",
-    entity: "DutyBalanceAdjustment",
-    entityId: adjustment.id,
-    after: {
-      pharmacyName: pharmacy.name,
-      points: parsed.data.points,
-      reason: parsed.data.reason,
-    },
+  await prisma.$transaction(async (tx) => {
+    const adjustment = await tx.dutyBalanceAdjustment.create({
+      data: {
+        pharmacyId: parsed.data.pharmacyId,
+        points: parsed.data.points,
+        reason: parsed.data.reason,
+        createdById: guard.user.id,
+      },
+    });
+    await writeAuditLog(tx, {
+      userId: guard.user.id,
+      action: "CREATE",
+      entity: "DutyBalanceAdjustment",
+      entityId: adjustment.id,
+      after: {
+        pharmacyName: pharmacy.name,
+        points: parsed.data.points,
+        reason: parsed.data.reason,
+      },
+    });
   });
 
   redirectWithMessage(
@@ -307,18 +308,19 @@ export async function deleteBalanceAdjustmentAction(adjustmentId: string) {
     redirectWithMessage("/gecmis-nobetler", "error", "Düzeltme kaydı bulunamadı.");
   }
 
-  await prisma.dutyBalanceAdjustment.delete({ where: { id: adjustmentId } });
-
-  await writeAuditLog({
-    userId: guard.user.id,
-    action: "DELETE",
-    entity: "DutyBalanceAdjustment",
-    entityId: adjustmentId,
-    before: {
-      pharmacyName: adjustment.pharmacy.name,
-      points: adjustment.points,
-      reason: adjustment.reason,
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.dutyBalanceAdjustment.delete({ where: { id: adjustmentId } });
+    await writeAuditLog(tx, {
+      userId: guard.user.id,
+      action: "DELETE",
+      entity: "DutyBalanceAdjustment",
+      entityId: adjustmentId,
+      before: {
+        pharmacyName: adjustment.pharmacy.name,
+        points: adjustment.points,
+        reason: adjustment.reason,
+      },
+    });
   });
 
   redirectWithMessage(

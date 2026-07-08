@@ -17,6 +17,7 @@ const prismaMock = {
     update: vi.fn(),
     count: vi.fn(),
   },
+  $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
 };
 
 const invalidateUserSessions = vi.fn();
@@ -99,7 +100,7 @@ describe("updateUserAction — session invalidation on password change", () => {
       updateUserAction(before.id, { success: false, message: "" }, formData)
     ).rejects.toBeInstanceOf(RedirectSignal);
 
-    expect(invalidateUserSessions).toHaveBeenCalledExactlyOnceWith(before.id);
+    expect(invalidateUserSessions).toHaveBeenCalledExactlyOnceWith(before.id, prismaMock);
     // Admin edited someone else — their own session must not be cleared.
     expect(clearSessionCookie).not.toHaveBeenCalled();
   });
@@ -147,7 +148,7 @@ describe("updateUserAction — session invalidation on password change", () => {
       caught = error;
     }
 
-    expect(invalidateUserSessions).toHaveBeenCalledExactlyOnceWith(before.id);
+    expect(invalidateUserSessions).toHaveBeenCalledExactlyOnceWith(before.id, prismaMock);
     expect(clearSessionCookie).toHaveBeenCalledOnce();
     expect(caught).toBeInstanceOf(RedirectSignal);
     expect((caught as RedirectSignal).path).toBe("/giris");
@@ -173,5 +174,31 @@ describe("updateUserAction — session invalidation on password change", () => {
     expect(result.message).toBe("Sistemde en az bir aktif yönetici bulunmalıdır.");
     expect(prismaMock.user.update).not.toHaveBeenCalled();
     expect(invalidateUserSessions).not.toHaveBeenCalled();
+  });
+
+  it("propagates a session-invalidation failure instead of reporting success (password update and session deletion are one transaction)", async () => {
+    const before = baseUserRow();
+    prismaMock.user.findUnique.mockResolvedValue(before);
+    prismaMock.user.update.mockResolvedValue({ ...before, passwordHash: "hashed:NewPass123" });
+    invalidateUserSessions.mockRejectedValueOnce(new Error("db connection dropped"));
+
+    const formData = makeFormData({
+      name: before.name,
+      email: before.email,
+      role: before.role,
+      isActive: "on",
+      password: "NewPass123",
+      passwordConfirmation: "NewPass123",
+    });
+
+    // Both writes run inside the same prisma.$transaction callback. If
+    // session deletion fails, the action must not fall through to a
+    // success redirect — that would tell the admin the password was
+    // rotated AND old sessions were revoked, when (against a real
+    // database) neither actually stuck, since the transaction rolls back.
+    await expect(
+      updateUserAction(before.id, { success: false, message: "" }, formData)
+    ).rejects.toThrow("db connection dropped");
+    expect(clearSessionCookie).not.toHaveBeenCalled();
   });
 });

@@ -39,21 +39,22 @@ export async function createPharmacyAction(
   }
 
   const { mapUrl, ...rest } = parsed.data;
-  const pharmacy = await prisma.pharmacy.create({
-    data: {
-      ...rest,
-      mapUrl: mapUrl || null,
-      // Herkese açık nöbet talep formu bağlantısı için eczaneye özel token.
-      requestToken: randomBytes(16).toString("hex"),
-    },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "CREATE",
-    entity: "Pharmacy",
-    entityId: pharmacy.id,
-    after: pharmacy,
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.pharmacy.create({
+      data: {
+        ...rest,
+        mapUrl: mapUrl || null,
+        // Herkese açık nöbet talep formu bağlantısı için eczaneye özel token.
+        requestToken: randomBytes(16).toString("hex"),
+      },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "CREATE",
+      entity: "Pharmacy",
+      entityId: created.id,
+      after: created,
+    });
   });
 
   revalidatePath("/eczaneler");
@@ -80,18 +81,19 @@ export async function updatePharmacyAction(
   }
 
   const { mapUrl, ...rest } = parsed.data;
-  const pharmacy = await prisma.pharmacy.update({
-    where: { id },
-    data: { ...rest, mapUrl: mapUrl || null },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "UPDATE",
-    entity: "Pharmacy",
-    entityId: pharmacy.id,
-    before,
-    after: pharmacy,
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.pharmacy.update({
+      where: { id },
+      data: { ...rest, mapUrl: mapUrl || null },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "UPDATE",
+      entity: "Pharmacy",
+      entityId: updated.id,
+      before,
+      after: updated,
+    });
   });
 
   revalidatePath("/eczaneler");
@@ -106,18 +108,20 @@ export async function togglePharmacyStatusAction(id: string) {
     redirectWithMessage("/eczaneler", "error", "Eczane bulunamadı.");
   }
 
-  const updated = await prisma.pharmacy.update({
-    where: { id },
-    data: { isActive: !pharmacy.isActive },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "UPDATE",
-    entity: "Pharmacy",
-    entityId: id,
-    before: pharmacy,
-    after: updated,
+  const updated = await prisma.$transaction(async (tx) => {
+    const next = await tx.pharmacy.update({
+      where: { id },
+      data: { isActive: !pharmacy.isActive },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "UPDATE",
+      entity: "Pharmacy",
+      entityId: id,
+      before: pharmacy,
+      after: next,
+    });
+    return next;
   });
 
   revalidatePath("/eczaneler");
@@ -147,14 +151,15 @@ export async function deletePharmacyAction(id: string) {
     redirectWithMessage("/eczaneler", "error", "Eczane bulunamadı.");
   }
 
-  await prisma.pharmacy.delete({ where: { id } });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "DELETE",
-    entity: "Pharmacy",
-    entityId: id,
-    before: pharmacy,
+  await prisma.$transaction(async (tx) => {
+    await tx.pharmacy.delete({ where: { id } });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "DELETE",
+      entity: "Pharmacy",
+      entityId: id,
+      before: pharmacy,
+    });
   });
 
   revalidatePath("/eczaneler");

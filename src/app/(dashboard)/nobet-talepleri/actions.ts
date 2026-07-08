@@ -55,34 +55,35 @@ export async function createDutyRequestAction(
 
   const approveNow = parsed.data.approveNow === "true";
 
-  const request = await prisma.dutyRequest.create({
-    data: {
-      pharmacyId: pharmacy.id,
-      regionId: pharmacy.regionId,
-      requestType: parsed.data.requestType,
-      startDate: parsed.data.startDate,
-      endDate: parsed.data.endDate,
-      explanation: parsed.data.explanation,
-      source: "ADMIN_ENTRY",
-      status: approveNow ? "APPROVED" : "PENDING",
-      ...(approveNow
-        ? { reviewedById: guard.user.id, reviewedAt: new Date(), reviewNote: "Oda girişinde doğrudan onaylandı." }
-        : {}),
-    },
-  });
-
-  await writeAuditLog({
-    userId: guard.user.id,
-    action: "CREATE",
-    entity: "DutyRequest",
-    entityId: request.id,
-    after: {
-      pharmacyName: pharmacy.name,
-      requestType: DUTY_REQUEST_TYPE_LABELS[parsed.data.requestType],
-      startDate: parsed.data.startDate.toISOString().slice(0, 10),
-      endDate: parsed.data.endDate.toISOString().slice(0, 10),
-      status: approveNow ? "APPROVED" : "PENDING",
-    },
+  await prisma.$transaction(async (tx) => {
+    const request = await tx.dutyRequest.create({
+      data: {
+        pharmacyId: pharmacy.id,
+        regionId: pharmacy.regionId,
+        requestType: parsed.data.requestType,
+        startDate: parsed.data.startDate,
+        endDate: parsed.data.endDate,
+        explanation: parsed.data.explanation,
+        source: "ADMIN_ENTRY",
+        status: approveNow ? "APPROVED" : "PENDING",
+        ...(approveNow
+          ? { reviewedById: guard.user.id, reviewedAt: new Date(), reviewNote: "Oda girişinde doğrudan onaylandı." }
+          : {}),
+      },
+    });
+    await writeAuditLog(tx, {
+      userId: guard.user.id,
+      action: "CREATE",
+      entity: "DutyRequest",
+      entityId: request.id,
+      after: {
+        pharmacyName: pharmacy.name,
+        requestType: DUTY_REQUEST_TYPE_LABELS[parsed.data.requestType],
+        startDate: parsed.data.startDate.toISOString().slice(0, 10),
+        endDate: parsed.data.endDate.toISOString().slice(0, 10),
+        status: approveNow ? "APPROVED" : "PENDING",
+      },
+    });
   });
 
   redirectWithMessage(
@@ -143,28 +144,29 @@ export async function reviewDutyRequestAction(
     };
   }
 
-  await prisma.dutyRequest.update({
-    where: { id: requestId },
-    data: {
-      status: decision,
-      reviewedById: guard.user.id,
-      reviewedAt: new Date(),
-      reviewNote: reviewNote || null,
-    },
-  });
-
-  await writeAuditLog({
-    userId: guard.user.id,
-    action: "UPDATE",
-    entity: "DutyRequest",
-    entityId: requestId,
-    before: { status: request.status },
-    after: {
-      pharmacyName: request.pharmacy.name,
-      requestType: DUTY_REQUEST_TYPE_LABELS[request.requestType],
-      status: decision,
-      reviewNote: reviewNote || null,
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.dutyRequest.update({
+      where: { id: requestId },
+      data: {
+        status: decision,
+        reviewedById: guard.user.id,
+        reviewedAt: new Date(),
+        reviewNote: reviewNote || null,
+      },
+    });
+    await writeAuditLog(tx, {
+      userId: guard.user.id,
+      action: "UPDATE",
+      entity: "DutyRequest",
+      entityId: requestId,
+      before: { status: request.status },
+      after: {
+        pharmacyName: request.pharmacy.name,
+        requestType: DUTY_REQUEST_TYPE_LABELS[request.requestType],
+        status: decision,
+        reviewNote: reviewNote || null,
+      },
+    });
   });
 
   const decisionLabel =

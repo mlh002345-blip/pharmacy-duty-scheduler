@@ -42,14 +42,15 @@ export async function createRegionAction(
     };
   }
 
-  const region = await prisma.region.create({ data: parsed.data });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "CREATE",
-    entity: "Region",
-    entityId: region.id,
-    after: region,
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.region.create({ data: parsed.data });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "CREATE",
+      entity: "Region",
+      entityId: created.id,
+      after: created,
+    });
   });
 
   revalidatePath("/bolgeler");
@@ -86,18 +87,19 @@ export async function updateRegionAction(
     };
   }
 
-  const region = await prisma.region.update({
-    where: { id },
-    data: parsed.data,
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "UPDATE",
-    entity: "Region",
-    entityId: region.id,
-    before,
-    after: region,
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.region.update({
+      where: { id },
+      data: parsed.data,
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "UPDATE",
+      entity: "Region",
+      entityId: updated.id,
+      before,
+      after: updated,
+    });
   });
 
   revalidatePath("/bolgeler");
@@ -112,18 +114,20 @@ export async function toggleRegionStatusAction(id: string) {
     redirectWithMessage("/bolgeler", "error", "Bölge bulunamadı.");
   }
 
-  const updated = await prisma.region.update({
-    where: { id },
-    data: { isActive: !region.isActive },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "UPDATE",
-    entity: "Region",
-    entityId: id,
-    before: region,
-    after: updated,
+  const updated = await prisma.$transaction(async (tx) => {
+    const next = await tx.region.update({
+      where: { id },
+      data: { isActive: !region.isActive },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "UPDATE",
+      entity: "Region",
+      entityId: id,
+      before: region,
+      after: next,
+    });
+    return next;
   });
 
   revalidatePath("/bolgeler");
@@ -151,14 +155,15 @@ export async function deleteRegionAction(id: string) {
     redirectWithMessage("/bolgeler", "error", "Bölge bulunamadı.");
   }
 
-  await prisma.region.delete({ where: { id } });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "DELETE",
-    entity: "Region",
-    entityId: id,
-    before: region,
+  await prisma.$transaction(async (tx) => {
+    await tx.region.delete({ where: { id } });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "DELETE",
+      entity: "Region",
+      entityId: id,
+      before: region,
+    });
   });
 
   revalidatePath("/bolgeler");

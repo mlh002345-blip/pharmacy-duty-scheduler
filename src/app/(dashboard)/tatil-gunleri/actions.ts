@@ -30,20 +30,21 @@ export async function createHolidayAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  const holiday = await prisma.holiday.create({
-    data: {
-      name: parsed.data.name,
-      date: new Date(parsed.data.date),
-      type: parsed.data.type,
-    },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "CREATE",
-    entity: "Holiday",
-    entityId: holiday.id,
-    after: holiday,
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.holiday.create({
+      data: {
+        name: parsed.data.name,
+        date: new Date(parsed.data.date),
+        type: parsed.data.type,
+      },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "CREATE",
+      entity: "Holiday",
+      entityId: created.id,
+      after: created,
+    });
   });
 
   revalidatePath("/tatil-gunleri");
@@ -69,22 +70,23 @@ export async function updateHolidayAction(
     return { success: false, message: "Tatil günü bulunamadı." };
   }
 
-  const holiday = await prisma.holiday.update({
-    where: { id },
-    data: {
-      name: parsed.data.name,
-      date: new Date(parsed.data.date),
-      type: parsed.data.type,
-    },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "UPDATE",
-    entity: "Holiday",
-    entityId: holiday.id,
-    before,
-    after: holiday,
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.holiday.update({
+      where: { id },
+      data: {
+        name: parsed.data.name,
+        date: new Date(parsed.data.date),
+        type: parsed.data.type,
+      },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "UPDATE",
+      entity: "Holiday",
+      entityId: updated.id,
+      before,
+      after: updated,
+    });
   });
 
   revalidatePath("/tatil-gunleri");
@@ -99,14 +101,15 @@ export async function deleteHolidayAction(id: string) {
     redirectWithMessage("/tatil-gunleri", "error", "Tatil günü bulunamadı.");
   }
 
-  await prisma.holiday.delete({ where: { id } });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "DELETE",
-    entity: "Holiday",
-    entityId: id,
-    before: holiday,
+  await prisma.$transaction(async (tx) => {
+    await tx.holiday.delete({ where: { id } });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "DELETE",
+      entity: "Holiday",
+      entityId: id,
+      before: holiday,
+    });
   });
 
   revalidatePath("/tatil-gunleri");

@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
@@ -68,19 +69,21 @@ export async function createDutyScheduleAction(
     };
   }
 
+  const duplicateScheduleState: ActionState = {
+    success: false,
+    message: "Lütfen formdaki hataları düzeltin.",
+    errors: {
+      regionId: [
+        "Bu bölge için seçilen ay ve yılda zaten bir nöbet çizelgesi mevcut.",
+      ],
+    },
+  };
+
   const existing = await prisma.dutySchedule.findUnique({
     where: { year_month_regionId: { year, month, regionId } },
   });
   if (existing) {
-    return {
-      success: false,
-      message: "Lütfen formdaki hataları düzeltin.",
-      errors: {
-        regionId: [
-          "Bu bölge için seçilen ay ve yılda zaten bir nöbet çizelgesi mevcut.",
-        ],
-      },
-    };
+    return duplicateScheduleState;
   }
 
   const preCheck = await getSchedulePreCheck({
@@ -101,23 +104,24 @@ export async function createDutyScheduleAction(
   let scheduleId: string;
   let infoMessages: string[];
   try {
-    const result = await generateAndSaveDutySchedule({ month, year, regionId });
+    const result = await generateAndSaveDutySchedule({ month, year, regionId, userId: user.id });
     scheduleId = result.schedule.id;
     infoMessages = [...preCheck.warnings, ...result.info];
   } catch (error) {
     if (error instanceof DutyScheduleGenerationError) {
       return { success: false, message: error.message };
     }
+    // İki eşzamanlı istek aynı bölge/ay/yıl için çizelge oluşturmaya
+    // çalışırsa (ör. çift tıklama), yukarıdaki `existing` kontrolünü ikisi de
+    // geçebilir; ikinci yazma DB'nin benzersizlik kısıtına (year_month_regionId)
+    // çarpar. Bu işlemin yazdığı tek benzersiz alan bu olduğundan, P2002'yi
+    // doğrudan sıralı durumla aynı Türkçe mesaja eşleyip kullanıcıya ham bir
+    // hata sayfası yerine anlaşılır bir yanıt döndürüyoruz.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return duplicateScheduleState;
+    }
     throw error;
   }
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "CREATE",
-    entity: "DutySchedule",
-    entityId: scheduleId,
-    after: { month, year, regionId, status: "DRAFT" },
-  });
 
   revalidatePath("/cizelgeler");
   redirect(
@@ -142,18 +146,17 @@ export async function deleteDutyScheduleAction(id: string) {
     );
   }
 
-  await prisma.$transaction([
-    prisma.dutyScheduleWarning.deleteMany({ where: { scheduleId: id } }),
-    prisma.dutyAssignment.deleteMany({ where: { dutyScheduleId: id } }),
-    prisma.dutySchedule.delete({ where: { id } }),
-  ]);
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "DELETE",
-    entity: "DutySchedule",
-    entityId: id,
-    before: schedule,
+  await prisma.$transaction(async (tx) => {
+    await tx.dutyScheduleWarning.deleteMany({ where: { scheduleId: id } });
+    await tx.dutyAssignment.deleteMany({ where: { dutyScheduleId: id } });
+    await tx.dutySchedule.delete({ where: { id } });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "DELETE",
+      entity: "DutySchedule",
+      entityId: id,
+      before: schedule,
+    });
   });
 
   revalidatePath("/cizelgeler");
@@ -191,18 +194,19 @@ export async function publishDutyScheduleAction(id: string) {
     );
   }
 
-  const updated = await prisma.dutySchedule.update({
-    where: { id },
-    data: { status: "PUBLISHED" },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "UPDATE",
-    entity: "DutySchedule",
-    entityId: id,
-    before: { status: schedule.status },
-    after: { status: updated.status },
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.dutySchedule.update({
+      where: { id },
+      data: { status: "PUBLISHED" },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "UPDATE",
+      entity: "DutySchedule",
+      entityId: id,
+      before: { status: schedule.status },
+      after: { status: updated.status },
+    });
   });
 
   revalidatePath(`/cizelgeler/${id}`);
@@ -222,18 +226,19 @@ export async function unpublishDutyScheduleAction(id: string) {
     redirectWithMessage(`/cizelgeler/${id}`, "error", "Çizelge zaten taslak durumunda.");
   }
 
-  const updated = await prisma.dutySchedule.update({
-    where: { id },
-    data: { status: "DRAFT" },
-  });
-
-  await writeAuditLog({
-    userId: user.id,
-    action: "UPDATE",
-    entity: "DutySchedule",
-    entityId: id,
-    before: { status: schedule.status },
-    after: { status: updated.status },
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.dutySchedule.update({
+      where: { id },
+      data: { status: "DRAFT" },
+    });
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "UPDATE",
+      entity: "DutySchedule",
+      entityId: id,
+      before: { status: schedule.status },
+      after: { status: updated.status },
+    });
   });
 
   revalidatePath(`/cizelgeler/${id}`);

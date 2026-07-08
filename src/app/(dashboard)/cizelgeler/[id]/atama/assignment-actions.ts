@@ -163,27 +163,29 @@ export async function editDutyAssignmentAction(
     isManual: assignment.isManual,
   };
 
-  const updated = await prisma.dutyAssignment.update({
-    where: { id: assignment.id },
-    data: { pharmacyId: candidatePharmacyId, isManual: true, note: reason },
-  });
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.dutyAssignment.update({
+      where: { id: assignment.id },
+      data: { pharmacyId: candidatePharmacyId, isManual: true, note: reason },
+    });
 
-  const after = {
-    pharmacyId: updated.pharmacyId,
-    pharmacyName: candidate.name,
-    note: updated.note,
-    isManual: updated.isManual,
-    reason,
-  };
+    const after = {
+      pharmacyId: updated.pharmacyId,
+      pharmacyName: candidate.name,
+      note: updated.note,
+      isManual: updated.isManual,
+      reason,
+    };
 
-  await writeAuditLog({
-    userId: user.id,
-    action: "UPDATE",
-    entity: "DutyAssignment",
-    entityId: assignment.id,
-    before,
-    after,
-    dutyAssignmentId: assignment.id,
+    await writeAuditLog(tx, {
+      userId: user.id,
+      action: "UPDATE",
+      entity: "DutyAssignment",
+      entityId: assignment.id,
+      before,
+      after,
+      dutyAssignmentId: assignment.id,
+    });
   });
 
   revalidatePath(`/cizelgeler/${assignment.dutyScheduleId}`);

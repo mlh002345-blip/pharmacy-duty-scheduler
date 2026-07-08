@@ -436,6 +436,7 @@ async function main() {
     month: currentMonth,
     year: currentYear,
     regionId: publishedRegion.id,
+    userId: adminUser.id,
   });
   await prisma.dutySchedule.update({
     where: { id: publishedSchedule.id },
@@ -446,6 +447,7 @@ async function main() {
     month: currentMonth,
     year: currentYear,
     regionId: draftRegion.id,
+    userId: adminUser.id,
   });
 
   console.log("Seed completed:");

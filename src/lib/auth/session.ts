@@ -1,8 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+
+type PrismaClientOrTx = PrismaClient | Prisma.TransactionClient;
 
 const SESSION_COOKIE_NAME = "session_token";
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
@@ -36,8 +39,11 @@ export async function destroySession() {
 // o kullanıcıya ait tüm oturumları (hangi cihazda/tarayıcıda açılmış olursa
 // olsun) geçersiz kılar. Değiştiren yönetici başka bir kullanıcıyı
 // düzenliyorsa kendi oturumu bu userId'ye ait olmadığından etkilenmez.
-export async function invalidateUserSessions(userId: string) {
-  await prisma.session.deleteMany({ where: { userId } });
+export async function invalidateUserSessions(
+  userId: string,
+  client: PrismaClientOrTx = prisma
+) {
+  await client.session.deleteMany({ where: { userId } });
 }
 
 // invalidateUserSessions çağrısı, işlemi yapan kullanıcının KENDİ şifresini

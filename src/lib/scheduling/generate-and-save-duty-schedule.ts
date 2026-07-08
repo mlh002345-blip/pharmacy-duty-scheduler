@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getOpeningBalanceByPharmacy } from "@/lib/balance/duty-balance";
+import { writeAuditLog } from "@/lib/audit";
 import { dateAtUtcMidnight, daysInMonth } from "./date-tr";
 import { generateDutySchedule } from "./generate-duty-schedule";
 
@@ -7,6 +8,10 @@ export type GenerateAndSaveDutyScheduleInput = {
   month: number;
   year: number;
   regionId: string;
+  // Oluşturma işlemini başlatan kullanıcı: denetim kaydı, çizelge/atama/uyarı
+  // yazımlarıyla aynı veritabanı işlemi (transaction) içinde yazılır ki
+  // denetim kaydı başarısız olursa taslak çizelge de geri alınsın.
+  userId: string;
 };
 
 export class DutyScheduleGenerationError extends Error {}
@@ -15,6 +20,7 @@ export async function generateAndSaveDutySchedule({
   month,
   year,
   regionId,
+  userId,
 }: GenerateAndSaveDutyScheduleInput) {
   const region = await prisma.region.findUnique({
     where: { id: regionId },
@@ -116,6 +122,14 @@ export async function generateAndSaveDutySchedule({
         })),
       });
     }
+
+    await writeAuditLog(tx, {
+      userId,
+      action: "CREATE",
+      entity: "DutySchedule",
+      entityId: created.id,
+      after: { month, year, regionId, status: "DRAFT" },
+    });
 
     return created;
   });

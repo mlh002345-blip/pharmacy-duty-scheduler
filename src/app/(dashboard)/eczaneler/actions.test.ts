@@ -13,6 +13,7 @@ class RedirectSignal extends Error {
 const prismaMock = {
   pharmacy: { findUnique: vi.fn(), delete: vi.fn() },
   dutyAssignment: { count: vi.fn() },
+  $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
 };
 const writeAuditLog = vi.fn();
 const revalidatePath = vi.fn();
@@ -94,5 +95,14 @@ describe("deletePharmacyAction — deleteSetupData is ADMIN-only", () => {
       "Bu eczaneye ait nöbet ataması olduğu için silinemez."
     );
     expect(prismaMock.pharmacy.delete).not.toHaveBeenCalled();
+  });
+
+  it("propagates an audit-log failure instead of reporting success (transaction, not a swallowed error)", async () => {
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy());
+    prismaMock.pharmacy.delete.mockResolvedValue(pharmacy());
+    writeAuditLog.mockRejectedValueOnce(new Error("db connection dropped"));
+
+    await expect(deletePharmacyAction("pharmacy-1")).rejects.toThrow("db connection dropped");
   });
 });
