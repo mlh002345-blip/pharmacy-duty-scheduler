@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
+import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permissions";
@@ -22,17 +23,30 @@ export const dynamic = "force-dynamic";
 export default async function MazeretlerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; page?: string }>;
 }) {
-  const { success, error } = await searchParams;
+  const { success, error, page: pageParam } = await searchParams;
 
   const user = await getCurrentUser();
   const canManage = !!user && hasPermission(user.role, "manageSetupData");
 
-  const unavailabilities = await prisma.unavailability.findMany({
-    include: { pharmacy: true },
-    orderBy: { startDate: "asc" },
-  });
+  const page = parsePageParam(pageParam);
+
+  const [unavailabilities, totalCount] = await Promise.all([
+    prisma.unavailability.findMany({
+      select: {
+        id: true,
+        startDate: true,
+        endDate: true,
+        reason: true,
+        pharmacy: { select: { name: true } },
+      },
+      orderBy: { startDate: "asc" },
+      skip: (page - 1) * DEFAULT_PAGE_SIZE,
+      take: DEFAULT_PAGE_SIZE,
+    }),
+    prisma.unavailability.count(),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -55,7 +69,7 @@ export default async function MazeretlerPage({
       <Card>
         <CardHeader>
           <CardTitle>Mazeret Listesi</CardTitle>
-          <CardDescription>{unavailabilities.length} kayıt.</CardDescription>
+          <CardDescription>{totalCount} kayıt.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -101,6 +115,13 @@ export default async function MazeretlerPage({
               )}
             </TableBody>
           </Table>
+          <Pagination
+            basePath="/mazeretler"
+            searchParams={{}}
+            page={page}
+            pageSize={DEFAULT_PAGE_SIZE}
+            totalCount={totalCount}
+          />
         </CardContent>
       </Card>
     </div>
