@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 
 class RedirectSignal extends Error {
   constructor(
@@ -10,8 +11,22 @@ class RedirectSignal extends Error {
   }
 }
 
+function p2002() {
+  return new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+    code: "P2002",
+    clientVersion: "test",
+    meta: { target: ["name"] },
+  });
+}
+
 const prismaMock = {
-  region: { findUnique: vi.fn(), delete: vi.fn() },
+  region: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
   pharmacy: { count: vi.fn() },
   // Test double for an interactive transaction: runs the callback with the
   // same mocked client standing in for `tx`, so the mutation + audit-log
@@ -41,7 +56,17 @@ vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
 }));
 
-const { deleteRegionAction } = await import("./actions");
+const { createRegionAction, updateRegionAction, deleteRegionAction } = await import("./actions");
+
+function regionFormData(overrides: Record<string, string> = {}) {
+  const fd = new FormData();
+  fd.set("name", "Kadıköy");
+  fd.set("district", "Kadıköy");
+  fd.set("dailyDutyCount", "2");
+  fd.set("isActive", "on");
+  for (const [key, value] of Object.entries(overrides)) fd.set(key, value);
+  return fd;
+}
 
 function region(overrides: Partial<Record<string, unknown>> = {}) {
   return { id: "region-1", name: "Kadıköy", isActive: true, ...overrides };
@@ -115,5 +140,55 @@ describe("deleteRegionAction — deleteSetupData is ADMIN-only", () => {
     // against a real database, would also mean the delete itself rolled
     // back rather than silently landing unaudited).
     await expect(deleteRegionAction("region-1")).rejects.toThrow("db connection dropped");
+  });
+});
+
+describe("createRegionAction / updateRegionAction — concurrent duplicate name", () => {
+  beforeEach(() => {
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+  });
+
+  it("maps a P2002 unique-constraint violation on create to the same friendly duplicate message", async () => {
+    prismaMock.region.findUnique.mockResolvedValue(null); // pre-check sees no duplicate
+    prismaMock.region.create.mockRejectedValueOnce(p2002());
+
+    const result = await createRegionAction({ success: false, message: "" }, regionFormData());
+
+    expect(result.success).toBe(false);
+    expect(result.errors?.name).toEqual(["Bu isimde bir bölge zaten mevcut."]);
+  });
+
+  it("maps a P2002 unique-constraint violation on update to the same friendly duplicate message", async () => {
+    prismaMock.region.findUnique.mockResolvedValue({ id: "region-1", name: "Eski İsim" });
+    prismaMock.region.findFirst.mockResolvedValue(null); // pre-check sees no duplicate
+    prismaMock.region.update.mockRejectedValueOnce(p2002());
+
+    const result = await updateRegionAction(
+      "region-1",
+      { success: false, message: "" },
+      regionFormData()
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errors?.name).toEqual(["Bu isimde bir bölge zaten mevcut."]);
+  });
+
+  it("still throws unexpected (non-P2002) errors on create instead of hiding them", async () => {
+    prismaMock.region.findUnique.mockResolvedValue(null);
+    prismaMock.region.create.mockRejectedValueOnce(new Error("some other database error"));
+
+    await expect(
+      createRegionAction({ success: false, message: "" }, regionFormData())
+    ).rejects.toThrow("some other database error");
+  });
+
+  it("valid region creation still works", async () => {
+    prismaMock.region.findUnique.mockResolvedValue(null);
+    prismaMock.region.create.mockResolvedValue({ id: "region-new", name: "Kadıköy" });
+
+    await expect(
+      createRegionAction({ success: false, message: "" }, regionFormData())
+    ).rejects.toBeInstanceOf(RedirectSignal);
+    expect(prismaMock.region.create).toHaveBeenCalledOnce();
   });
 });

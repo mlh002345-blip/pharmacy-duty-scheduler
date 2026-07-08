@@ -177,6 +177,14 @@ model DutyAssignment {
 
   auditLogs AuditLog[]
 
+  // Aynı eczane, aynı çizelgede aynı tarihte birden fazla kez nöbetçi
+  // olamaz — bu, veritabanı seviyesinde uygulanan tek gerçek koruma:
+  // eşzamanlı iki manuel atama düzenlemesi, her biri güncellemeden önce
+  // yüklenen bayat bir anlık görüntüye göre "bu eczane bu tarihte müsait"
+  // sonucuna varabilir. Yalnızca DutyAssignment'ı kapsar; geçmiş nöbet
+  // kayıtları (HistoricalDutyRecord) ayrı bir tablodur ve bu kısıttan
+  // etkilenmez.
+  @@unique([dutyScheduleId, pharmacyId, date])
   @@index([dutyScheduleId])
   @@index([pharmacyId])
   @@index([date])

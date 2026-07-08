@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
@@ -8,6 +9,19 @@ import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { holidaySchema } from "@/lib/validations/holiday";
 import { type ActionState, zodErrorState } from "@/lib/action-state";
+
+const DUPLICATE_HOLIDAY_STATE: ActionState = {
+  success: false,
+  message: "Bu tarih ve tür için tatil günü zaten kayıtlı.",
+  errors: { date: ["Bu tarih ve tür için tatil günü zaten kayıtlı."] },
+};
+
+// Holiday tablosunun tek benzersizlik kısıtı (date, type) çiftidir, bu
+// yüzden bu işlemlerin yazdığı transaction'larda oluşabilecek herhangi bir
+// P2002 bu kısıttan kaynaklanır.
+function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
 
 function parseHolidayForm(formData: FormData) {
   return holidaySchema.safeParse({
@@ -30,22 +44,29 @@ export async function createHolidayAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  await prisma.$transaction(async (tx) => {
-    const created = await tx.holiday.create({
-      data: {
-        name: parsed.data.name,
-        date: new Date(parsed.data.date),
-        type: parsed.data.type,
-      },
+  try {
+    await prisma.$transaction(async (tx) => {
+      const created = await tx.holiday.create({
+        data: {
+          name: parsed.data.name,
+          date: new Date(parsed.data.date),
+          type: parsed.data.type,
+        },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "CREATE",
+        entity: "Holiday",
+        entityId: created.id,
+        after: created,
+      });
     });
-    await writeAuditLog(tx, {
-      userId: user.id,
-      action: "CREATE",
-      entity: "Holiday",
-      entityId: created.id,
-      after: created,
-    });
-  });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return DUPLICATE_HOLIDAY_STATE;
+    }
+    throw error;
+  }
 
   revalidatePath("/tatil-gunleri");
   redirectWithMessage("/tatil-gunleri", "success", "Tatil günü oluşturuldu.");
@@ -70,24 +91,31 @@ export async function updateHolidayAction(
     return { success: false, message: "Tatil günü bulunamadı." };
   }
 
-  await prisma.$transaction(async (tx) => {
-    const updated = await tx.holiday.update({
-      where: { id },
-      data: {
-        name: parsed.data.name,
-        date: new Date(parsed.data.date),
-        type: parsed.data.type,
-      },
+  try {
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.holiday.update({
+        where: { id },
+        data: {
+          name: parsed.data.name,
+          date: new Date(parsed.data.date),
+          type: parsed.data.type,
+        },
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "UPDATE",
+        entity: "Holiday",
+        entityId: updated.id,
+        before,
+        after: updated,
+      });
     });
-    await writeAuditLog(tx, {
-      userId: user.id,
-      action: "UPDATE",
-      entity: "Holiday",
-      entityId: updated.id,
-      before,
-      after: updated,
-    });
-  });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return DUPLICATE_HOLIDAY_STATE;
+    }
+    throw error;
+  }
 
   revalidatePath("/tatil-gunleri");
   redirectWithMessage("/tatil-gunleri", "success", "Tatil günü güncellendi.");

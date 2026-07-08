@@ -144,9 +144,16 @@ export async function reviewDutyRequestAction(
     };
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.dutyRequest.update({
-      where: { id: requestId },
+  // İki inceleyici aynı talebi aynı anda incelerse, yukarıdaki `request.status`
+  // okuması ikisi için de PENDING/LATE görünebilir. Gerçek koruma burada:
+  // update, WHERE id = requestId AND status IN (PENDING, LATE) koşuluyla
+  // yapılır — ilk inceleme durumu değiştirdiğinde, ikinci inceleme bu
+  // koşulu artık karşılamayan 0 satırı günceller. Denetim kaydı yalnızca
+  // güncelleme gerçekten bir satırı etkilediyse (aynı transaction içinde)
+  // yazılır.
+  const reviewed = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.dutyRequest.updateMany({
+      where: { id: requestId, status: { in: ["PENDING", "LATE"] } },
       data: {
         status: decision,
         reviewedById: guard.user.id,
@@ -154,6 +161,9 @@ export async function reviewDutyRequestAction(
         reviewNote: reviewNote || null,
       },
     });
+    if (count === 0) {
+      return false;
+    }
     await writeAuditLog(tx, {
       userId: guard.user.id,
       action: "UPDATE",
@@ -167,7 +177,15 @@ export async function reviewDutyRequestAction(
         reviewNote: reviewNote || null,
       },
     });
+    return true;
   });
+
+  if (!reviewed) {
+    return {
+      success: false,
+      message: "Bu talep daha önce incelenmiş. Lütfen sayfayı yenileyin.",
+    };
+  }
 
   const decisionLabel =
     decision === "APPROVED"

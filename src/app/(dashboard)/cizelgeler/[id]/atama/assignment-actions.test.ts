@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const prismaMock = {
   dutyAssignment: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
@@ -122,5 +123,47 @@ describe("editDutyAssignmentAction — mutation and audit log are one transactio
       editDutyAssignmentAction("assignment-1", { success: false, message: "" }, validFormData())
     ).rejects.toThrow("db connection dropped");
     expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("maps a P2002 double-booking violation to a friendly Turkish message", async () => {
+    // Simulates two concurrent edits: both pass the in-memory
+    // isAlreadyAssignedOnDate check against their own stale snapshot, but
+    // the second write hits the DutyAssignment(dutyScheduleId, pharmacyId,
+    // date) unique constraint.
+    prismaMock.dutyAssignment.update.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+        code: "P2002",
+        clientVersion: "test",
+        meta: { target: ["dutyScheduleId", "pharmacyId", "date"] },
+      })
+    );
+
+    const result = await editDutyAssignmentAction(
+      "assignment-1",
+      { success: false, message: "" },
+      validFormData()
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errors?.pharmacyId).toEqual([
+      "Bu eczane aynı tarihte bu çizelgede zaten nöbetçi olarak atanmış.",
+    ]);
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("still throws unexpected (non-P2002) errors instead of hiding them", async () => {
+    prismaMock.dutyAssignment.update.mockRejectedValueOnce(new Error("some other database error"));
+
+    await expect(
+      editDutyAssignmentAction("assignment-1", { success: false, message: "" }, validFormData())
+    ).rejects.toThrow("some other database error");
+  });
+
+  it("a valid reassignment to a genuinely free pharmacy still works", async () => {
+    await expect(
+      editDutyAssignmentAction("assignment-1", { success: false, message: "" }, validFormData())
+    ).rejects.toThrow("REDIRECT:/cizelgeler/schedule-1");
+
+    expect(prismaMock.dutyAssignment.update).toHaveBeenCalledOnce();
   });
 });

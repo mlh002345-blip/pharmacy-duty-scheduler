@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
@@ -8,6 +9,19 @@ import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { regionSchema } from "@/lib/validations/region";
 import { type ActionState, zodErrorState } from "@/lib/action-state";
+
+const DUPLICATE_REGION_NAME_STATE: ActionState = {
+  success: false,
+  message: "Bu isimde bir bölge zaten mevcut.",
+  errors: { name: ["Bu isimde bir bölge zaten mevcut."] },
+};
+
+// Region tablosunda değiştirilebilir tek benzersiz alan name olduğundan, bu
+// işlemlerin yazdığı transaction'larda oluşabilecek herhangi bir P2002 bu
+// alandan kaynaklanır.
+function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
 
 function parseRegionForm(formData: FormData) {
   return regionSchema.safeParse({
@@ -35,23 +49,29 @@ export async function createRegionAction(
     where: { name: parsed.data.name },
   });
   if (existing) {
-    return {
-      success: false,
-      message: "Bu isimde bir bölge zaten mevcut.",
-      errors: { name: ["Bu isimde bir bölge zaten mevcut."] },
-    };
+    return DUPLICATE_REGION_NAME_STATE;
   }
 
-  await prisma.$transaction(async (tx) => {
-    const created = await tx.region.create({ data: parsed.data });
-    await writeAuditLog(tx, {
-      userId: user.id,
-      action: "CREATE",
-      entity: "Region",
-      entityId: created.id,
-      after: created,
+  try {
+    await prisma.$transaction(async (tx) => {
+      const created = await tx.region.create({ data: parsed.data });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "CREATE",
+        entity: "Region",
+        entityId: created.id,
+        after: created,
+      });
     });
-  });
+  } catch (error) {
+    // İki eşzamanlı istek aynı isimle bölge oluşturmaya çalışırsa,
+    // yukarıdaki `existing` kontrolünü ikisi de geçebilir; ikinci yazma
+    // DB'nin benzersizlik kısıtına çarpar.
+    if (isUniqueConstraintError(error)) {
+      return DUPLICATE_REGION_NAME_STATE;
+    }
+    throw error;
+  }
 
   revalidatePath("/bolgeler");
   redirectWithMessage("/bolgeler", "success", "Bölge oluşturuldu.");
@@ -80,27 +100,30 @@ export async function updateRegionAction(
     where: { name: parsed.data.name, NOT: { id } },
   });
   if (duplicate) {
-    return {
-      success: false,
-      message: "Bu isimde bir bölge zaten mevcut.",
-      errors: { name: ["Bu isimde bir bölge zaten mevcut."] },
-    };
+    return DUPLICATE_REGION_NAME_STATE;
   }
 
-  await prisma.$transaction(async (tx) => {
-    const updated = await tx.region.update({
-      where: { id },
-      data: parsed.data,
+  try {
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.region.update({
+        where: { id },
+        data: parsed.data,
+      });
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "UPDATE",
+        entity: "Region",
+        entityId: updated.id,
+        before,
+        after: updated,
+      });
     });
-    await writeAuditLog(tx, {
-      userId: user.id,
-      action: "UPDATE",
-      entity: "Region",
-      entityId: updated.id,
-      before,
-      after: updated,
-    });
-  });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return DUPLICATE_REGION_NAME_STATE;
+    }
+    throw error;
+  }
 
   revalidatePath("/bolgeler");
   redirectWithMessage("/bolgeler", "success", "Bölge güncellendi.");

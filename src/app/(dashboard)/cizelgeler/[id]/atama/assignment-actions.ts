@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requirePermissionOrState } from "@/lib/auth/guard";
@@ -163,30 +164,49 @@ export async function editDutyAssignmentAction(
     isManual: assignment.isManual,
   };
 
-  await prisma.$transaction(async (tx) => {
-    const updated = await tx.dutyAssignment.update({
-      where: { id: assignment.id },
-      data: { pharmacyId: candidatePharmacyId, isManual: true, note: reason },
-    });
+  try {
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.dutyAssignment.update({
+        where: { id: assignment.id },
+        data: { pharmacyId: candidatePharmacyId, isManual: true, note: reason },
+      });
 
-    const after = {
-      pharmacyId: updated.pharmacyId,
-      pharmacyName: candidate.name,
-      note: updated.note,
-      isManual: updated.isManual,
-      reason,
-    };
+      const after = {
+        pharmacyId: updated.pharmacyId,
+        pharmacyName: candidate.name,
+        note: updated.note,
+        isManual: updated.isManual,
+        reason,
+      };
 
-    await writeAuditLog(tx, {
-      userId: user.id,
-      action: "UPDATE",
-      entity: "DutyAssignment",
-      entityId: assignment.id,
-      before,
-      after,
-      dutyAssignmentId: assignment.id,
+      await writeAuditLog(tx, {
+        userId: user.id,
+        action: "UPDATE",
+        entity: "DutyAssignment",
+        entityId: assignment.id,
+        before,
+        after,
+        dutyAssignmentId: assignment.id,
+      });
     });
-  });
+  } catch (error) {
+    // İki eşzamanlı düzenleme, her ikisi de güncellemeden önce yüklenen
+    // bayat bir anlık görüntüye göre "bu eczane bu tarihte müsait"
+    // sonucuna varabilir (isAlreadyAssignedOnDate kontrolü yukarıda).
+    // Gerçek koruma, DutyAssignment(dutyScheduleId, pharmacyId, date)
+    // üzerindeki veritabanı benzersizlik kısıtıdır; ikinci yazma buna
+    // çarparsa P2002 fırlatır.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return {
+        success: false,
+        message: "Lütfen formdaki hataları düzeltin.",
+        errors: {
+          pharmacyId: ["Bu eczane aynı tarihte bu çizelgede zaten nöbetçi olarak atanmış."],
+        },
+      };
+    }
+    throw error;
+  }
 
   revalidatePath(`/cizelgeler/${assignment.dutyScheduleId}`);
   redirect(
