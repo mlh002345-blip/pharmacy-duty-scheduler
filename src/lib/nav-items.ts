@@ -37,7 +37,12 @@ export const navItems: NavItem[] = [
   { label: "Nöbet Çizelgeleri", href: "/cizelgeler", icon: CalendarRange },
   { label: "Nöbet Dengesi", href: "/nobet-dengesi", icon: Scale },
   { label: "Veri Kontrol", href: "/veri-kontrol", icon: ShieldCheck },
-  { label: "Denetim Kayıtları", href: "/denetim-kayitlari", icon: History },
+  {
+    label: "Denetim Kayıtları",
+    href: "/denetim-kayitlari",
+    icon: History,
+    permission: "manageUsers",
+  },
   { label: "Vatandaş Ekranı", href: "/vatandas", icon: Globe },
   {
     label: "Kullanıcılar",

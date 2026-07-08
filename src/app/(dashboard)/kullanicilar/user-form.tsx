@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import Link from "next/link";
-import type { User } from "@prisma/client";
+import type { UserRole } from "@prisma/client";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,12 +15,23 @@ import { type ActionState, initialActionState, fieldError } from "@/lib/action-s
 
 type UserFormAction = (state: ActionState, formData: FormData) => Promise<ActionState>;
 
+// Sadece formun ihtiyaç duyduğu alanlar: passwordHash gibi hassas alanları
+// içeren Prisma User tipi yerine bilerek dar bir DTO kullanılıyor, böylece
+// bu Client Component'e sunucu tarafından yanlışlıkla şifre özeti geçirilemez.
+export type EditableUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  isActive: boolean;
+};
+
 export function UserForm({
   action,
   user,
 }: {
   action: UserFormAction;
-  user?: User;
+  user?: EditableUser;
 }) {
   const [state, formAction, isPending] = useActionState(action, initialActionState);
   const isEdit = !!user;

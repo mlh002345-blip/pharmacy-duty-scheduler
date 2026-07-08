@@ -14,6 +14,7 @@ import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layo
 import { prisma } from "@/lib/prisma";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
+import { requirePermissionOrRedirectWithMessage } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,11 @@ export default async function DenetimKayitlariPage({
 }: {
   searchParams: Promise<{ page?: string }>;
 }) {
+  await requirePermissionOrRedirectWithMessage(
+    "manageUsers",
+    "/",
+    "Bu sayfaya erişim yetkiniz bulunmuyor."
+  );
   const { page: pageParam } = await searchParams;
   const page = parsePageParam(pageParam);
 

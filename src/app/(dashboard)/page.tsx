@@ -32,6 +32,7 @@ export default async function PanelPage() {
   const user = await getCurrentUser();
   const canGenerate = !!user && hasPermission(user.role, "generateSchedule");
   const canManage = !!user && hasPermission(user.role, "manageSetupData");
+  const canViewAuditLog = !!user && hasPermission(user.role, "manageUsers");
 
   const today = todayAtUtcMidnight();
 
@@ -305,12 +306,14 @@ export default async function PanelPage() {
               Henüz manuel bir atama değişikliği yapılmadı.
             </p>
           )}
-          <Link
-            href="/denetim-kayitlari"
-            className="text-primary mt-3 inline-flex items-center gap-1.5 text-sm font-medium underline-offset-4 hover:underline"
-          >
-            Denetim kayıtlarını aç <ArrowRight className="size-3.5" />
-          </Link>
+          {canViewAuditLog && (
+            <Link
+              href="/denetim-kayitlari"
+              className="text-primary mt-3 inline-flex items-center gap-1.5 text-sm font-medium underline-offset-4 hover:underline"
+            >
+              Denetim kayıtlarını aç <ArrowRight className="size-3.5" />
+            </Link>
+          )}
         </div>
       </div>
 

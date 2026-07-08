@@ -468,7 +468,7 @@ async function main() {
   console.log("");
   console.log("Demo login credentials (local development only):");
   for (const user of USERS) {
-    console.log(`- ${user.role}: ${user.email} / ${user.password}`);
+    console.log(`- ${user.role}: ${user.email} / [redacted demo password]`);
   }
 }
 

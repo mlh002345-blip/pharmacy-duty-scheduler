@@ -17,7 +17,16 @@ export default async function KullaniciDuzenlePage({
     "Bu sayfaya erişim yetkiniz bulunmuyor."
   );
   const { id } = await params;
-  const user = await prisma.user.findUnique({ where: { id } });
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true,
+    },
+  });
   if (!user) notFound();
 
   const action = updateUserAction.bind(null, id);
