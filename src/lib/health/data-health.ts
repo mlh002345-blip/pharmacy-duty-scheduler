@@ -266,7 +266,7 @@ export function runDataHealthCheck(input: DataHealthCheckInput): DataHealthRepor
   return { critical, warnings, info };
 }
 
-export async function getDataHealthReport(): Promise<DataHealthReport> {
+async function fetchDataHealthReport(): Promise<DataHealthReport> {
   const today = todayAtUtcMidnight();
   const currentMonth = today.getUTCMonth() + 1;
   const currentYear = today.getUTCFullYear();
@@ -389,4 +389,40 @@ export async function getDataHealthReport(): Promise<DataHealthReport> {
   };
 
   return runDataHealthCheck(input);
+}
+
+// getDataHealthReport is called on every load of both / (dashboard) and
+// /veri-kontrol — both force-dynamic pages with no route-level caching —
+// so without this, the same 13-query fan-out (including full scans over
+// Pharmacy/Unavailability) reruns on every single visit to either page,
+// even seconds apart with no data changes in between.
+//
+// React's cache() only memoizes within a single request and would not
+// help here, since each page load is its own request. A short-lived,
+// process-local TTL cache is used instead: no Redis/external service,
+// system-level (not per-user) health data only, safe to share across all
+// viewers. This module has no mutation actions of its own and no other
+// action in the app currently has a hook to invalidate it immediately —
+// wiring that into every relevant mutating action across ~10 files was
+// judged out of scope for this pass. Consequence: the report can be up to
+// DATA_HEALTH_CACHE_TTL_MS stale after a mutation elsewhere in the app
+// (e.g. a newly-added pharmacy might not show up in the "eczane eklendi
+// mi?" checklist item for up to that long). This is acceptable because
+// the report is purely informational — schedule generation's own
+// pre-checks (getSchedulePreCheck) query fresh data independently and are
+// never fed from this cache.
+const DATA_HEALTH_CACHE_TTL_MS = 60_000;
+
+let cachedReport: { value: DataHealthReport; expiresAt: number } | null = null;
+
+export async function getDataHealthReport(options?: {
+  now?: number;
+}): Promise<DataHealthReport> {
+  const now = options?.now ?? Date.now();
+  if (cachedReport && cachedReport.expiresAt > now) {
+    return cachedReport.value;
+  }
+  const report = await fetchDataHealthReport();
+  cachedReport = { value: report, expiresAt: now + DATA_HEALTH_CACHE_TTL_MS };
+  return report;
 }

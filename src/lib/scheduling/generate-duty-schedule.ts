@@ -124,16 +124,35 @@ function resolveDutyWeight(
   return dutyRule.weekdayWeight;
 }
 
+// Gün/eczane döngüsü içinde her eczane için tüm mazeret/talep listesini
+// baştan taramak yerine (O(gün × eczane × kayıt)), bu kayıtlar döngüden
+// önce pharmacyId'ye göre bir kez indekslenir; döngü içindeki aramalar
+// yalnızca o eczaneye ait (genelde tek haneli sayıda) kayıt üzerinde
+// çalışır. Davranış aynıdır — yalnızca arama maliyeti küçülür.
+function indexByPharmacyId<T extends { pharmacyId: string }>(
+  items: T[]
+): Map<string, T[]> {
+  const byPharmacy = new Map<string, T[]>();
+  for (const item of items) {
+    const list = byPharmacy.get(item.pharmacyId);
+    if (list) {
+      list.push(item);
+    } else {
+      byPharmacy.set(item.pharmacyId, [item]);
+    }
+  }
+  return byPharmacy;
+}
+
 function isUnavailable(
   pharmacyId: string,
   date: Date,
-  unavailabilities: UnavailabilityInput[]
+  unavailabilitiesByPharmacy: Map<string, UnavailabilityInput[]>
 ): boolean {
-  return unavailabilities.some(
-    (u) =>
-      u.pharmacyId === pharmacyId &&
-      u.startDate.getTime() <= date.getTime() &&
-      u.endDate.getTime() >= date.getTime()
+  const forPharmacy = unavailabilitiesByPharmacy.get(pharmacyId);
+  if (!forPharmacy) return false;
+  return forPharmacy.some(
+    (u) => u.startDate.getTime() <= date.getTime() && u.endDate.getTime() >= date.getTime()
   );
 }
 
@@ -181,21 +200,29 @@ export function generateDutySchedule(
     (request) => request.requestType === "PREFER_DUTY"
   );
 
-  const isBlockedByRequest = (pharmacyId: string, date: Date) =>
-    blockingRequests.some(
-      (request) =>
-        request.pharmacyId === pharmacyId &&
-        request.startDate.getTime() <= date.getTime() &&
-        request.endDate.getTime() >= date.getTime()
-    );
+  const unavailabilitiesByPharmacy = indexByPharmacyId(unavailabilities);
+  const blockingRequestsByPharmacy = indexByPharmacyId(blockingRequests);
+  const preferRequestsByPharmacy = indexByPharmacyId(preferRequests);
 
-  const hasPreferenceForDate = (pharmacyId: string, date: Date) =>
-    preferRequests.some(
+  const isBlockedByRequest = (pharmacyId: string, date: Date) => {
+    const forPharmacy = blockingRequestsByPharmacy.get(pharmacyId);
+    if (!forPharmacy) return false;
+    return forPharmacy.some(
       (request) =>
-        request.pharmacyId === pharmacyId &&
         request.startDate.getTime() <= date.getTime() &&
         request.endDate.getTime() >= date.getTime()
     );
+  };
+
+  const hasPreferenceForDate = (pharmacyId: string, date: Date) => {
+    const forPharmacy = preferRequestsByPharmacy.get(pharmacyId);
+    if (!forPharmacy) return false;
+    return forPharmacy.some(
+      (request) =>
+        request.startDate.getTime() <= date.getTime() &&
+        request.endDate.getTime() >= date.getTime()
+    );
+  };
 
   for (const historical of historicalAssignments) {
     const entry = metrics.get(historical.pharmacyId);
@@ -226,7 +253,7 @@ export function generateDutySchedule(
 
     const availableToday = eligiblePharmacies.filter(
       (p) =>
-        !isUnavailable(p.id, date, unavailabilities) &&
+        !isUnavailable(p.id, date, unavailabilitiesByPharmacy) &&
         !isBlockedByRequest(p.id, date)
     );
 

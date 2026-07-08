@@ -71,6 +71,36 @@ describe("generateDutySchedule", () => {
     expect(duringUnavailability.length).toBe(6);
   });
 
+  it("respects multiple separate unavailability windows for the same pharmacy", () => {
+    const firstStart = dateAtUtcMidnight(YEAR, MONTH, 2);
+    const firstEnd = dateAtUtcMidnight(YEAR, MONTH, 3);
+    const secondStart = dateAtUtcMidnight(YEAR, MONTH, 20);
+    const secondEnd = dateAtUtcMidnight(YEAR, MONTH, 21);
+
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [
+        { pharmacyId: "a", startDate: firstStart, endDate: firstEnd },
+        { pharmacyId: "a", startDate: secondStart, endDate: secondEnd },
+      ],
+      historicalAssignments: [],
+    });
+
+    const duringEitherWindow = result.assignments.filter(
+      (a) =>
+        (a.date >= firstStart && a.date <= firstEnd) ||
+        (a.date >= secondStart && a.date <= secondEnd)
+    );
+    expect(duringEitherWindow.length).toBe(4);
+    expect(duringEitherWindow.every((a) => a.pharmacyId === "b")).toBe(true);
+  });
+
   it("respects the selected region", () => {
     const result = generateDutySchedule({
       month: MONTH,
