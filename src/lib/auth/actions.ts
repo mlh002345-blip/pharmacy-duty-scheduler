@@ -33,7 +33,10 @@ export async function loginAction(
   }
 
   if (!user.isActive) {
-    return { success: false, message: "Kullanıcı hesabı pasif durumdadır." };
+    // Kasıtlı olarak diğer giriş hatalarıyla aynı genel mesaj kullanılır;
+    // aksi halde bir e-postanın var olup olmadığı veya pasif bir hesaba ait
+    // olduğu, kimlik doğrulaması yapılmadan dışarıdan anlaşılabilir.
+    return { success: false, message: "Hatalı e-posta veya şifre." };
   }
 
   await createSession(user.id);

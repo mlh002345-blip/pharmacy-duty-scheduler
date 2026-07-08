@@ -32,6 +32,23 @@ export async function destroySession() {
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
+// Şifre değişikliği gibi güvenlik açısından hassas güncellemelerden sonra,
+// o kullanıcıya ait tüm oturumları (hangi cihazda/tarayıcıda açılmış olursa
+// olsun) geçersiz kılar. Değiştiren yönetici başka bir kullanıcıyı
+// düzenliyorsa kendi oturumu bu userId'ye ait olmadığından etkilenmez.
+export async function invalidateUserSessions(userId: string) {
+  await prisma.session.deleteMany({ where: { userId } });
+}
+
+// invalidateUserSessions çağrısı, işlemi yapan kullanıcının KENDİ şifresini
+// değiştirdiği durumda kendi oturumunu da veritabanından siler; tarayıcıdaki
+// artık geçersiz olan çerezi de ayrıca temizler ki bir sonraki istekte
+// otomatik olarak /giris'e yönlendirilsin.
+export async function clearSessionCookie() {
+  const cookieStore = await cookies();
+  cookieStore.delete(SESSION_COOKIE_NAME);
+}
+
 export async function getCurrentUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;

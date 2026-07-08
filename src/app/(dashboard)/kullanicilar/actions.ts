@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
 import { hashPassword } from "@/lib/auth/password";
+import { clearSessionCookie, invalidateUserSessions } from "@/lib/auth/session";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { createUserSchema, updateUserSchema } from "@/lib/validations/user";
@@ -148,6 +149,13 @@ export async function updateUserAction(
     },
   });
 
+  if (passwordChanged) {
+    // Şifre değişikliği, o kullanıcının açık olan tüm oturumlarını
+    // geçersiz kılar — eski şifreyle alınmış bir oturum jetonu artık
+    // kullanılamaz.
+    await invalidateUserSessions(id);
+  }
+
   await writeAuditLog({
     userId: currentUser.id,
     action: "UPDATE",
@@ -158,6 +166,20 @@ export async function updateUserAction(
   });
 
   revalidatePath("/kullanicilar");
+
+  const isSelfPasswordChange = passwordChanged && before.id === currentUser.id;
+  if (isSelfPasswordChange) {
+    // Kendi şifresini değiştiren yönetici için kendi oturumu da az önce
+    // silindi; tarayıcıdaki artık geçersiz çerezi temizleyip doğrudan
+    // giriş ekranına yönlendir.
+    await clearSessionCookie();
+    redirectWithMessage(
+      "/giris",
+      "success",
+      "Şifreniz güncellendi. Lütfen yeni şifrenizle tekrar giriş yapın."
+    );
+  }
+
   redirectWithMessage("/kullanicilar", "success", "Kullanıcı güncellendi.");
 }
 
