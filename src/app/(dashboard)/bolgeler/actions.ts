@@ -135,7 +135,7 @@ export async function toggleRegionStatusAction(id: string) {
 }
 
 export async function deleteRegionAction(id: string) {
-  const user = await requirePermissionOrRedirect("manageSetupData", "/bolgeler");
+  const user = await requirePermissionOrRedirect("deleteSetupData", "/bolgeler");
 
   const pharmacyCount = await prisma.pharmacy.count({ where: { regionId: id } });
   if (pharmacyCount > 0) {

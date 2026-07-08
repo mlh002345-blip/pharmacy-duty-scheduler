@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 import { escapeExcelCell } from "@/lib/excel-safety";
 
 // Örnek Geçmiş Nöbet Şablonu: beklenen sütun başlıkları ve sistemdeki gerçek
@@ -11,6 +12,12 @@ import { escapeExcelCell } from "@/lib/excel-safety";
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) redirect("/giris");
+  if (!hasPermission(user.role, "manageSetupData")) {
+    return NextResponse.json(
+      { message: "Bu işlem için yetkiniz bulunmuyor." },
+      { status: 403 }
+    );
+  }
 
   const samplePharmacies = await prisma.pharmacy.findMany({
     take: 3,

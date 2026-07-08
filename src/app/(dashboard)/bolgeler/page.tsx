@@ -30,6 +30,7 @@ export default async function BolgelerPage({
 
   const user = await getCurrentUser();
   const canManage = !!user && hasPermission(user.role, "manageSetupData");
+  const canDelete = !!user && hasPermission(user.role, "deleteSetupData");
 
   const regions = await prisma.region.findMany({
     include: { _count: { select: { pharmacies: true } } },
@@ -93,10 +94,12 @@ export default async function BolgelerPage({
                           action={toggleRegionStatusAction.bind(null, region.id)}
                           isActive={region.isActive}
                         />
-                        <DeleteButton
-                          action={deleteRegionAction.bind(null, region.id)}
-                          confirmMessage={`"${region.name}" bölgesini silmek istediğinize emin misiniz?`}
-                        />
+                        {canDelete && (
+                          <DeleteButton
+                            action={deleteRegionAction.bind(null, region.id)}
+                            confirmMessage={`"${region.name}" bölgesini silmek istediğinize emin misiniz?`}
+                          />
+                        )}
                       </div>
                     ) : (
                       <div className="text-muted-foreground text-right text-sm">-</div>

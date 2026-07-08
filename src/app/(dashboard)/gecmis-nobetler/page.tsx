@@ -105,12 +105,14 @@ export default async function GecmisNobetlerPage({
         description="Eski nöbet listelerinizi sisteme aktarın; sistem her eczanenin geçmiş nöbet yükünü hesaplar ve yeni çizelgeleri bu başlangıç nöbet dengesini dikkate alarak oluşturur."
         icon={Archive}
         actions={
-          <Button variant="outline" asChild>
-            <a href="/gecmis-nobetler/sablon">
-              <Download className="size-4" />
-              Örnek Geçmiş Nöbet Şablonu İndir
-            </a>
-          </Button>
+          canManage ? (
+            <Button variant="outline" asChild>
+              <a href="/gecmis-nobetler/sablon">
+                <Download className="size-4" />
+                Örnek Geçmiş Nöbet Şablonu İndir
+              </a>
+            </Button>
+          ) : undefined
         }
       />
 

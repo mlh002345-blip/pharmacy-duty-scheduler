@@ -43,6 +43,7 @@ export default async function EczanelerPage({
 
   const user = await getCurrentUser();
   const canManage = !!user && hasPermission(user.role, "manageSetupData");
+  const canDelete = !!user && hasPermission(user.role, "deleteSetupData");
 
   const where: Prisma.PharmacyWhereInput = {};
   if (q) {
@@ -185,10 +186,12 @@ export default async function EczanelerPage({
                           action={togglePharmacyStatusAction.bind(null, pharmacy.id)}
                           isActive={pharmacy.isActive}
                         />
-                        <DeleteButton
-                          action={deletePharmacyAction.bind(null, pharmacy.id)}
-                          confirmMessage={`"${pharmacy.name}" eczanesini silmek istediğinize emin misiniz?`}
-                        />
+                        {canDelete && (
+                          <DeleteButton
+                            action={deletePharmacyAction.bind(null, pharmacy.id)}
+                            confirmMessage={`"${pharmacy.name}" eczanesini silmek istediğinize emin misiniz?`}
+                          />
+                        )}
                       </div>
                     ) : (
                       <div className="text-muted-foreground text-right text-sm">-</div>

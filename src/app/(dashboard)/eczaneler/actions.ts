@@ -129,7 +129,7 @@ export async function togglePharmacyStatusAction(id: string) {
 }
 
 export async function deletePharmacyAction(id: string) {
-  const user = await requirePermissionOrRedirect("manageSetupData", "/eczaneler");
+  const user = await requirePermissionOrRedirect("deleteSetupData", "/eczaneler");
 
   const assignmentCount = await prisma.dutyAssignment.count({
     where: { pharmacyId: id },

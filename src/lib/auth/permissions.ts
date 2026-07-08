@@ -8,6 +8,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 
 export type Permission =
   | "manageSetupData"
+  | "deleteSetupData"
   | "generateSchedule"
   | "editAssignment"
   | "publishSchedule"
@@ -18,6 +19,7 @@ export type Permission =
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ADMIN: [
     "manageSetupData",
+    "deleteSetupData",
     "generateSchedule",
     "editAssignment",
     "publishSchedule",
