@@ -28,7 +28,7 @@ export async function GET(
     return NextResponse.json({ message: "Nöbet çizelgesi bulunamadı." }, { status: 404 });
   }
 
-  const buffer = buildDutyScheduleExcel(schedule);
+  const buffer = await buildDutyScheduleExcel(schedule);
   const filename = buildDutyScheduleExportFilename(schedule, "xlsx");
 
   return new NextResponse(new Uint8Array(buffer), {

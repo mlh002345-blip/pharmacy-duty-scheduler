@@ -1,10 +1,13 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
+import { escapeExcelCell } from "@/lib/excel-safety";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "./duty-schedule-labels";
 import { getTurkishDayName, getTurkishMonthName } from "./date-tr";
 import type { DutyScheduleForExport } from "./export-duty-schedule";
 
-export function buildDutyScheduleExcel(schedule: DutyScheduleForExport): Buffer {
+export async function buildDutyScheduleExcel(
+  schedule: DutyScheduleForExport
+): Promise<Buffer> {
   const monthYear = `${getTurkishMonthName(schedule.month)} ${schedule.year}`;
   const statusLabel = DUTY_SCHEDULE_STATUS_LABELS[schedule.status] ?? schedule.status;
   const scheduleName = `${schedule.region.name} ${monthYear} Nöbet Çizelgesi`;
@@ -43,24 +46,27 @@ export function buildDutyScheduleExcel(schedule: DutyScheduleForExport): Buffer 
     assignment.note ?? "",
   ]);
 
-  const worksheet = XLSX.utils.aoa_to_sheet([...infoRows, header, ...dataRows]);
-  worksheet["!cols"] = [
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 28 },
-    { wch: 22 },
-    { wch: 16 },
-    { wch: 32 },
-    { wch: 10 },
-    { wch: 16 },
-    { wch: 28 },
+  const workbook = new ExcelJS.Workbook();
+  const sheetName = `${schedule.region.name} ${schedule.month}-${schedule.year}`.slice(0, 31);
+  const worksheet = workbook.addWorksheet(sheetName);
+
+  worksheet.columns = [
+    { width: 12 },
+    { width: 12 },
+    { width: 14 },
+    { width: 28 },
+    { width: 22 },
+    { width: 16 },
+    { width: 32 },
+    { width: 10 },
+    { width: 16 },
+    { width: 28 },
   ];
 
-  const workbook = XLSX.utils.book_new();
-  const sheetName = `${schedule.region.name} ${schedule.month}-${schedule.year}`.slice(0, 31);
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  for (const row of [...infoRows, header, ...dataRows]) {
+    worksheet.addRow(row.map((cell) => escapeExcelCell(cell)));
+  }
 
-  const arrayBuffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
-  return arrayBuffer as Buffer;
+  const arrayBuffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(arrayBuffer);
 }

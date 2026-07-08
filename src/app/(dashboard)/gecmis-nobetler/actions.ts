@@ -130,7 +130,7 @@ export async function historicalImportAction(
     }
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
-      inputRows = parseHistoricalExcel(buffer);
+      inputRows = await parseHistoricalExcel(buffer);
       fileName = file.name;
     } catch (error) {
       if (error instanceof HistoricalExcelParseError) {

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { redirect } from "next/navigation";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
+import { escapeExcelCell } from "@/lib/excel-safety";
 
 // Örnek Geçmiş Nöbet Şablonu: beklenen sütun başlıkları ve sistemdeki gerçek
 // eczanelerden 3 örnek satır içeren indirilebilir Excel dosyası.
@@ -41,20 +42,24 @@ export async function GET() {
           ["05.01.2025", "Merkez", "Örnek Eczanesi", "Normal", "0212 000 00 00", "Örnek Mah. No:1", ""],
         ];
 
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
-  worksheet["!cols"] = [
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 24 },
-    { wch: 12 },
-    { wch: 16 },
-    { wch: 40 },
-    { wch: 20 },
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Gecmis Nobetler");
+  worksheet.columns = [
+    { width: 12 },
+    { width: 14 },
+    { width: 24 },
+    { width: 12 },
+    { width: 16 },
+    { width: 40 },
+    { width: 20 },
   ];
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Gecmis Nobetler");
+  worksheet.addRow(headers);
+  for (const row of sampleRows) {
+    worksheet.addRow(row.map((cell) => escapeExcelCell(cell)));
+  }
 
-  const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  const arrayBuffer = await workbook.xlsx.writeBuffer();
+  const buffer = Buffer.from(arrayBuffer);
 
   return new NextResponse(new Uint8Array(buffer), {
     headers: {

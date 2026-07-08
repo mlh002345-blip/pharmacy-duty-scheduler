@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import { normalizeText } from "./normalize";
 import type { ImportRowInput } from "./analyze-import";
@@ -25,44 +25,71 @@ const HEADER_ALIASES: Record<string, keyof Omit<ImportRowInput, "rowNumber">> = 
   "açıklama": "not",
 };
 
-export function parseHistoricalExcel(buffer: Buffer): ImportRowInput[] {
-  let workbook: XLSX.WorkBook;
+// Tarih hücreleri (gerçek Date olarak saklanmışsa) "dd.mm.yyyy" metnine
+// çevrilir; formül hücrelerinde önbelleğe alınmış sonuç, zengin metin
+// hücrelerinde düz metin kullanılır. Hiçbir hücre içeriği yorumlanmaz/
+// çalıştırılmaz — yalnızca metne dönüştürülür.
+function cellToString(value: ExcelJS.CellValue): string {
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) {
+    const day = String(value.getUTCDate()).padStart(2, "0");
+    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const year = value.getUTCFullYear();
+    return `${day}.${month}.${year}`;
+  }
+  if (typeof value === "object") {
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((part) => part.text).join("");
+    }
+    if ("text" in value && typeof value.text === "string") {
+      return value.text;
+    }
+    if ("result" in value) {
+      return cellToString(value.result as ExcelJS.CellValue);
+    }
+    if ("error" in value) {
+      return "";
+    }
+    if ("hyperlink" in value && typeof value.hyperlink === "string") {
+      return value.hyperlink;
+    }
+    return "";
+  }
+  return String(value);
+}
+
+export async function parseHistoricalExcel(buffer: Buffer): Promise<ImportRowInput[]> {
+  const workbook = new ExcelJS.Workbook();
   try {
-    // Tarih hücreleri "dd.mm.yyyy" metnine çevrilir; tüm değerler string okunur.
-    workbook = XLSX.read(buffer, { type: "buffer", cellDates: false, raw: false });
+    // exceljs bundles its own (older) @types/node via a transitive
+    // dependency (fast-csv), whose ambient Buffer type structurally
+    // conflicts with this project's @types/node — a types-only collision,
+    // not a runtime issue (Buffer is Buffer at runtime), so bypassing the
+    // check here is the pragmatic fix.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await workbook.xlsx.load(buffer as any);
   } catch {
     throw new HistoricalExcelParseError(
       "Dosya okunamadı. Lütfen geçerli bir Excel (.xlsx) dosyası yükleyin."
     );
   }
 
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) {
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
     throw new HistoricalExcelParseError("Excel dosyasında sayfa bulunamadı.");
   }
-  const sheet = workbook.Sheets[sheetName];
 
-  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-    raw: false,
-    dateNF: "dd.mm.yyyy",
-    defval: "",
+  const headerRow = worksheet.getRow(1);
+  const headerByColumn = new Map<number, string>();
+  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+    const text = cellToString(cell.value).trim();
+    if (text) headerByColumn.set(colNumber, text);
   });
 
-  if (rawRows.length === 0) {
-    throw new HistoricalExcelParseError("Excel dosyasında veri satırı bulunamadı.");
-  }
-  if (rawRows.length > MAX_IMPORT_ROWS) {
-    throw new HistoricalExcelParseError(
-      `Dosyada ${rawRows.length} satır var; tek seferde en fazla ${MAX_IMPORT_ROWS} satır aktarılabilir. Lütfen dosyayı bölerek yükleyin.`
-    );
-  }
-
-  // Başlıkları normalize ederek alanlara eşle.
-  const firstRow = rawRows[0];
-  const headerMap = new Map<string, keyof Omit<ImportRowInput, "rowNumber">>();
-  for (const header of Object.keys(firstRow)) {
+  const headerMap = new Map<number, keyof Omit<ImportRowInput, "rowNumber">>();
+  for (const [colNumber, header] of headerByColumn) {
     const alias = HEADER_ALIASES[normalizeText(header)];
-    if (alias) headerMap.set(header, alias);
+    if (alias) headerMap.set(colNumber, alias);
   }
 
   const mappedFields = new Set(headerMap.values());
@@ -72,9 +99,12 @@ export function parseHistoricalExcel(buffer: Buffer): ImportRowInput[] {
     );
   }
 
-  return rawRows.map((raw, index) => {
-    const row: ImportRowInput = {
-      rowNumber: index + 2, // 1. satır başlık
+  const rows: ImportRowInput[] = [];
+  worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber === 1) return; // başlık satırı
+
+    const parsedRow: ImportRowInput = {
+      rowNumber,
       tarih: "",
       bolge: "",
       eczaneAdi: "",
@@ -83,10 +113,21 @@ export function parseHistoricalExcel(buffer: Buffer): ImportRowInput[] {
       adres: "",
       not: "",
     };
-    for (const [header, field] of headerMap) {
-      const value = raw[header];
-      row[field] = typeof value === "string" ? value : String(value ?? "");
+    for (const [colNumber, field] of headerMap) {
+      const cell = row.getCell(colNumber);
+      parsedRow[field] = cellToString(cell.value);
     }
-    return row;
+    rows.push(parsedRow);
   });
+
+  if (rows.length === 0) {
+    throw new HistoricalExcelParseError("Excel dosyasında veri satırı bulunamadı.");
+  }
+  if (rows.length > MAX_IMPORT_ROWS) {
+    throw new HistoricalExcelParseError(
+      `Dosyada ${rows.length} satır var; tek seferde en fazla ${MAX_IMPORT_ROWS} satır aktarılabilir. Lütfen dosyayı bölerek yükleyin.`
+    );
+  }
+
+  return rows;
 }
