@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { downloadBlobAsFile } from "./export-button";
+import { downloadBlobAsFile, ExportTimeoutError, fetchExportBlob } from "./export-button";
 
 function stubDom(options: { clickThrows?: boolean } = {}) {
   const revokeObjectURL = vi.fn();
@@ -70,5 +70,74 @@ describe("downloadBlobAsFile", () => {
     );
 
     expect(revokeObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+function fakeResponse(overrides: Partial<Response> = {}): Response {
+  return {
+    ok: true,
+    headers: new Headers({ "Content-Disposition": 'attachment; filename="nobet.xlsx"' }),
+    blob: vi.fn().mockResolvedValue({} as Blob),
+    ...overrides,
+  } as Response;
+}
+
+describe("fetchExportBlob", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("passes an AbortController signal to the fetch call", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(fakeResponse());
+
+    await fetchExportBlob("/cizelgeler/1/export/excel", { fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledExactlyOnceWith(
+      "/cizelgeler/1/export/excel",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+  });
+
+  it("returns the blob and parsed filename on a successful response", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(fakeResponse());
+
+    const result = await fetchExportBlob("/cizelgeler/1/export/excel", { fetchImpl });
+
+    expect(result.filename).toBe("nobet.xlsx");
+  });
+
+  it("throws a plain error (not ExportTimeoutError) on a non-OK response", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(fakeResponse({ ok: false }));
+
+    await expect(fetchExportBlob("/x", { fetchImpl })).rejects.not.toBeInstanceOf(
+      ExportTimeoutError
+    );
+  });
+
+  it("throws a plain error (not ExportTimeoutError) on an unrelated network error", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("network down"));
+
+    await expect(fetchExportBlob("/x", { fetchImpl })).rejects.toThrow("network down");
+    await expect(fetchExportBlob("/x", { fetchImpl })).rejects.not.toBeInstanceOf(
+      ExportTimeoutError
+    );
+  });
+
+  it("aborts the request and throws ExportTimeoutError once the timeout elapses", async () => {
+    vi.useFakeTimers();
+    const fetchImpl: typeof fetch = vi.fn((_input, init) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    });
+
+    const pending = fetchExportBlob("/x", { fetchImpl, timeoutMs: 30_000 });
+    const assertion = expect(pending).rejects.toBeInstanceOf(ExportTimeoutError);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await assertion;
   });
 });

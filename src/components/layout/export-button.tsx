@@ -24,6 +24,59 @@ export function downloadBlobAsFile(blob: Blob, filename: string): void {
   }
 }
 
+// A hung export request would otherwise leave the button in "İndiriliyor..."
+// indefinitely (no browser-default timeout is short enough to rely on).
+export const EXPORT_FETCH_TIMEOUT_MS = 30_000;
+
+// Thrown by fetchExportBlob specifically when the timeout (not a real
+// network/server error) aborted the request, so callers can show a
+// distinct message instead of the generic failure alert.
+export class ExportTimeoutError extends Error {
+  constructor() {
+    super("Export request timed out");
+    this.name = "ExportTimeoutError";
+  }
+}
+
+// Fetches the export route with an AbortController-based timeout and
+// returns the resulting blob + filename. Exported standalone (like
+// downloadBlobAsFile) so the timeout/abort behavior is unit-testable
+// without rendering the component. No retry — a single attempt only.
+export async function fetchExportBlob(
+  href: string,
+  options?: { timeoutMs?: number; fetchImpl?: typeof fetch }
+): Promise<{ blob: Blob; filename: string }> {
+  const timeoutMs = options?.timeoutMs ?? EXPORT_FETCH_TIMEOUT_MS;
+  const fetchImpl = options?.fetchImpl ?? fetch;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    let response: Response;
+    try {
+      response = await fetchImpl(href, { signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new ExportTimeoutError();
+      }
+      throw error;
+    }
+
+    if (!response.ok) {
+      throw new Error("Export request failed");
+    }
+
+    const disposition = response.headers.get("Content-Disposition") ?? "";
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch?.[1] ?? "dosya";
+
+    const blob = await response.blob();
+    return { blob, filename };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // Excel/PDF export routes stream a file rather than navigating, so a plain
 // <a href> gives no visual feedback while pdfkit/xlsx build the file. Fetch
 // the route ourselves so we can show "İndiriliyor..." until the file is
@@ -42,20 +95,14 @@ export function ExportButton({
   async function handleClick() {
     setIsDownloading(true);
     try {
-      const response = await fetch(href);
-      if (!response.ok) {
-        alert("Dışa aktarma sırasında bir hata oluştu.");
-        return;
-      }
-
-      const disposition = response.headers.get("Content-Disposition") ?? "";
-      const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
-      const filename = filenameMatch?.[1] ?? "dosya";
-
-      const blob = await response.blob();
+      const { blob, filename } = await fetchExportBlob(href);
       downloadBlobAsFile(blob, filename);
-    } catch {
-      alert("Dışa aktarma sırasında bir hata oluştu.");
+    } catch (error) {
+      if (error instanceof ExportTimeoutError) {
+        alert("İndirme zaman aşımına uğradı. Lütfen tekrar deneyin.");
+      } else {
+        alert("Dışa aktarma sırasında bir hata oluştu.");
+      }
     } finally {
       setIsDownloading(false);
     }
