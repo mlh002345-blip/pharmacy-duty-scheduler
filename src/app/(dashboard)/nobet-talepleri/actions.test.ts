@@ -120,4 +120,22 @@ describe("reviewDutyRequestAction — conditional update prevents double review"
     expect(result.message).toBe("Yalnızca beklemede olan talepler incelenebilir.");
     expect(prismaMock.dutyRequest.updateMany).not.toHaveBeenCalled();
   });
+
+  it("clears dedupKey to null when a request leaves PENDING/LATE, so an identical future public submission is not blocked", async () => {
+    prismaMock.dutyRequest.findUnique.mockResolvedValue(request());
+    prismaMock.dutyRequest.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(
+      reviewDutyRequestAction(
+        "request-1",
+        { success: false, message: "" },
+        reviewFormData("APPROVED")
+      )
+    ).rejects.toBeInstanceOf(RedirectSignal);
+
+    expect(prismaMock.dutyRequest.updateMany).toHaveBeenCalledExactlyOnceWith({
+      where: { id: "request-1", status: { in: ["PENDING", "LATE"] } },
+      data: expect.objectContaining({ dedupKey: null }),
+    });
+  });
 });

@@ -242,6 +242,11 @@ model HistoricalDutyImportBatch {
   unmatchedCount Int      @default(0)
   warningCount   Int      @default(0)
   note           String?
+  // Kabul edilen satırların içeriğinden üretilen deterministik SHA-256
+  // parmak izi (bkz. computeImportFingerprint). Aynı içeriğin eşzamanlı
+  // iki kez onaylanmasını DB seviyesinde engeller — `note` insan tarafından
+  // okunabilir bir alan olarak kalır, tekilliğe dayanak değildir.
+  fingerprint    String?  @unique
   createdAt      DateTime @default(now())
 
   importedById String?
@@ -339,6 +344,15 @@ model DutyRequest {
 
   reviewedById String?
   reviewedBy   User?   @relation(fields: [reviewedById], references: [id])
+
+  // PUBLIC_LINK talepleri için pharmacyId+requestType+startDate+endDate+
+  // explanation+source üzerinden üretilen deterministik anahtar; yalnızca
+  // talep PENDING/LATE iken doludur. Eşzamanlı çift gönderimi DB
+  // seviyesinde engeller. reviewDutyRequestAction talep incelendiğinde
+  // (PENDING/LATE'den çıktığında) null'a çevirir — tekil nullable kısıt
+  // birden fazla null'a izin verdiği için, kapanmış bir talep aynı içerikle
+  // yeniden gönderilecek gelecekteki bir talebi engellemez.
+  dedupKey String? @unique
 
   @@index([pharmacyId])
   @@index([regionId])

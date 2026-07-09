@@ -159,6 +159,11 @@ export async function reviewDutyRequestAction(
         reviewedById: guard.user.id,
         reviewedAt: new Date(),
         reviewNote: reviewNote || null,
+        // Talep artık açık (PENDING/LATE) olmadığı için dedupKey serbest
+        // bırakılır — aynı eczane, tür, tarih aralığı ve açıklamayla
+        // gelecekte gönderilecek yeni bir kamuya açık talep engellenmez
+        // (bkz. computePublicRequestDedupKey, eczane-talep/[token]/actions.ts).
+        dedupKey: null,
       },
     });
     if (count === 0) {

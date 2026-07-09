@@ -1,13 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
+
+function p2002(target: string[]) {
+  return new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+    code: "P2002",
+    clientVersion: "test",
+    meta: { target },
+  });
+}
 
 const prismaMock = {
   pharmacy: { findUnique: vi.fn() },
-  dutyRequest: { findFirst: vi.fn(), count: vi.fn(), create: vi.fn() },
+  dutyRequest: { count: vi.fn(), create: vi.fn() },
 };
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 
 const { createPublicDutyRequestAction } = await import("./actions");
+const { computePublicRequestDedupKey } = await import("@/lib/duty-requests/dedup-key");
 
 function pharmacy(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -32,61 +42,52 @@ function requestFormData(overrides: Record<string, string> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy());
-  prismaMock.dutyRequest.findFirst.mockResolvedValue(null);
   prismaMock.dutyRequest.count.mockResolvedValue(0);
   prismaMock.dutyRequest.create.mockResolvedValue({ id: "request-1" });
 });
 
-describe("createPublicDutyRequestAction — duplicate submit protection", () => {
-  it("double-submitting the exact same request creates only one DutyRequest row", async () => {
-    const first = await createPublicDutyRequestAction(
-      "token-abc",
-      { success: false, message: "" },
-      requestFormData()
-    );
-    expect(first.success).toBe(true);
-    expect(prismaMock.dutyRequest.create).toHaveBeenCalledOnce();
+describe("createPublicDutyRequestAction — duplicate submit protection (DB-backed dedupKey)", () => {
+  it("a duplicate public request (P2002 on dedupKey) returns the friendly Turkish message", async () => {
+    prismaMock.dutyRequest.create.mockRejectedValueOnce(p2002(["dedupKey"]));
 
-    // Simulate the retried/double-clicked submission: the first request now
-    // exists in the DB and is found by the dedup check.
-    prismaMock.dutyRequest.findFirst.mockResolvedValue({ id: "request-1" });
-    const second = await createPublicDutyRequestAction(
+    const result = await createPublicDutyRequestAction(
       "token-abc",
       { success: false, message: "" },
       requestFormData()
     );
 
-    expect(second.success).toBe(true);
-    expect(second.message).toBe(
-      "Bu talep daha önce alınmış. Lütfen mevcut talebinizin incelenmesini bekleyin."
-    );
-    expect(prismaMock.dutyRequest.create).toHaveBeenCalledOnce(); // still only once
+    expect(result).toEqual({
+      success: true,
+      message: "Bu talep daha önce alınmış. Lütfen mevcut talebinizin incelenmesini bekleyin.",
+    });
   });
 
-  it("a genuinely different request (different date range) still creates a new row", async () => {
-    prismaMock.dutyRequest.findFirst.mockResolvedValue(null); // no matching open request
-
-    const result = await createPublicDutyRequestAction(
+  it("the create call is made with a dedupKey so DB-level uniqueness — not an app-level pre-check — is what blocks a truly concurrent duplicate", async () => {
+    await createPublicDutyRequestAction(
       "token-abc",
       { success: false, message: "" },
-      requestFormData({ startDate: "2026-09-01", endDate: "2026-09-02" })
+      requestFormData()
     );
 
-    expect(result.success).toBe(true);
-    expect(prismaMock.dutyRequest.create).toHaveBeenCalledOnce();
+    // No pre-create findFirst dedup read exists anymore — the unique
+    // index on DutyRequest.dedupKey is the sole protection, so two
+    // simultaneous requests race at the DB, not in application code.
+    expect(prismaMock.dutyRequest.create).toHaveBeenCalledExactlyOnceWith({
+      data: expect.objectContaining({
+        pharmacyId: "pharmacy-1",
+        source: "PUBLIC_LINK",
+        status: "PENDING",
+        dedupKey: expect.any(String),
+      }),
+    });
   });
 
-  it("a different request type for the same dates still creates a new row", async () => {
-    prismaMock.dutyRequest.findFirst.mockResolvedValue(null);
+  it("still throws unexpected (non-P2002) errors instead of hiding them", async () => {
+    prismaMock.dutyRequest.create.mockRejectedValueOnce(new Error("db connection dropped"));
 
-    const result = await createPublicDutyRequestAction(
-      "token-abc",
-      { success: false, message: "" },
-      requestFormData({ requestType: "PREFER_DUTY" })
-    );
-
-    expect(result.success).toBe(true);
-    expect(prismaMock.dutyRequest.create).toHaveBeenCalledOnce();
+    await expect(
+      createPublicDutyRequestAction("token-abc", { success: false, message: "" }, requestFormData())
+    ).rejects.toThrow("db connection dropped");
   });
 
   it("invalid token behavior is unchanged (no info leak, no DB writes)", async () => {
@@ -102,8 +103,28 @@ describe("createPublicDutyRequestAction — duplicate submit protection", () => 
       success: false,
       message: "Bağlantı geçersiz veya artık kullanılamıyor.",
     });
-    expect(prismaMock.dutyRequest.findFirst).not.toHaveBeenCalled();
     expect(prismaMock.dutyRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("after the earlier request is reviewed (dedupKey cleared to null), the same request can be submitted again", async () => {
+    // reviewDutyRequestAction (nobet-talepleri/actions.ts) sets dedupKey
+    // back to null once a request leaves PENDING/LATE. Postgres' unique
+    // index then treats that closed row's null as distinct from every
+    // other null, so this create no longer collides at the DB and
+    // resolves normally instead of throwing P2002.
+    prismaMock.dutyRequest.create.mockResolvedValueOnce({ id: "request-2" });
+
+    const result = await createPublicDutyRequestAction(
+      "token-abc",
+      { success: false, message: "" },
+      requestFormData()
+    );
+
+    expect(result).toEqual({
+      success: true,
+      message: "Talebiniz eczacı odası incelemesine gönderildi.",
+    });
+    expect(prismaMock.dutyRequest.create).toHaveBeenCalledOnce();
   });
 
   it("an inactive pharmacy's token behaves like an invalid token", async () => {
@@ -117,5 +138,37 @@ describe("createPublicDutyRequestAction — duplicate submit protection", () => 
 
     expect(result.success).toBe(false);
     expect(prismaMock.dutyRequest.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("computePublicRequestDedupKey", () => {
+  const base = {
+    pharmacyId: "pharmacy-1",
+    requestType: "CANNOT_DUTY",
+    startDate: new Date("2026-08-10T00:00:00Z"),
+    endDate: new Date("2026-08-12T00:00:00Z"),
+    explanation: "Yıllık izinde olacağım için nöbet tutamayacağım.",
+  };
+
+  it("is deterministic for identical input", () => {
+    expect(computePublicRequestDedupKey(base)).toBe(computePublicRequestDedupKey({ ...base }));
+  });
+
+  it("produces a different key for a different explanation", () => {
+    expect(computePublicRequestDedupKey(base)).not.toBe(
+      computePublicRequestDedupKey({ ...base, explanation: "Farklı bir açıklama metni." })
+    );
+  });
+
+  it("produces a different key for a different date range", () => {
+    expect(computePublicRequestDedupKey(base)).not.toBe(
+      computePublicRequestDedupKey({ ...base, startDate: new Date("2026-09-01T00:00:00Z") })
+    );
+  });
+
+  it("produces a different key for a different request type", () => {
+    expect(computePublicRequestDedupKey(base)).not.toBe(
+      computePublicRequestDedupKey({ ...base, requestType: "PREFER_DUTY" })
+    );
   });
 });

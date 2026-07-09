@@ -1,9 +1,15 @@
 "use server";
 
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { zodErrorState, type ActionState } from "@/lib/action-state";
+import { computePublicRequestDedupKey } from "@/lib/duty-requests/dedup-key";
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
 
 const publicRequestSchema = z
   .object({
@@ -47,31 +53,6 @@ export async function createPublicDutyRequestAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  // Çift gönderim koruması: aynı eczane için aynı talep türü, tarih
-  // aralığı ve açıklamayla açık (PENDING/LATE) bir talep zaten varsa,
-  // ikinci bir satır oluşturmak yerine mevcut talebi kabul edilmiş gibi
-  // göster. Çift tıklama/form yeniden gönderimi/ağ tekrar denemesi için
-  // yeterlidir; gerçek eşzamanlı çift gönderimde küçük bir yarış penceresi
-  // kalır (bkz. docs/security/12-idempotency-retry-safety.md).
-  const duplicateRequest = await prisma.dutyRequest.findFirst({
-    where: {
-      pharmacyId: pharmacy.id,
-      requestType: parsed.data.requestType,
-      startDate: parsed.data.startDate,
-      endDate: parsed.data.endDate,
-      explanation: parsed.data.explanation,
-      source: "PUBLIC_LINK",
-      status: { in: ["PENDING", "LATE"] },
-    },
-    select: { id: true },
-  });
-  if (duplicateRequest) {
-    return {
-      success: true,
-      message: "Bu talep daha önce alınmış. Lütfen mevcut talebinizin incelenmesini bekleyin.",
-    };
-  }
-
   const openCount = await prisma.dutyRequest.count({
     where: { pharmacyId: pharmacy.id, status: "PENDING", source: "PUBLIC_LINK" },
   });
@@ -83,18 +64,41 @@ export async function createPublicDutyRequestAction(
     };
   }
 
-  await prisma.dutyRequest.create({
-    data: {
-      pharmacyId: pharmacy.id,
-      regionId: pharmacy.regionId,
-      requestType: parsed.data.requestType,
-      startDate: parsed.data.startDate,
-      endDate: parsed.data.endDate,
-      explanation: parsed.data.explanation,
-      status: "PENDING",
-      source: "PUBLIC_LINK",
-    },
+  // Çift gönderim koruması: dedupKey, DutyRequest üzerinde DB seviyesinde
+  // @unique olduğu için, çift tıklama/form yeniden gönderimi/ağ tekrar
+  // denemesi VE gerçek eşzamanlı çift gönderim eşit derecede güvenlidir —
+  // ikinci create() bir P2002 ile başarısız olur.
+  const dedupKey = computePublicRequestDedupKey({
+    pharmacyId: pharmacy.id,
+    requestType: parsed.data.requestType,
+    startDate: parsed.data.startDate,
+    endDate: parsed.data.endDate,
+    explanation: parsed.data.explanation,
   });
+
+  try {
+    await prisma.dutyRequest.create({
+      data: {
+        pharmacyId: pharmacy.id,
+        regionId: pharmacy.regionId,
+        requestType: parsed.data.requestType,
+        startDate: parsed.data.startDate,
+        endDate: parsed.data.endDate,
+        explanation: parsed.data.explanation,
+        status: "PENDING",
+        source: "PUBLIC_LINK",
+        dedupKey,
+      },
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return {
+        success: true,
+        message: "Bu talep daha önce alınmış. Lütfen mevcut talebinizin incelenmesini bekleyin.",
+      };
+    }
+    throw error;
+  }
 
   return {
     success: true,

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 
 class RedirectSignal extends Error {
   constructor(
@@ -10,11 +11,19 @@ class RedirectSignal extends Error {
   }
 }
 
+function p2002(target: string[]) {
+  return new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+    code: "P2002",
+    clientVersion: "test",
+    meta: { target },
+  });
+}
+
 const prismaMock = {
   pharmacy: { findUnique: vi.fn(), findMany: vi.fn() },
   region: { findMany: vi.fn() },
   holiday: { findMany: vi.fn() },
-  historicalDutyImportBatch: { findFirst: vi.fn(), create: vi.fn() },
+  historicalDutyImportBatch: { create: vi.fn() },
   historicalDutyRecord: { createMany: vi.fn() },
   dutyBalanceAdjustment: { findFirst: vi.fn(), create: vi.fn(), delete: vi.fn() },
   $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
@@ -133,15 +142,13 @@ function importRow(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-describe("historicalImportAction — duplicate confirm protection", () => {
+describe("historicalImportAction — duplicate confirm protection (DB-backed fingerprint)", () => {
   beforeEach(() => {
     prismaMock.historicalDutyImportBatch.create.mockResolvedValue({ id: "batch-1" });
     prismaMock.historicalDutyRecord.createMany.mockResolvedValue({ count: 1 });
   });
 
-  it("repeated final import of the same accepted rows does not duplicate records", async () => {
-    prismaMock.historicalDutyImportBatch.findFirst.mockResolvedValueOnce(null);
-
+  it("first import still creates batch + records, with the fingerprint stored on the fingerprint field (not note)", async () => {
     await expect(
       historicalImportAction(
         { success: false, message: "" },
@@ -149,27 +156,47 @@ describe("historicalImportAction — duplicate confirm protection", () => {
       )
     ).rejects.toBeInstanceOf(RedirectSignal);
 
-    expect(prismaMock.historicalDutyImportBatch.create).toHaveBeenCalledOnce();
+    expect(prismaMock.historicalDutyImportBatch.create).toHaveBeenCalledExactlyOnceWith({
+      data: expect.objectContaining({
+        fingerprint: expect.any(String),
+      }),
+    });
+    const createCall = prismaMock.historicalDutyImportBatch.create.mock.calls[0][0];
+    expect(createCall.data.note).toBeUndefined();
     expect(prismaMock.historicalDutyRecord.createMany).toHaveBeenCalledOnce();
+  });
 
-    // Retried confirm submission: the fingerprint lookup now finds the
-    // batch that was just created (same file, same rows).
-    prismaMock.historicalDutyImportBatch.findFirst.mockResolvedValueOnce({ id: "batch-1" });
-    const second = await historicalImportAction(
+  it("a duplicate fingerprint (P2002) returns the friendly Turkish message and does not create records", async () => {
+    prismaMock.historicalDutyImportBatch.create.mockRejectedValueOnce(p2002(["fingerprint"]));
+
+    const result = await historicalImportAction(
       { success: false, message: "" },
       importFormData("import", [importRow()])
     );
 
-    expect(second).toEqual({
+    expect(result).toEqual({
       success: false,
       message: "Bu geçmiş nöbet aktarımı daha önce içeri alınmış.",
     });
-    expect(prismaMock.historicalDutyImportBatch.create).toHaveBeenCalledOnce(); // still once
-    expect(prismaMock.historicalDutyRecord.createMany).toHaveBeenCalledOnce(); // still once
+    // The batch create failed inside the transaction, so createMany for
+    // HistoricalDutyRecord must never have been reached.
+    expect(prismaMock.historicalDutyRecord.createMany).not.toHaveBeenCalled();
+  });
+
+  it("still throws unexpected (non-P2002) errors instead of hiding them", async () => {
+    prismaMock.historicalDutyImportBatch.create.mockRejectedValueOnce(
+      new Error("db connection dropped")
+    );
+
+    await expect(
+      historicalImportAction(
+        { success: false, message: "" },
+        importFormData("import", [importRow()])
+      )
+    ).rejects.toThrow("db connection dropped");
   });
 
   it("a different import payload (different pharmacy) can still be imported", async () => {
-    prismaMock.historicalDutyImportBatch.findFirst.mockResolvedValue(null);
     prismaMock.pharmacy.findMany.mockResolvedValue([
       { id: "pharmacy-1", name: "Deva Eczanesi", regionId: "region-1" },
       { id: "pharmacy-2", name: "Şifa Eczanesi", regionId: "region-1" },
@@ -190,10 +217,11 @@ describe("historicalImportAction — duplicate confirm protection", () => {
     ).rejects.toBeInstanceOf(RedirectSignal);
 
     expect(prismaMock.historicalDutyImportBatch.create).toHaveBeenCalledTimes(2);
+    const [firstCall, secondCall] = prismaMock.historicalDutyImportBatch.create.mock.calls;
+    expect(firstCall[0].data.fingerprint).not.toBe(secondCall[0].data.fingerprint);
   });
 
   it("duplicate confirm does not double-count duty balance (record set is created only once)", async () => {
-    prismaMock.historicalDutyImportBatch.findFirst.mockResolvedValueOnce(null);
     await expect(
       historicalImportAction(
         { success: false, message: "" },
@@ -201,7 +229,7 @@ describe("historicalImportAction — duplicate confirm protection", () => {
       )
     ).rejects.toBeInstanceOf(RedirectSignal);
 
-    prismaMock.historicalDutyImportBatch.findFirst.mockResolvedValueOnce({ id: "batch-1" });
+    prismaMock.historicalDutyImportBatch.create.mockRejectedValueOnce(p2002(["fingerprint"]));
     await historicalImportAction(
       { success: false, message: "" },
       importFormData("import", [importRow()])

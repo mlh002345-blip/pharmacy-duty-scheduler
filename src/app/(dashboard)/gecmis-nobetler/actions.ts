@@ -3,6 +3,7 @@
 import { createHash } from "crypto";
 
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
@@ -22,14 +23,19 @@ import {
 } from "@/lib/historical/parse-excel";
 import type { ImportActionState } from "./import-state";
 
+function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
 // Aynı içeriğin (aynı satırlar) tekrar onaylanması durumunda ikinci bir
 // HistoricalDutyImportBatch/HistoricalDutyRecord seti oluşturulmasını
 // önlemek için, kabul edilen satırların içeriğinden deterministik bir
-// parmak izi üretilir. Şema değişikliği gerektirmez: HistoricalDutyImportBatch
-// zaten var olan ama hiçbir yerde kullanılmayan `note` alanına
-// "fp:<hash>" biçiminde yazılır (bkz. docs/security/12-idempotency-retry-safety.md).
-const IMPORT_FINGERPRINT_PREFIX = "fp:";
-
+// parmak izi üretilir ve HistoricalDutyImportBatch.fingerprint (DB
+// seviyesinde @unique) alanına yazılır. Eşzamanlı iki onay isteği yarışırsa
+// (bkz. docs/security/13-transaction-consistency-boundaries.md), ikinci
+// create() bir P2002 ile başarısız olur ve yakalanır — böylece tekillik
+// yalnızca bir ön-kontrole değil, gerçek bir DB kısıtına dayanır. `note`
+// serbest metin alanı olarak kalır, parmak izi için kullanılmaz.
 function computeImportFingerprint(rows: ImportAnalysis["rows"]): string {
   const canonicalRows = rows
     .map((row) => ({
@@ -44,8 +50,7 @@ function computeImportFingerprint(rows: ImportAnalysis["rows"]): string {
       if (dateCompare !== 0) return dateCompare;
       return a.rawPharmacyName.localeCompare(b.rawPharmacyName);
     });
-  const hash = createHash("sha256").update(JSON.stringify(canonicalRows)).digest("hex");
-  return `${IMPORT_FINGERPRINT_PREFIX}${hash}`;
+  return createHash("sha256").update(JSON.stringify(canonicalRows)).digest("hex");
 }
 
 async function analyzeRows(inputRows: ImportRowInput[]): Promise<ImportAnalysis> {
@@ -190,67 +195,69 @@ export async function historicalImportAction(
     );
   }
 
-  // Çift onay koruması: aynı kabul edilen satır içeriği daha önce içeri
-  // alınmışsa (ör. onay formunun ikinci kez gönderilmesi), ikinci bir
-  // parti/kayıt seti oluşturulmaz.
+  // Çift onay koruması: aynı kabul edilen satır içeriğinin parmak izi
+  // HistoricalDutyImportBatch.fingerprint alanına yazılır (DB seviyesinde
+  // @unique). create() bir P2002 ile başarısız olursa (aynı içerik daha
+  // önce içeri alınmış ya da eşzamanlı bir onay isteğiyle yarışılmış),
+  // transaction hiçbir HistoricalDutyRecord satırı yazılmadan geri alınır.
   const fingerprint = computeImportFingerprint(analysis.rows);
-  const existingBatch = await prisma.historicalDutyImportBatch.findFirst({
-    where: { note: fingerprint },
-    select: { id: true },
-  });
-  if (existingBatch) {
-    return { success: false, message: "Bu geçmiş nöbet aktarımı daha önce içeri alınmış." };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const created = await tx.historicalDutyImportBatch.create({
+        data: {
+          fileName,
+          importedById: guard.user.id,
+          rowCount: analysis.totalCount,
+          matchedCount: analysis.matchedCount,
+          unmatchedCount: analysis.totalCount - analysis.matchedCount,
+          warningCount: analysis.warningCount,
+          fingerprint,
+        },
+      });
+
+      await tx.historicalDutyRecord.createMany({
+        data: analysis.rows.map((row) => ({
+          batchId: created.id,
+          rowNumber: row.rowNumber,
+          dutyDate: row.dutyDate!,
+          rawPharmacyName: row.rawPharmacyName,
+          rawRegionName: row.rawRegionName || null,
+          rawDutyType: row.rawDutyType || null,
+          rawPhone: row.rawPhone || null,
+          rawAddress: row.rawAddress || null,
+          rawNote: row.rawNote || null,
+          dutyType: row.rawDutyType || "Normal",
+          weight: row.weight,
+          matchStatus: row.matchedPharmacyId ? "MATCHED" : "UNMATCHED",
+          warningMessage: row.messages.length > 0 ? row.messages.join(" ") : null,
+          pharmacyId: row.matchedPharmacyId,
+          regionId: row.matchedRegionId,
+        })),
+      });
+
+      await writeAuditLog(tx, {
+        userId: guard.user.id,
+        action: "CREATE",
+        entity: "HistoricalDutyImportBatch",
+        entityId: created.id,
+        after: {
+          fileName,
+          rowCount: analysis.totalCount,
+          matchedCount: analysis.matchedCount,
+          unmatchedCount: analysis.totalCount - analysis.matchedCount,
+          warningCount: analysis.warningCount,
+        },
+      });
+
+      return created;
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return { success: false, message: "Bu geçmiş nöbet aktarımı daha önce içeri alınmış." };
+    }
+    throw error;
   }
-
-  await prisma.$transaction(async (tx) => {
-    const created = await tx.historicalDutyImportBatch.create({
-      data: {
-        fileName,
-        importedById: guard.user.id,
-        rowCount: analysis.totalCount,
-        matchedCount: analysis.matchedCount,
-        unmatchedCount: analysis.totalCount - analysis.matchedCount,
-        warningCount: analysis.warningCount,
-        note: fingerprint,
-      },
-    });
-
-    await tx.historicalDutyRecord.createMany({
-      data: analysis.rows.map((row) => ({
-        batchId: created.id,
-        rowNumber: row.rowNumber,
-        dutyDate: row.dutyDate!,
-        rawPharmacyName: row.rawPharmacyName,
-        rawRegionName: row.rawRegionName || null,
-        rawDutyType: row.rawDutyType || null,
-        rawPhone: row.rawPhone || null,
-        rawAddress: row.rawAddress || null,
-        rawNote: row.rawNote || null,
-        dutyType: row.rawDutyType || "Normal",
-        weight: row.weight,
-        matchStatus: row.matchedPharmacyId ? "MATCHED" : "UNMATCHED",
-        warningMessage: row.messages.length > 0 ? row.messages.join(" ") : null,
-        pharmacyId: row.matchedPharmacyId,
-        regionId: row.matchedRegionId,
-      })),
-    });
-
-    await writeAuditLog(tx, {
-      userId: guard.user.id,
-      action: "CREATE",
-      entity: "HistoricalDutyImportBatch",
-      entityId: created.id,
-      after: {
-        fileName,
-        rowCount: analysis.totalCount,
-        matchedCount: analysis.matchedCount,
-        unmatchedCount: analysis.totalCount - analysis.matchedCount,
-        warningCount: analysis.warningCount,
-      },
-    });
-
-    return created;
-  });
 
   redirectWithMessage(
     "/gecmis-nobetler",
