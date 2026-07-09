@@ -276,7 +276,7 @@ async function fetchDataHealthReport(): Promise<DataHealthReport> {
   const [
     regions,
     pharmacies,
-    unavailabilities,
+    invalidUnavailabilityRows,
     pendingDutyRequestCount,
     unmatchedHistoricalCount,
     holidayCount,
@@ -310,9 +310,17 @@ async function fetchDataHealthReport(): Promise<DataHealthReport> {
         mapUrl: true,
       },
     }),
-    prisma.unavailability.findMany({
-      select: { startDate: true, endDate: true, pharmacy: { select: { name: true } } },
-    }),
+    // Yalnızca geçersiz aralıklar (bitiş < başlangıç) getirilir; tüm tablo
+    // Node belleğine yüklenmez. Prisma'nın normal sorgu API'si aynı satır
+    // içindeki iki kolonu (startDate/endDate) karşılaştıramadığı için
+    // burada statik (kullanıcı girdisi içermeyen, ${} interpolasyonu
+    // olmayan) bir $queryRaw kullanılıyor.
+    prisma.$queryRaw<UnavailabilityHealthInput[]>`
+      SELECT p."name" AS "pharmacyName", u."startDate", u."endDate"
+      FROM "Unavailability" u
+      JOIN "Pharmacy" p ON p."id" = u."pharmacyId"
+      WHERE u."endDate" < u."startDate"
+    `,
     prisma.dutyRequest.count({ where: { status: "PENDING" } }),
     prisma.historicalDutyRecord.count({ where: { matchStatus: "UNMATCHED" } }),
     prisma.holiday.count(),
@@ -367,13 +375,7 @@ async function fetchDataHealthReport(): Promise<DataHealthReport> {
       address: p.address || null,
       mapUrl: p.mapUrl,
     })),
-    invalidUnavailabilities: unavailabilities
-      .filter((u) => u.endDate.getTime() < u.startDate.getTime())
-      .map((u) => ({
-        pharmacyName: u.pharmacy.name,
-        startDate: u.startDate,
-        endDate: u.endDate,
-      })),
+    invalidUnavailabilities: invalidUnavailabilityRows,
     pendingDutyRequestCount,
     unmatchedHistoricalCount,
     hasHolidays: holidayCount > 0,

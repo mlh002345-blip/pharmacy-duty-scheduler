@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const prismaMock = {
   region: { findMany: vi.fn() },
   pharmacy: { findMany: vi.fn() },
-  unavailability: { findMany: vi.fn() },
+  $queryRaw: vi.fn(),
   dutyRequest: { count: vi.fn() },
   historicalDutyRecord: { count: vi.fn(), groupBy: vi.fn() },
   holiday: { count: vi.fn() },
@@ -19,7 +19,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.region.findMany.mockResolvedValue([]);
   prismaMock.pharmacy.findMany.mockResolvedValue([]);
-  prismaMock.unavailability.findMany.mockResolvedValue([]);
+  prismaMock.$queryRaw.mockResolvedValue([]);
   prismaMock.dutyRequest.count.mockResolvedValue(0);
   prismaMock.historicalDutyRecord.count.mockResolvedValue(0);
   prismaMock.historicalDutyRecord.groupBy.mockResolvedValue([]);
@@ -58,5 +58,34 @@ describe("getDataHealthReport — short-lived TTL cache", () => {
     expect(first.warnings.some((w) => w.message.includes("Tatil günleri tanımlanmamış"))).toBe(
       true
     );
+  });
+});
+
+describe("getDataHealthReport — invalid unavailability date ranges", () => {
+  it("fetches only invalid unavailability rows via a DB-filtered query, not a full-table load", async () => {
+    prismaMock.$queryRaw.mockResolvedValue([
+      { pharmacyName: "Merkez Eczanesi", startDate: new Date("2026-07-10"), endDate: new Date("2026-07-05") },
+    ]);
+
+    const report = await getDataHealthReport({ now: 4_000_000 });
+
+    expect(prismaMock.$queryRaw).toHaveBeenCalledOnce();
+    expect(
+      report.critical.some(
+        (f) =>
+          f.affected === "Merkez Eczanesi" &&
+          f.message.includes("mazeret bitiş tarihi başlangıç tarihinden önce")
+      )
+    ).toBe(true);
+  });
+
+  it("does not report anything when the DB-filtered query returns no invalid rows", async () => {
+    prismaMock.$queryRaw.mockResolvedValue([]);
+
+    const report = await getDataHealthReport({ now: 5_000_000 });
+
+    expect(
+      report.critical.some((f) => f.message.includes("mazeret bitiş tarihi başlangıç tarihinden önce"))
+    ).toBe(false);
   });
 });
