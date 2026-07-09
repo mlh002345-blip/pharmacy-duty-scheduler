@@ -17,7 +17,7 @@ import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layo
 import { prisma } from "@/lib/prisma";
 import { requirePermissionOrRedirectWithMessage } from "@/lib/auth/guard";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
-import { toggleUserStatusAction } from "./actions";
+import { setUserStatusAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -107,7 +107,7 @@ export default async function KullanicilarPage({
                         </span>
                       ) : (
                         <StatusToggleButton
-                          action={toggleUserStatusAction.bind(null, user.id)}
+                          action={setUserStatusAction.bind(null, user.id, !user.isActive)}
                           isActive={user.isActive}
                         />
                       )}

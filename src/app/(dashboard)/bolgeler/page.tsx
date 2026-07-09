@@ -17,7 +17,7 @@ import { StatusToggleButton } from "@/components/layout/status-toggle-button";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permissions";
-import { deleteRegionAction, toggleRegionStatusAction } from "./actions";
+import { deleteRegionAction, setRegionStatusAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +91,7 @@ export default async function BolgelerPage({
                           <Link href={`/bolgeler/${region.id}/duzenle`}>Düzenle</Link>
                         </Button>
                         <StatusToggleButton
-                          action={toggleRegionStatusAction.bind(null, region.id)}
+                          action={setRegionStatusAction.bind(null, region.id, !region.isActive)}
                           isActive={region.isActive}
                         />
                         {canDelete && (

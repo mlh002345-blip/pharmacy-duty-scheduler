@@ -1,5 +1,7 @@
 "use server";
 
+import { createHash } from "crypto";
+
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
@@ -19,6 +21,32 @@ import {
   parseHistoricalExcel,
 } from "@/lib/historical/parse-excel";
 import type { ImportActionState } from "./import-state";
+
+// Aynı içeriğin (aynı satırlar) tekrar onaylanması durumunda ikinci bir
+// HistoricalDutyImportBatch/HistoricalDutyRecord seti oluşturulmasını
+// önlemek için, kabul edilen satırların içeriğinden deterministik bir
+// parmak izi üretilir. Şema değişikliği gerektirmez: HistoricalDutyImportBatch
+// zaten var olan ama hiçbir yerde kullanılmayan `note` alanına
+// "fp:<hash>" biçiminde yazılır (bkz. docs/security/12-idempotency-retry-safety.md).
+const IMPORT_FINGERPRINT_PREFIX = "fp:";
+
+function computeImportFingerprint(rows: ImportAnalysis["rows"]): string {
+  const canonicalRows = rows
+    .map((row) => ({
+      dutyDate: row.dutyDate ? row.dutyDate.toISOString() : null,
+      rawPharmacyName: row.rawPharmacyName.trim().toLowerCase(),
+      dutyType: (row.rawDutyType || "Normal").trim().toLowerCase(),
+      weight: row.weight,
+      matchedPharmacyId: row.matchedPharmacyId ?? null,
+    }))
+    .sort((a, b) => {
+      const dateCompare = (a.dutyDate ?? "").localeCompare(b.dutyDate ?? "");
+      if (dateCompare !== 0) return dateCompare;
+      return a.rawPharmacyName.localeCompare(b.rawPharmacyName);
+    });
+  const hash = createHash("sha256").update(JSON.stringify(canonicalRows)).digest("hex");
+  return `${IMPORT_FINGERPRINT_PREFIX}${hash}`;
+}
 
 async function analyzeRows(inputRows: ImportRowInput[]): Promise<ImportAnalysis> {
   const [pharmacies, regions, holidays] = await Promise.all([
@@ -162,6 +190,18 @@ export async function historicalImportAction(
     );
   }
 
+  // Çift onay koruması: aynı kabul edilen satır içeriği daha önce içeri
+  // alınmışsa (ör. onay formunun ikinci kez gönderilmesi), ikinci bir
+  // parti/kayıt seti oluşturulmaz.
+  const fingerprint = computeImportFingerprint(analysis.rows);
+  const existingBatch = await prisma.historicalDutyImportBatch.findFirst({
+    where: { note: fingerprint },
+    select: { id: true },
+  });
+  if (existingBatch) {
+    return { success: false, message: "Bu geçmiş nöbet aktarımı daha önce içeri alınmış." };
+  }
+
   await prisma.$transaction(async (tx) => {
     const created = await tx.historicalDutyImportBatch.create({
       data: {
@@ -171,6 +211,7 @@ export async function historicalImportAction(
         matchedCount: analysis.matchedCount,
         unmatchedCount: analysis.totalCount - analysis.matchedCount,
         warningCount: analysis.warningCount,
+        note: fingerprint,
       },
     });
 
@@ -231,6 +272,10 @@ const adjustmentSchema = z.object({
   reason: z.string().trim().min(5, "Gerekçe en az 5 karakter olmalıdır."),
 });
 
+// Aynı kullanıcı/eczane/gerekçe/puan kombinasyonu bu pencere içinde tekrar
+// gönderilirse çift gönderim olarak kabul edilir.
+const DUPLICATE_ADJUSTMENT_WINDOW_MS = 60_000;
+
 export async function createBalanceAdjustmentAction(
   _state: ActionState,
   formData: FormData
@@ -253,6 +298,23 @@ export async function createBalanceAdjustmentAction(
   });
   if (!pharmacy) {
     return { success: false, message: "Seçilen eczane bulunamadı." };
+  }
+
+  // Çift gönderim koruması: aynı kullanıcı tarafından aynı eczane, gerekçe
+  // ve puanla kısa bir süre içinde (ör. çift tıklama) tekrar gönderilen
+  // bir düzeltme ikinci bir satır oluşturmaz.
+  const recentDuplicate = await prisma.dutyBalanceAdjustment.findFirst({
+    where: {
+      pharmacyId: parsed.data.pharmacyId,
+      reason: parsed.data.reason,
+      points: parsed.data.points,
+      createdById: guard.user.id,
+      createdAt: { gte: new Date(Date.now() - DUPLICATE_ADJUSTMENT_WINDOW_MS) },
+    },
+    select: { id: true },
+  });
+  if (recentDuplicate) {
+    return { success: false, message: "Bu denge düzeltmesi daha önce kaydedilmiş." };
   }
 
   await prisma.$transaction(async (tx) => {

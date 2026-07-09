@@ -23,7 +23,7 @@ import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layo
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permissions";
-import { deletePharmacyAction, togglePharmacyStatusAction } from "./actions";
+import { deletePharmacyAction, setPharmacyStatusAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -183,7 +183,7 @@ export default async function EczanelerPage({
                           <Link href={`/eczaneler/${pharmacy.id}/duzenle`}>Düzenle</Link>
                         </Button>
                         <StatusToggleButton
-                          action={togglePharmacyStatusAction.bind(null, pharmacy.id)}
+                          action={setPharmacyStatusAction.bind(null, pharmacy.id, !pharmacy.isActive)}
                           isActive={pharmacy.isActive}
                         />
                         {canDelete && (

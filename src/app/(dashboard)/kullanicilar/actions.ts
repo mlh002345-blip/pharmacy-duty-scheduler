@@ -224,7 +224,11 @@ export async function updateUserAction(
   redirectWithMessage("/kullanicilar", "success", "Kullanıcı güncellendi.");
 }
 
-export async function toggleUserStatusAction(id: string) {
+// İstenen hedef durum çağrıdan doğrudan alınır (bkz. eczaneler/actions.ts
+// setPharmacyStatusAction yorumu) — çift gönderimde amaçlanan değişikliği
+// sessizce iptal eden bir "toggle" değildir. Son aktif yönetici koruması
+// aynen korunur.
+export async function setUserStatusAction(id: string, isActive: boolean) {
   const currentUser = await requirePermissionOrRedirect("manageUsers", "/kullanicilar");
 
   const user = await prisma.user.findUnique({ where: { id } });
@@ -232,10 +236,9 @@ export async function toggleUserStatusAction(id: string) {
     redirectWithMessage("/kullanicilar", "error", "Kullanıcı bulunamadı.");
   }
 
-  const nextIsActive = !user.isActive;
-  const isDeactivatingAdmin = nextIsActive === false && user.role === "ADMIN";
+  const isDeactivatingAdmin = isActive === false && user.role === "ADMIN";
 
-  if (nextIsActive === false && user.id === currentUser.id) {
+  if (isActive === false && user.id === currentUser.id) {
     redirectWithMessage(
       "/kullanicilar",
       "error",
@@ -254,7 +257,7 @@ export async function toggleUserStatusAction(id: string) {
       }
       const next = await tx.user.update({
         where: { id },
-        data: { isActive: nextIsActive },
+        data: { isActive },
       });
       await writeAuditLog(tx, {
         userId: currentUser.id,

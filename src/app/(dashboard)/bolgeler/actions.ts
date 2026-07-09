@@ -129,7 +129,10 @@ export async function updateRegionAction(
   redirectWithMessage("/bolgeler", "success", "Bölge güncellendi.");
 }
 
-export async function toggleRegionStatusAction(id: string) {
+// İstenen hedef durum çağrıdan doğrudan alınır (bkz. eczaneler/actions.ts
+// setPharmacyStatusAction yorumu) — çift gönderimde amaçlanan değişikliği
+// sessizce iptal eden bir "toggle" değildir.
+export async function setRegionStatusAction(id: string, isActive: boolean) {
   const user = await requirePermissionOrRedirect("manageSetupData", "/bolgeler");
 
   const region = await prisma.region.findUnique({ where: { id } });
@@ -140,7 +143,7 @@ export async function toggleRegionStatusAction(id: string) {
   const updated = await prisma.$transaction(async (tx) => {
     const next = await tx.region.update({
       where: { id },
-      data: { isActive: !region.isActive },
+      data: { isActive },
     });
     await writeAuditLog(tx, {
       userId: user.id,

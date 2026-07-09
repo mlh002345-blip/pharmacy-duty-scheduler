@@ -56,7 +56,8 @@ vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
 }));
 
-const { createRegionAction, updateRegionAction, deleteRegionAction } = await import("./actions");
+const { createRegionAction, updateRegionAction, deleteRegionAction, setRegionStatusAction } =
+  await import("./actions");
 
 function regionFormData(overrides: Record<string, string> = {}) {
   const fd = new FormData();
@@ -190,5 +191,38 @@ describe("createRegionAction / updateRegionAction — concurrent duplicate name"
       createRegionAction({ success: false, message: "" }, regionFormData())
     ).rejects.toBeInstanceOf(RedirectSignal);
     expect(prismaMock.region.create).toHaveBeenCalledOnce();
+  });
+});
+
+describe("setRegionStatusAction — explicit desired state, retry-safe", () => {
+  beforeEach(() => {
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+  });
+
+  it("double-submitting a deactivate call leaves the region inactive", async () => {
+    prismaMock.region.findUnique.mockResolvedValue(region({ isActive: true }));
+    prismaMock.region.update.mockResolvedValue(region({ isActive: false }));
+
+    await expect(setRegionStatusAction("region-1", false)).rejects.toBeInstanceOf(RedirectSignal);
+    prismaMock.region.findUnique.mockResolvedValue(region({ isActive: false }));
+    await expect(setRegionStatusAction("region-1", false)).rejects.toBeInstanceOf(RedirectSignal);
+
+    expect(prismaMock.region.update).toHaveBeenCalledTimes(2);
+    for (const call of prismaMock.region.update.mock.calls) {
+      expect(call[0]).toEqual({ where: { id: "region-1" }, data: { isActive: false } });
+    }
+  });
+
+  it("double-submitting an activate call leaves the region active", async () => {
+    prismaMock.region.findUnique.mockResolvedValue(region({ isActive: false }));
+    prismaMock.region.update.mockResolvedValue(region({ isActive: true }));
+
+    await expect(setRegionStatusAction("region-1", true)).rejects.toBeInstanceOf(RedirectSignal);
+    await expect(setRegionStatusAction("region-1", true)).rejects.toBeInstanceOf(RedirectSignal);
+
+    expect(prismaMock.region.update).toHaveBeenCalledTimes(2);
+    for (const call of prismaMock.region.update.mock.calls) {
+      expect(call[0]).toEqual({ where: { id: "region-1" }, data: { isActive: true } });
+    }
   });
 });

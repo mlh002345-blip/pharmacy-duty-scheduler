@@ -11,7 +11,7 @@ class RedirectSignal extends Error {
 }
 
 const prismaMock = {
-  pharmacy: { findUnique: vi.fn(), delete: vi.fn() },
+  pharmacy: { findUnique: vi.fn(), delete: vi.fn(), update: vi.fn() },
   dutyAssignment: { count: vi.fn() },
   $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
 };
@@ -37,7 +37,7 @@ vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
 }));
 
-const { deletePharmacyAction } = await import("./actions");
+const { deletePharmacyAction, setPharmacyStatusAction } = await import("./actions");
 
 function pharmacy(overrides: Partial<Record<string, unknown>> = {}) {
   return { id: "pharmacy-1", name: "Deva Eczanesi", isActive: true, ...overrides };
@@ -104,5 +104,50 @@ describe("deletePharmacyAction — deleteSetupData is ADMIN-only", () => {
     writeAuditLog.mockRejectedValueOnce(new Error("db connection dropped"));
 
     await expect(deletePharmacyAction("pharmacy-1")).rejects.toThrow("db connection dropped");
+  });
+});
+
+describe("setPharmacyStatusAction — explicit desired state, retry-safe", () => {
+  it("double-submitting a deactivate call leaves the pharmacy inactive (not flipped back)", async () => {
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy({ isActive: true }));
+    prismaMock.pharmacy.update.mockResolvedValue(pharmacy({ isActive: false }));
+
+    await expect(setPharmacyStatusAction("pharmacy-1", false)).rejects.toBeInstanceOf(
+      RedirectSignal
+    );
+    // Second, retried submission of the exact same form (same bound target
+    // state) — simulates a double click / browser resubmit.
+    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy({ isActive: false }));
+    await expect(setPharmacyStatusAction("pharmacy-1", false)).rejects.toBeInstanceOf(
+      RedirectSignal
+    );
+
+    expect(prismaMock.pharmacy.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "pharmacy-1" },
+      data: { isActive: false },
+    });
+    expect(prismaMock.pharmacy.update).toHaveBeenNthCalledWith(2, {
+      where: { id: "pharmacy-1" },
+      data: { isActive: false },
+    });
+  });
+
+  it("double-submitting an activate call leaves the pharmacy active", async () => {
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy({ isActive: false }));
+    prismaMock.pharmacy.update.mockResolvedValue(pharmacy({ isActive: true }));
+
+    await expect(setPharmacyStatusAction("pharmacy-1", true)).rejects.toBeInstanceOf(
+      RedirectSignal
+    );
+    await expect(setPharmacyStatusAction("pharmacy-1", true)).rejects.toBeInstanceOf(
+      RedirectSignal
+    );
+
+    expect(prismaMock.pharmacy.update).toHaveBeenCalledTimes(2);
+    for (const call of prismaMock.pharmacy.update.mock.calls) {
+      expect(call[0]).toEqual({ where: { id: "pharmacy-1" }, data: { isActive: true } });
+    }
   });
 });

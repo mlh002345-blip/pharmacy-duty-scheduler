@@ -54,7 +54,7 @@ vi.mock("@/lib/flash-redirect", () => ({
   },
 }));
 
-const { updateUserAction, toggleUserStatusAction } = await import("./actions");
+const { updateUserAction, setUserStatusAction } = await import("./actions");
 
 const ADMIN = { id: "admin-1", role: "ADMIN" as const };
 const OTHER_ADMIN_FOR_QUORUM = { id: "admin-quorum" };
@@ -255,7 +255,7 @@ describe("updateUserAction — session invalidation on password change", () => {
   });
 });
 
-describe("toggleUserStatusAction — last-active-admin guard runs inside the transaction", () => {
+describe("setUserStatusAction — last-active-admin guard runs inside the transaction", () => {
   function activeAdmin(overrides: Partial<Record<string, unknown>> = {}) {
     return baseUserRow({ id: "toggle-admin-1", role: "ADMIN", isActive: true, ...overrides });
   }
@@ -266,7 +266,7 @@ describe("toggleUserStatusAction — last-active-admin guard runs inside the tra
     prismaMock.user.findUnique.mockResolvedValue(target);
     prismaMock.user.count.mockResolvedValue(1);
 
-    await expect(toggleUserStatusAction(target.id)).rejects.toBeInstanceOf(RedirectSignal);
+    await expect(setUserStatusAction(target.id, false)).rejects.toBeInstanceOf(RedirectSignal);
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
@@ -276,7 +276,7 @@ describe("toggleUserStatusAction — last-active-admin guard runs inside the tra
     prismaMock.user.findUnique.mockResolvedValue(staff);
     prismaMock.user.update.mockResolvedValue({ ...staff, isActive: false });
 
-    await expect(toggleUserStatusAction(staff.id)).rejects.toBeInstanceOf(RedirectSignal);
+    await expect(setUserStatusAction(staff.id, false)).rejects.toBeInstanceOf(RedirectSignal);
 
     expect(prismaMock.user.update).toHaveBeenCalledExactlyOnceWith({
       where: { id: staff.id },
@@ -292,12 +292,40 @@ describe("toggleUserStatusAction — last-active-admin guard runs inside the tra
     prismaMock.user.findUnique.mockResolvedValue(inactiveAdmin);
     prismaMock.user.update.mockResolvedValue({ ...inactiveAdmin, isActive: true });
 
-    await expect(toggleUserStatusAction(inactiveAdmin.id)).rejects.toBeInstanceOf(RedirectSignal);
+    await expect(setUserStatusAction(inactiveAdmin.id, true)).rejects.toBeInstanceOf(RedirectSignal);
 
     expect(prismaMock.user.update).toHaveBeenCalledExactlyOnceWith({
       where: { id: inactiveAdmin.id },
       data: { isActive: true },
     });
     expect(prismaMock.user.count).not.toHaveBeenCalled();
+  });
+
+  it("double-submitting a deactivate call leaves a STAFF user inactive (not flipped back)", async () => {
+    const staff = baseUserRow({ id: "staff-2", role: "STAFF", isActive: true });
+    requirePermissionOrRedirect.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    prismaMock.user.findUnique.mockResolvedValue(staff);
+    prismaMock.user.update.mockResolvedValue({ ...staff, isActive: false });
+
+    await expect(setUserStatusAction(staff.id, false)).rejects.toBeInstanceOf(RedirectSignal);
+    prismaMock.user.findUnique.mockResolvedValue({ ...staff, isActive: false });
+    await expect(setUserStatusAction(staff.id, false)).rejects.toBeInstanceOf(RedirectSignal);
+
+    expect(prismaMock.user.update).toHaveBeenCalledTimes(2);
+    for (const call of prismaMock.user.update.mock.calls) {
+      expect(call[0]).toEqual({ where: { id: staff.id }, data: { isActive: false } });
+    }
+  });
+
+  it("last-active-admin protection still applies on every retried deactivate submission", async () => {
+    const target = activeAdmin();
+    requirePermissionOrRedirect.mockResolvedValue({ id: "other-admin", role: "ADMIN" });
+    prismaMock.user.findUnique.mockResolvedValue(target);
+    prismaMock.user.count.mockResolvedValue(1);
+
+    await expect(setUserStatusAction(target.id, false)).rejects.toBeInstanceOf(RedirectSignal);
+    await expect(setUserStatusAction(target.id, false)).rejects.toBeInstanceOf(RedirectSignal);
+
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 });

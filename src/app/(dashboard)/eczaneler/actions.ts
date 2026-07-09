@@ -100,7 +100,13 @@ export async function updatePharmacyAction(
   redirectWithMessage("/eczaneler", "success", "Eczane güncellendi.");
 }
 
-export async function togglePharmacyStatusAction(id: string) {
+// Bu, eskiden mevcut DB değerini okuyup tersine çeviren bir "toggle" idi;
+// çift gönderimde (çift tıklama, form yeniden gönderimi) iki kez tersine
+// çevrilip kullanıcının amaçladığı değişikliği sessizce iptal edebiliyordu.
+// Artık istenen hedef durum doğrudan çağrıdan alınır (buton, render anındaki
+// mevcut durumun tersini sabit bir değer olarak gönderir), böylece aynı
+// isteğin tekrarı her zaman aynı sonuca yakınsar.
+export async function setPharmacyStatusAction(id: string, isActive: boolean) {
   const user = await requirePermissionOrRedirect("manageSetupData", "/eczaneler");
 
   const pharmacy = await prisma.pharmacy.findUnique({ where: { id } });
@@ -111,7 +117,7 @@ export async function togglePharmacyStatusAction(id: string) {
   const updated = await prisma.$transaction(async (tx) => {
     const next = await tx.pharmacy.update({
       where: { id },
-      data: { isActive: !pharmacy.isActive },
+      data: { isActive },
     });
     await writeAuditLog(tx, {
       userId: user.id,
