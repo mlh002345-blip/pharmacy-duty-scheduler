@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:preflight": "tsx scripts/test-preflight.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate:deploy": "prisma migrate deploy",
