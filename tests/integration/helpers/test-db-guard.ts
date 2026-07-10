@@ -33,6 +33,7 @@
 
 const TEST_MARKER_PATTERN = /test|integration/i;
 const RESTORE_MARKER_PATTERN = /test|integration|restore|staging|recovery/i;
+const E2E_MARKER_PATTERN = /test|integration|e2e|staging/i;
 const PRODUCTION_MARKER_PATTERN = /prod|production|live/i;
 
 function parseConnectionUrl(value: string, label: string): URL {
@@ -176,6 +177,19 @@ export function resolveRestoreDatabaseUrl(): string {
     markerPattern: RESTORE_MARKER_PATTERN,
     markerDescription: '"test", "testing", "integration", "restore", "staging", or "recovery"',
     exampleDatabaseName: "pharmacy_duty_scheduler_restore",
+  });
+}
+
+// Used by tests/e2e/ — the browser E2E database additionally accepts an
+// "e2e" marker (on top of "test"/"testing"/"integration"/"staging")
+// since that's the most natural name for a dedicated Playwright target.
+export function resolveE2EDatabaseUrl(): string {
+  return resolveGuardedDatabaseUrl({
+    envVarName: "E2E_DATABASE_URL",
+    operationDescription: "run browser E2E tests",
+    markerPattern: E2E_MARKER_PATTERN,
+    markerDescription: '"test", "testing", "integration", "e2e", or "staging"',
+    exampleDatabaseName: "pharmacy_duty_scheduler_e2e",
   });
 }
 

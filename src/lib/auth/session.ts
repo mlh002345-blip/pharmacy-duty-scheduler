@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 
 type PrismaClientOrTx = PrismaClient | Prisma.TransactionClient;
 
-const SESSION_COOKIE_NAME = "session_token";
+export const SESSION_COOKIE_NAME = "session_token";
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
 export async function createSession(userId: string) {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  resolveE2EDatabaseUrl,
   resolveRestoreDatabaseUrl,
   resolveTestDatabaseUrl,
   sanitizedDatabaseIdentifier,
@@ -13,6 +14,7 @@ import {
 
 const ORIGINAL_TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const ORIGINAL_RESTORE_DATABASE_URL = process.env.RESTORE_DATABASE_URL;
+const ORIGINAL_E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const ORIGINAL_DATABASE_URL = process.env.DATABASE_URL;
 
 function restoreEnv() {
@@ -20,6 +22,8 @@ function restoreEnv() {
   else process.env.TEST_DATABASE_URL = ORIGINAL_TEST_DATABASE_URL;
   if (ORIGINAL_RESTORE_DATABASE_URL === undefined) delete process.env.RESTORE_DATABASE_URL;
   else process.env.RESTORE_DATABASE_URL = ORIGINAL_RESTORE_DATABASE_URL;
+  if (ORIGINAL_E2E_DATABASE_URL === undefined) delete process.env.E2E_DATABASE_URL;
+  else process.env.E2E_DATABASE_URL = ORIGINAL_E2E_DATABASE_URL;
   if (ORIGINAL_DATABASE_URL === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = ORIGINAL_DATABASE_URL;
 }
@@ -239,6 +243,64 @@ describe("resolveRestoreDatabaseUrl", () => {
       expect(message).not.toContain(secretPassword);
       expect(message).not.toContain(secretQueryValue);
     }
+  });
+});
+
+describe("resolveE2EDatabaseUrl", () => {
+  afterEach(() => {
+    restoreEnv();
+  });
+
+  it("throws when E2E_DATABASE_URL is missing", () => {
+    delete process.env.E2E_DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://user:pass@prod-host:5432/pharmacy_duty_scheduler";
+    expect(() => resolveE2EDatabaseUrl()).toThrow(/E2E_DATABASE_URL is not set/);
+  });
+
+  it("throws when E2E_DATABASE_URL equals DATABASE_URL", () => {
+    const url = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    process.env.E2E_DATABASE_URL = url;
+    process.env.DATABASE_URL = url;
+    expect(() => resolveE2EDatabaseUrl()).toThrow(/must not be the same value as DATABASE_URL/);
+  });
+
+  it("throws when E2E_DATABASE_URL resolves to the same host/port/db as DATABASE_URL", () => {
+    process.env.DATABASE_URL = "postgresql://app:secret1@db.internal:5432/pharmacy_e2e";
+    process.env.E2E_DATABASE_URL = "postgresql://other:secret2@db.internal:5432/pharmacy_e2e?sslmode=require";
+    expect(() => resolveE2EDatabaseUrl()).toThrow(/same host\/port\/database as DATABASE_URL/);
+  });
+
+  it.each(["test", "testing", "integration", "e2e", "staging"])(
+    "accepts a database name containing the marker %j",
+    (marker) => {
+      process.env.E2E_DATABASE_URL = `postgresql://user:pass@localhost:5432/pharmacy_${marker}`;
+      delete process.env.DATABASE_URL;
+      expect(resolveE2EDatabaseUrl()).toBe(process.env.E2E_DATABASE_URL);
+    }
+  );
+
+  it("throws when the database name has no recognized E2E marker", () => {
+    process.env.E2E_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveE2EDatabaseUrl()).toThrow(/does not contain/);
+  });
+
+  it("rejects a database name containing a production marker even alongside an e2e marker", () => {
+    process.env.E2E_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_production_e2e";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveE2EDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it("rejects a hostname containing a production marker", () => {
+    process.env.E2E_DATABASE_URL = "postgresql://user:pass@prod-db.internal:5432/pharmacy_e2e";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveE2EDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it("rejects a file:/SQLite E2E target", () => {
+    process.env.E2E_DATABASE_URL = "file:./e2e.db";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveE2EDatabaseUrl()).toThrow(/must be a PostgreSQL connection string/);
   });
 });
 
