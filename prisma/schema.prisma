@@ -361,3 +361,24 @@ model DutyRequest {
   @@index([startDate])
   @@index([endDate])
 }
+
+// Login rate-limit counter (pre-pilot Step 2 — see
+// docs/security/21-login-rate-limit-proxy-validation.md). One row per
+// (bucketType, bucketKey) pair. `bucketKey` is always a SHA-256 digest
+// (src/lib/security/hash-identifier.ts) — never a raw email or IP
+// address. `bucketType` is "NETWORK" or "ACCOUNT" (kept as a plain
+// String rather than an enum since it is never surfaced in UI and this
+// keeps the table trivial to extend if a third dimension is ever added).
+model LoginAttempt {
+  id           String    @id @default(cuid())
+  bucketType   String
+  bucketKey    String
+  failureCount Int       @default(0)
+  windowStart  DateTime
+  blockedUntil DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([bucketType, bucketKey])
+  @@index([blockedUntil])
+  @@index([windowStart])
+}

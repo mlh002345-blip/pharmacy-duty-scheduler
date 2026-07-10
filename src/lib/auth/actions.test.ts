@@ -8,6 +8,10 @@ const createSession = vi.fn();
 const redirect = vi.fn((path: string) => {
   throw new Error(`REDIRECT:${path}`);
 });
+const getClientIdentity = vi.fn();
+const checkLoginRateLimit = vi.fn();
+const recordLoginFailure = vi.fn();
+const clearAccountLoginRateLimit = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
 vi.mock("./password", () => ({
@@ -17,6 +21,18 @@ vi.mock("./session", () => ({
   createSession: (...args: unknown[]) => createSession(...args),
   destroySession: vi.fn(),
 }));
+vi.mock("@/lib/security/client-identity", () => ({
+  getClientIdentity: (...args: unknown[]) => getClientIdentity(...args),
+}));
+vi.mock("./login-rate-limit", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./login-rate-limit")>();
+  return {
+    ...actual,
+    checkLoginRateLimit: (...args: unknown[]) => checkLoginRateLimit(...args),
+    recordLoginFailure: (...args: unknown[]) => recordLoginFailure(...args),
+    clearAccountLoginRateLimit: (...args: unknown[]) => clearAccountLoginRateLimit(...args),
+  };
+});
 vi.mock("next/navigation", () => ({
   redirect: (...args: [string]) => redirect(...args),
 }));
@@ -24,6 +40,8 @@ vi.mock("next/navigation", () => ({
 const { loginAction } = await import("./actions");
 
 const GENERIC_MESSAGE = "Hatalı e-posta veya şifre.";
+const RATE_LIMIT_MESSAGE =
+  "Çok fazla başarısız giriş denemesi yapıldı. Lütfen bir süre sonra tekrar deneyin.";
 
 function makeFormData(email: string, password: string): FormData {
   const fd = new FormData();
@@ -34,6 +52,10 @@ function makeFormData(email: string, password: string): FormData {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getClientIdentity.mockResolvedValue({ networkBucketKey: "network-hash", trusted: false });
+  checkLoginRateLimit.mockResolvedValue({ blocked: false });
+  recordLoginFailure.mockResolvedValue({ blocked: false });
+  clearAccountLoginRateLimit.mockResolvedValue(undefined);
 });
 
 describe("loginAction — no account-status enumeration", () => {
@@ -47,6 +69,7 @@ describe("loginAction — no account-status enumeration", () => {
 
     expect(result).toEqual({ success: false, message: GENERIC_MESSAGE });
     expect(verifyPassword).not.toHaveBeenCalled();
+    expect(recordLoginFailure).toHaveBeenCalledOnce();
   });
 
   it("returns the generic message for a wrong password on an existing, active account", async () => {
@@ -80,6 +103,9 @@ describe("loginAction — no account-status enumeration", () => {
 
     expect(result).toEqual({ success: false, message: GENERIC_MESSAGE });
     expect(createSession).not.toHaveBeenCalled();
+    // Same external behavior as any other credential failure: counted by
+    // the rate limiter exactly like a wrong password would be.
+    expect(recordLoginFailure).toHaveBeenCalledOnce();
   });
 
   it("all three failure messages are textually identical", async () => {
@@ -128,10 +154,78 @@ describe("loginAction — no account-status enumeration", () => {
     ).rejects.toThrow("REDIRECT:/");
 
     expect(createSession).toHaveBeenCalledExactlyOnceWith("u1");
+    expect(clearAccountLoginRateLimit).toHaveBeenCalledOnce();
+    expect(recordLoginFailure).not.toHaveBeenCalled();
+  });
+
+  it("does not check or record rate limiting for a validation (zod) failure", async () => {
+    const result = await loginAction(
+      { success: false, message: "" },
+      makeFormData("not-an-email", "")
+    );
+
+    expect(result.success).toBe(false);
+    expect(checkLoginRateLimit).not.toHaveBeenCalled();
+    expect(recordLoginFailure).not.toHaveBeenCalled();
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
   });
 });
 
-describe("loginAction — auth_login_failed / auth_login_succeeded logging", () => {
+describe("loginAction — rate limiting", () => {
+  it("returns the neutral rate-limit message and never touches the database when already blocked", async () => {
+    checkLoginRateLimit.mockResolvedValue({
+      blocked: true,
+      dimension: "ACCOUNT",
+      retryAfterSeconds: 600,
+    });
+
+    const result = await loginAction(
+      { success: false, message: "" },
+      makeFormData("someone@example.com", "whatever")
+    );
+
+    expect(result).toEqual({ success: false, message: RATE_LIMIT_MESSAGE });
+    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(verifyPassword).not.toHaveBeenCalled();
+  });
+
+  it("returns the neutral rate-limit message even for a request that would otherwise be a nonexistent account (no enumeration)", async () => {
+    checkLoginRateLimit.mockResolvedValue({
+      blocked: true,
+      dimension: "NETWORK",
+      retryAfterSeconds: 300,
+    });
+
+    const result = await loginAction(
+      { success: false, message: "" },
+      makeFormData("nobody-at-all@example.com", "whatever")
+    );
+
+    expect(result.message).toBe(RATE_LIMIT_MESSAGE);
+    expect(result.message).not.toContain("nobody-at-all@example.com");
+  });
+
+  it("records a failure for every credential attempt path, including inactive accounts", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: "u1",
+      passwordHash: "hash",
+      isActive: false,
+    });
+    verifyPassword.mockResolvedValue(true);
+
+    await loginAction(
+      { success: false, message: "" },
+      makeFormData("inactive@example.com", "correct-password")
+    );
+
+    expect(recordLoginFailure).toHaveBeenCalledExactlyOnceWith({
+      networkBucketKey: "network-hash",
+      accountBucketKey: expect.any(String),
+    });
+  });
+});
+
+describe("loginAction — auth_login_failed / auth_login_succeeded / auth_login_rate_limited logging", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
   let infoSpy: ReturnType<typeof vi.spyOn>;
 
@@ -216,5 +310,50 @@ describe("loginAction — auth_login_failed / auth_login_succeeded logging", () 
     expect(record.event).toBe("auth_login_succeeded");
     expect(record.userId).toBe("u1");
     expect(infoSpy.mock.calls[0][0]).not.toContain("real@example.com");
+  });
+
+  it("logs auth_login_rate_limited with requestId/dimension/retryAfterSeconds, never email or password", async () => {
+    checkLoginRateLimit.mockResolvedValue({
+      blocked: true,
+      dimension: "ACCOUNT",
+      retryAfterSeconds: 42,
+    });
+
+    await loginAction(
+      { success: false, message: "" },
+      makeFormData("someone@example.com", "super-secret-password")
+    );
+
+    expect(warnSpy).toHaveBeenCalledOnce();
+    const line = warnSpy.mock.calls[0][0] as string;
+    const record = JSON.parse(line);
+    expect(record.event).toBe("auth_login_rate_limited");
+    expect(record.dimension).toBe("ACCOUNT");
+    expect(record.retryAfterSeconds).toBe(42);
+    expect(line).not.toContain("someone@example.com");
+    expect(line).not.toContain("super-secret-password");
+  });
+
+  it("logs auth_login_rate_limited when a credential attempt itself crosses the threshold", async () => {
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: "u1",
+      passwordHash: "hash",
+      isActive: true,
+    });
+    verifyPassword.mockResolvedValue(false);
+    recordLoginFailure.mockResolvedValue({
+      blocked: true,
+      dimension: "NETWORK",
+      retryAfterSeconds: 900,
+    });
+
+    await loginAction(
+      { success: false, message: "" },
+      makeFormData("real@example.com", "wrong-password")
+    );
+
+    const events = warnSpy.mock.calls.map((call: unknown[]) => JSON.parse(call[0] as string).event);
+    expect(events).toContain("auth_login_failed");
+    expect(events).toContain("auth_login_rate_limited");
   });
 });
