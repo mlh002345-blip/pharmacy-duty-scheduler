@@ -170,8 +170,13 @@ Gerçek pilot ortamında `DEMO_SEED` değişkenini **hiçbir zaman ayarlamayın*
 
 ## 6. Projeyi Derleme (Build)
 
+`npm install` yerine `npm ci` kullanılır: `package-lock.json`'da kilitli
+sürümleri birebir kurar, `package.json`'daki aralık (`^`) belirtilen
+bağımlılıkları sessizce güncellemez — dağıtımların birbirinden farklı
+sürümlerle derlenmesini (deterministik olmayan kurulum) önler.
+
 ```bash
-npm install
+npm ci
 npm run db:generate
 npm run build
 ```
@@ -192,8 +197,8 @@ kendi runtime'ı — kullanın.)
 # 1. PostgreSQL veritabanını oluşturun ve DATABASE_URL'i ayarlayın
 export DATABASE_URL="postgresql://KULLANICI:SIFRE@HOST:5432/VERITABANI?schema=public"
 
-# 2. Bağımlılıkları kurun ve Prisma Client'ı üretin
-npm install
+# 2. Bağımlılıkları kurun (deterministik kurulum için npm ci) ve Prisma Client'ı üretin
+npm ci
 npm run db:generate
 
 # 3. Migration'ları uygulayın
