@@ -13,7 +13,11 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:generate": "prisma generate",
-    "db:create-admin": "tsx scripts/create-admin.ts"
+    "db:create-admin": "tsx scripts/create-admin.ts",
+    "db:backup:production": "tsx scripts/backup-restore/backup-production-db.ts",
+    "db:restore:test": "tsx scripts/backup-restore/restore-backup-to-test.ts",
+    "db:verify:restore": "tsx scripts/backup-restore/verify-restored-db.ts",
+    "db:recovery:rehearsal": "tsx scripts/backup-restore/recovery-rehearsal.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

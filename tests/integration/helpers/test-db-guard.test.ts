@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resolveTestDatabaseUrl, sanitizedDatabaseIdentifier } from "./test-db-guard";
+import {
+  resolveRestoreDatabaseUrl,
+  resolveTestDatabaseUrl,
+  sanitizedDatabaseIdentifier,
+} from "./test-db-guard";
 
 // Pure/sync safety-guard logic — no database connection, no side effects
 // beyond process.env reads, so this runs as a normal, fast unit test
@@ -8,11 +12,14 @@ import { resolveTestDatabaseUrl, sanitizedDatabaseIdentifier } from "./test-db-g
 // requiring `npm run test:integration`.
 
 const ORIGINAL_TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+const ORIGINAL_RESTORE_DATABASE_URL = process.env.RESTORE_DATABASE_URL;
 const ORIGINAL_DATABASE_URL = process.env.DATABASE_URL;
 
 function restoreEnv() {
   if (ORIGINAL_TEST_DATABASE_URL === undefined) delete process.env.TEST_DATABASE_URL;
   else process.env.TEST_DATABASE_URL = ORIGINAL_TEST_DATABASE_URL;
+  if (ORIGINAL_RESTORE_DATABASE_URL === undefined) delete process.env.RESTORE_DATABASE_URL;
+  else process.env.RESTORE_DATABASE_URL = ORIGINAL_RESTORE_DATABASE_URL;
   if (ORIGINAL_DATABASE_URL === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = ORIGINAL_DATABASE_URL;
 }
@@ -50,7 +57,7 @@ describe("resolveTestDatabaseUrl", () => {
   it("throws when the database name has no recognized test marker", () => {
     process.env.TEST_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
     delete process.env.DATABASE_URL;
-    expect(() => resolveTestDatabaseUrl()).toThrow(/does not contain a recognized test marker/);
+    expect(() => resolveTestDatabaseUrl()).toThrow(/does not contain "test"/);
   });
 
   it("accepts a database name containing \"testing\"", () => {
@@ -124,6 +131,106 @@ describe("resolveTestDatabaseUrl", () => {
       let caught: unknown;
       try {
         resolveTestDatabaseUrl();
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      const message = (caught as Error).message;
+      expect(message).not.toContain(secretPassword);
+      expect(message).not.toContain(secretQueryValue);
+    }
+  });
+});
+
+describe("resolveRestoreDatabaseUrl", () => {
+  afterEach(() => {
+    restoreEnv();
+  });
+
+  it("throws when RESTORE_DATABASE_URL is missing", () => {
+    delete process.env.RESTORE_DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://user:pass@prod-host:5432/pharmacy_duty_scheduler";
+    expect(() => resolveRestoreDatabaseUrl()).toThrow(/RESTORE_DATABASE_URL is not set/);
+  });
+
+  it("throws when RESTORE_DATABASE_URL equals DATABASE_URL (byte-identical)", () => {
+    const url = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    process.env.RESTORE_DATABASE_URL = url;
+    process.env.DATABASE_URL = url;
+    expect(() => resolveRestoreDatabaseUrl()).toThrow(
+      /must not be the same value as DATABASE_URL/
+    );
+  });
+
+  it("throws when RESTORE_DATABASE_URL resolves to the same host/port/db as DATABASE_URL despite different credentials", () => {
+    process.env.DATABASE_URL = "postgresql://app:secret1@db.internal:5432/pharmacy_restore";
+    process.env.RESTORE_DATABASE_URL =
+      "postgresql://other:secret2@db.internal:5432/pharmacy_restore?sslmode=require";
+    expect(() => resolveRestoreDatabaseUrl()).toThrow(/same host\/port\/database as DATABASE_URL/);
+  });
+
+  it("throws when the restore target has no test/restore/staging/recovery marker", () => {
+    process.env.RESTORE_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveRestoreDatabaseUrl()).toThrow(/does not contain/);
+  });
+
+  it("throws when the restore target contains a prod/production/live marker", () => {
+    process.env.RESTORE_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_production_restore";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveRestoreDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it("throws when the restore target's hostname contains a production marker", () => {
+    process.env.RESTORE_DATABASE_URL = "postgresql://user:pass@prod-db.internal:5432/pharmacy_restore";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveRestoreDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it.each(["restore", "staging", "recovery", "test", "testing", "integration"])(
+    "accepts a database name containing the marker %j",
+    (marker) => {
+      process.env.RESTORE_DATABASE_URL = `postgresql://user:pass@localhost:5432/pharmacy_${marker}`;
+      delete process.env.DATABASE_URL;
+      expect(resolveRestoreDatabaseUrl()).toBe(process.env.RESTORE_DATABASE_URL);
+    }
+  );
+
+  it("rejects a file:/SQLite restore target", () => {
+    process.env.RESTORE_DATABASE_URL = "file:./restore.db";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveRestoreDatabaseUrl()).toThrow(/must be a PostgreSQL connection string/);
+  });
+
+  it("rejects a malformed restore target URL", () => {
+    process.env.RESTORE_DATABASE_URL = "not a valid url at all";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveRestoreDatabaseUrl()).toThrow(/failed to parse/);
+  });
+
+  it("never includes the password or query-string secrets in any thrown error message", () => {
+    const secretPassword = "sUp3rSecretPassw0rd!!!";
+    const secretQueryValue = "leaked-query-secret-value";
+    const scenarios: Array<() => void> = [
+      () => {
+        process.env.RESTORE_DATABASE_URL = `postgresql://user:${secretPassword}@localhost:5432/pharmacy_duty_scheduler?token=${secretQueryValue}`;
+        process.env.DATABASE_URL = process.env.RESTORE_DATABASE_URL;
+      },
+      () => {
+        process.env.RESTORE_DATABASE_URL = `postgresql://user:${secretPassword}@localhost:5432/pharmacy_prod_restore?token=${secretQueryValue}`;
+        delete process.env.DATABASE_URL;
+      },
+      () => {
+        process.env.RESTORE_DATABASE_URL = `postgresql://user:${secretPassword}@prod-host:5432/pharmacy_restore?token=${secretQueryValue}`;
+        delete process.env.DATABASE_URL;
+      },
+    ];
+
+    for (const setup of scenarios) {
+      setup();
+      let caught: unknown;
+      try {
+        resolveRestoreDatabaseUrl();
       } catch (error) {
         caught = error;
       }

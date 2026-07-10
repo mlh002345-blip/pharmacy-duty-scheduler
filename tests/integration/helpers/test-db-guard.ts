@@ -1,26 +1,28 @@
-// Safety guard for real-Postgres integration tests (and the
-// `test:preflight` command). This module is the single place that
-// decides whether it's safe to point the app's Prisma client at a
-// database and run migrations/destructive setup/cleanup against it.
+// Safety guard for real-Postgres integration tests (the
+// `test:preflight` command) and, via `resolveRestoreDatabaseUrl()`, the
+// backup-restore rehearsal tooling under scripts/backup-restore/. This
+// module is the single place that decides whether it's safe to point the
+// app's Prisma client (or pg_restore) at a database and run migrations/
+// destructive setup/cleanup/restore against it.
 //
-// Rules (all fail fast, no silent fallback):
-//   1. TEST_DATABASE_URL must be set explicitly — there is no fallback to
-//      DATABASE_URL. An unset TEST_DATABASE_URL means "don't run".
-//   2. TEST_DATABASE_URL must be a valid, parseable PostgreSQL connection
-//      string (postgresql:// or postgres://) — a SQLite/`file:` URL or a
+// Rules (all fail fast, no silent fallback), shared by both guards below:
+//   1. The target env var (TEST_DATABASE_URL / RESTORE_DATABASE_URL) must
+//      be set explicitly — there is no fallback to DATABASE_URL. Unset
+//      means "don't run".
+//   2. It must be a valid, parseable PostgreSQL connection string
+//      (postgresql:// or postgres://) — a SQLite/`file:` URL or a
 //      malformed string is rejected outright.
-//   3. TEST_DATABASE_URL must not resolve to the same database as
-//      DATABASE_URL — checked both as a byte-identical string AND as a
-//      same-protocol/host/port/path comparison, so two URLs that differ
-//      only by credentials or query string but point at the same server
-//      and database are still caught.
-//   4. The database name in TEST_DATABASE_URL must contain one of the
-//      recognized test markers ("test", "testing", "integration") —
-//      case-insensitive — a lightweight but effective guard against a
-//      copy-pasted production/demo connection string.
+//   3. It must not resolve to the same database as DATABASE_URL —
+//      checked both as a byte-identical string AND as a same-protocol/
+//      host/port/path comparison, so two URLs that differ only by
+//      credentials or query string but point at the same server and
+//      database are still caught.
+//   4. The database name must contain one of the target's recognized
+//      markers, case-insensitive — a lightweight but effective guard
+//      against a copy-pasted production/demo connection string.
 //   5. Neither the hostname nor the database name may contain a known
 //      production-sounding marker ("prod", "production", "live") — this
-//      is checked even when a test marker is also present (e.g.
+//      is checked even when a recognized marker is also present (e.g.
 //      "production_test" is still rejected), and takes priority over
 //      rule 4's allowance.
 //
@@ -30,6 +32,7 @@
 // secret, via `sanitizedDatabaseIdentifier()`.
 
 const TEST_MARKER_PATTERN = /test|integration/i;
+const RESTORE_MARKER_PATTERN = /test|integration|restore|staging|recovery/i;
 const PRODUCTION_MARKER_PATTERN = /prod|production|live/i;
 
 function parseConnectionUrl(value: string, label: string): URL {
@@ -46,7 +49,7 @@ function parseConnectionUrl(value: string, label: string): URL {
       `${label} must be a PostgreSQL connection string ("postgresql://" or ` +
         `"postgres://"). Refusing to run against a non-PostgreSQL URL ` +
         `(e.g. a SQLite "file:" URL) — this guard exists specifically to ` +
-        "prevent integration tests from ever touching a local dev SQLite " +
+        "prevent this operation from ever touching a local dev SQLite " +
         "file or a misconfigured connection string."
     );
   }
@@ -60,26 +63,39 @@ export function sanitizedDatabaseIdentifier(url: URL | string): string {
   return `${parsed.hostname}:${parsed.port || "5432"}/${databaseName}`;
 }
 
-export function resolveTestDatabaseUrl(): string {
-  const testUrl = process.env.TEST_DATABASE_URL;
-  if (!testUrl) {
+type GuardedUrlConfig = {
+  /** Env var holding the target URL, e.g. "TEST_DATABASE_URL". */
+  envVarName: string;
+  /** What the guard is protecting against, used only in error wording, e.g. "run destructive integration tests". */
+  operationDescription: string;
+  /** Pattern the database name must match to be accepted. */
+  markerPattern: RegExp;
+  /** Human-readable list of accepted markers, used only in error wording. */
+  markerDescription: string;
+  /** Example database name shown in the "no marker" error message. */
+  exampleDatabaseName: string;
+};
+
+function resolveGuardedDatabaseUrl(config: GuardedUrlConfig): string {
+  const { envVarName } = config;
+  const targetUrl = process.env[envVarName];
+  if (!targetUrl) {
     throw new Error(
-      "TEST_DATABASE_URL is not set. Integration tests refuse to run without an " +
-        "explicit, dedicated test database. Set TEST_DATABASE_URL to a PostgreSQL " +
-        "connection string whose database name contains \"test\" (or \"testing\"/" +
-        "\"integration\") before running `npm run test:integration` or " +
-        "`npm run test:preflight`."
+      `${envVarName} is not set. Refusing to ${config.operationDescription} without an ` +
+        `explicit, dedicated target database. Set ${envVarName} to a PostgreSQL ` +
+        `connection string whose database name contains ${config.markerDescription} ` +
+        "before running this command."
     );
   }
 
-  const parsed = parseConnectionUrl(testUrl, "TEST_DATABASE_URL");
+  const parsed = parseConnectionUrl(targetUrl, envVarName);
 
   const appDatabaseUrl = process.env.DATABASE_URL;
   if (appDatabaseUrl) {
-    if (testUrl === appDatabaseUrl) {
+    if (targetUrl === appDatabaseUrl) {
       throw new Error(
-        "TEST_DATABASE_URL must not be the same value as DATABASE_URL. Refusing to " +
-          "run destructive integration tests against what could be the production or " +
+        `${envVarName} must not be the same value as DATABASE_URL. Refusing to ` +
+          `${config.operationDescription} against what could be the production or ` +
           "demo database."
       );
     }
@@ -105,9 +121,9 @@ export function resolveTestDatabaseUrl(): string {
       appParsed.pathname === parsed.pathname
     ) {
       throw new Error(
-        "TEST_DATABASE_URL resolves to the same host/port/database as DATABASE_URL " +
-          "(differing only by credentials or query parameters). Refusing to run " +
-          "destructive integration tests against what could be the production or " +
+        `${envVarName} resolves to the same host/port/database as DATABASE_URL ` +
+          "(differing only by credentials or query parameters). Refusing to " +
+          `${config.operationDescription} against what could be the production or ` +
           "demo database."
       );
     }
@@ -115,32 +131,52 @@ export function resolveTestDatabaseUrl(): string {
 
   const databaseName = parsed.pathname.replace(/^\//, "");
   if (!databaseName) {
-    throw new Error(
-      "TEST_DATABASE_URL has no database name in its path. Refusing to run."
-    );
+    throw new Error(`${envVarName} has no database name in its path. Refusing to run.`);
   }
 
   const hostname = parsed.hostname;
   if (PRODUCTION_MARKER_PATTERN.test(hostname) || PRODUCTION_MARKER_PATTERN.test(databaseName)) {
     throw new Error(
-      `Refusing to run integration tests: "${sanitizedDatabaseIdentifier(parsed)}" looks ` +
-        'like a production database (hostname or database name contains "prod"/' +
-        '"production"/"live"). This check takes priority even if the name also ' +
-        "contains a test marker. Point TEST_DATABASE_URL at a dedicated, clearly-" +
-        "named test database instead."
+      `Refusing to run: "${sanitizedDatabaseIdentifier(parsed)}" looks like a production ` +
+        'database (hostname or database name contains "prod"/"production"/"live"). This ' +
+        `check takes priority even if the name also contains a recognized marker. Point ` +
+        `${envVarName} at a dedicated, clearly-named target database instead.`
     );
   }
 
-  if (!TEST_MARKER_PATTERN.test(databaseName)) {
+  if (!config.markerPattern.test(databaseName)) {
     throw new Error(
-      `Refusing to run integration tests: the database name "${databaseName}" does not ` +
-        'contain a recognized test marker ("test", "testing", or "integration"). Point ' +
-        "TEST_DATABASE_URL at a database whose name clearly identifies it as a test " +
-        'database (e.g. "pharmacy_duty_scheduler_test").'
+      `Refusing to run: the database name "${databaseName}" does not contain ` +
+        `${config.markerDescription}. Point ${envVarName} at a database whose name clearly ` +
+        `identifies it as such (e.g. "${config.exampleDatabaseName}").`
     );
   }
 
-  return testUrl;
+  return targetUrl;
+}
+
+export function resolveTestDatabaseUrl(): string {
+  return resolveGuardedDatabaseUrl({
+    envVarName: "TEST_DATABASE_URL",
+    operationDescription: "run destructive integration tests",
+    markerPattern: TEST_MARKER_PATTERN,
+    markerDescription: '"test" (or "testing"/"integration")',
+    exampleDatabaseName: "pharmacy_duty_scheduler_test",
+  });
+}
+
+// Used by scripts/backup-restore/*.ts — the restore target additionally
+// accepts "restore"/"staging"/"recovery" markers (on top of "test"/
+// "testing"/"integration") since a dedicated restore-rehearsal database
+// is often named after that purpose rather than "test" specifically.
+export function resolveRestoreDatabaseUrl(): string {
+  return resolveGuardedDatabaseUrl({
+    envVarName: "RESTORE_DATABASE_URL",
+    operationDescription: "restore a backup",
+    markerPattern: RESTORE_MARKER_PATTERN,
+    markerDescription: '"test", "testing", "integration", "restore", "staging", or "recovery"',
+    exampleDatabaseName: "pharmacy_duty_scheduler_restore",
+  });
 }
 
 // Called from the per-worker setup file: makes the app's own

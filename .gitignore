@@ -47,3 +47,9 @@ next-env.d.ts
 # prisma sqlite database
 /prisma/*.db
 /prisma/*.db-journal
+
+# local PostgreSQL backup/restore rehearsal output (dumps, checksums,
+# manifests, rehearsal reports) — never committed; dump files can contain
+# real data even though this repo's own tooling only ever prints
+# sanitized identifiers
+/backups/
