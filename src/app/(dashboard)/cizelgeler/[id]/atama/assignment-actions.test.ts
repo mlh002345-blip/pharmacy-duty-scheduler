@@ -109,6 +109,19 @@ describe("editDutyAssignmentAction — mutation and audit log are one transactio
     );
   });
 
+  it("uses the shared redirectWithMessage contract (path?success=<encoded message>), not a hand-built URL", async () => {
+    let thrown: Error | undefined;
+    try {
+      await editDutyAssignmentAction("assignment-1", { success: false, message: "" }, validFormData());
+    } catch (error) {
+      thrown = error as Error;
+    }
+
+    expect(thrown?.message).toBe(
+      `REDIRECT:/cizelgeler/schedule-1?success=${encodeURIComponent("Nöbet ataması güncellendi.")}`
+    );
+  });
+
   it("propagates an audit-log failure instead of reporting success (transaction, not a swallowed error)", async () => {
     writeAuditLog.mockRejectedValueOnce(new Error("db connection dropped"));
 

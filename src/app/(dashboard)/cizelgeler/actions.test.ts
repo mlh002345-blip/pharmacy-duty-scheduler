@@ -108,4 +108,22 @@ describe("createDutyScheduleAction — concurrent duplicate submissions", () => 
       createDutyScheduleAction({ success: false, message: "" }, makeFormData())
     ).rejects.toThrow("REDIRECT:/cizelgeler/schedule-1");
   });
+
+  it("uses the shared redirectWithMessage contract (path?success=<encoded message>), not a hand-built URL", async () => {
+    generateAndSaveDutySchedule.mockResolvedValueOnce({
+      schedule: { id: "schedule-1" },
+      info: [],
+    });
+
+    let thrown: Error | undefined;
+    try {
+      await createDutyScheduleAction({ success: false, message: "" }, makeFormData());
+    } catch (error) {
+      thrown = error as Error;
+    }
+
+    expect(thrown?.message).toBe(
+      `REDIRECT:/cizelgeler/schedule-1?success=${encodeURIComponent("Taslak olarak oluşturuldu.")}`
+    );
+  });
 });

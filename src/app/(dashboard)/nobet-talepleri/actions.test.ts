@@ -138,4 +138,21 @@ describe("reviewDutyRequestAction — conditional update prevents double review"
       data: expect.objectContaining({ dedupKey: null }),
     });
   });
+
+  it("an invalid decision value returns the shared zodErrorState field-error shape, not a hand-built state", async () => {
+    const result = await reviewDutyRequestAction(
+      "request-1",
+      { success: false, message: "" },
+      reviewFormData("NOT_A_REAL_DECISION")
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toBe("Geçersiz inceleme işlemi.");
+    // zodErrorState() populates `errors` from the flattened Zod field
+    // issues — a hand-built { success, message } state would have no
+    // `errors` key at all.
+    expect(result.errors).toBeDefined();
+    expect(result.errors?.decision).toBeDefined();
+    expect(prismaMock.dutyRequest.findUnique).not.toHaveBeenCalled();
+  });
 });

@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 
@@ -155,10 +154,10 @@ export async function createDutyScheduleAction(
   }
 
   revalidatePath("/cizelgeler");
-  redirect(
-    `/cizelgeler/${scheduleId}?success=${encodeURIComponent(
-      ["Taslak olarak oluşturuldu.", ...infoMessages].join(" ")
-    )}`
+  redirectWithMessage(
+    `/cizelgeler/${scheduleId}`,
+    "success",
+    ["Taslak olarak oluşturuldu.", ...infoMessages].join(" ")
   );
 }
 

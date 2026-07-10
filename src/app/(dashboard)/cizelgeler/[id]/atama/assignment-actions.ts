@@ -1,12 +1,12 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requirePermissionOrState } from "@/lib/auth/guard";
 import { writeAuditLog } from "@/lib/audit";
+import { redirectWithMessage } from "@/lib/flash-redirect";
 import { editDutyAssignmentSchema } from "@/lib/validations/duty-assignment";
 import { zodErrorState } from "@/lib/action-state";
 import {
@@ -209,9 +209,9 @@ export async function editDutyAssignmentAction(
   }
 
   revalidatePath(`/cizelgeler/${assignment.dutyScheduleId}`);
-  redirect(
-    `/cizelgeler/${assignment.dutyScheduleId}?success=${encodeURIComponent(
-      "Nöbet ataması güncellendi."
-    )}`
+  redirectWithMessage(
+    `/cizelgeler/${assignment.dutyScheduleId}`,
+    "success",
+    "Nöbet ataması güncellendi."
   );
 }

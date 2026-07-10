@@ -386,14 +386,13 @@ export async function createBalanceAdjustmentAction(
 }
 
 export async function deleteBalanceAdjustmentAction(adjustmentId: string) {
-  // Silme yalnızca ADMIN'e açıktır ve denetim kaydına yazılır.
+  // Silme yalnızca ADMIN'e açıktır ve denetim kaydına yazılır. Diğer
+  // requirePermissionOrState kullanımlarıyla tutarlı olsun diye, ortak
+  // UNAUTHORIZED_MESSAGE (guard.state.message) kullanılır — bu eylemin
+  // kendine özgü bir yetkisizlik metni yoktur.
   const guard = await requirePermissionOrState("manageUsers");
   if (!guard.user) {
-    redirectWithMessage(
-      "/gecmis-nobetler",
-      "error",
-      "Denge düzeltmesi silme yetkisi yalnızca yöneticidedir."
-    );
+    redirectWithMessage("/gecmis-nobetler", "error", guard.state.message);
   }
 
   const adjustment = await prisma.dutyBalanceAdjustment.findUnique({

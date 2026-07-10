@@ -62,6 +62,27 @@ describe("createPublicDutyRequestAction — duplicate submit protection (DB-back
     });
   });
 
+  // Deliberate idempotent-success contract (documented in
+  // docs/security/17-api-contract-consistency.md): a duplicate submission
+  // means the pharmacist's desired request already exists — no new row
+  // is created, and they see the same confirmation flow as a fresh
+  // submission, not an error state. This is intentionally NOT normalized
+  // to success:false to match every other domain's duplicate handling.
+  it("a duplicate submission returns success:true and creates no duplicate row (idempotent, by design)", async () => {
+    prismaMock.dutyRequest.create.mockRejectedValueOnce(p2002(["dedupKey"]));
+
+    const result = await createPublicDutyRequestAction(
+      "token-abc",
+      { success: false, message: "" },
+      requestFormData()
+    );
+
+    expect(result.success).toBe(true);
+    // create() was attempted (and rejected by the DB's unique index) —
+    // no second, successful create ever ran, so no duplicate row exists.
+    expect(prismaMock.dutyRequest.create).toHaveBeenCalledOnce();
+  });
+
   it("the create call is made with a dedupKey so DB-level uniqueness — not an app-level pre-check — is what blocks a truly concurrent duplicate", async () => {
     await createPublicDutyRequestAction(
       "token-abc",

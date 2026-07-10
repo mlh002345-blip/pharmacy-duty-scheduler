@@ -45,7 +45,8 @@ vi.mock("@/lib/flash-redirect", () => ({
   },
 }));
 
-const { createBalanceAdjustmentAction, historicalImportAction } = await import("./actions");
+const { createBalanceAdjustmentAction, deleteBalanceAdjustmentAction, historicalImportAction } =
+  await import("./actions");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -117,6 +118,28 @@ describe("createBalanceAdjustmentAction — duplicate submit protection", () => 
     ).rejects.toBeInstanceOf(RedirectSignal);
 
     expect(prismaMock.dutyBalanceAdjustment.create).toHaveBeenCalledOnce();
+  });
+});
+
+describe("deleteBalanceAdjustmentAction — shared unauthorized-message convention", () => {
+  it("uses the standard UNAUTHORIZED_MESSAGE wording, not a locally hardcoded string", async () => {
+    requirePermissionOrState.mockResolvedValue({
+      user: null,
+      state: { success: false, message: "Bu işlem için yetkiniz bulunmuyor." },
+    });
+
+    let thrown: RedirectSignal | undefined;
+    try {
+      await deleteBalanceAdjustmentAction("adj-1");
+    } catch (error) {
+      thrown = error as RedirectSignal;
+    }
+
+    expect(thrown).toBeInstanceOf(RedirectSignal);
+    expect(thrown!.path).toBe("/gecmis-nobetler");
+    expect(thrown!.kind).toBe("error");
+    expect(thrown!.redirectMessage).toBe("Bu işlem için yetkiniz bulunmuyor.");
+    expect(prismaMock.dutyBalanceAdjustment.delete).not.toHaveBeenCalled();
   });
 });
 

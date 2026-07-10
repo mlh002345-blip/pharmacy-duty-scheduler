@@ -113,7 +113,7 @@ export async function reviewDutyRequestAction(
     reviewNote: formData.get("reviewNote") ?? undefined,
   });
   if (!parsed.success) {
-    return { success: false, message: "Geçersiz inceleme işlemi." };
+    return zodErrorState(parsed.error, "Geçersiz inceleme işlemi.");
   }
 
   const { decision, reviewNote } = parsed.data;
