@@ -196,3 +196,204 @@ closes that gap.
   `src/lib/auth/password.ts`, confirmed via `git diff --name-only`
   against non-test files under `src/`
 - No test relies on wall-clock sleeps or a shared mutable fixture
+
+## Part B — real-PostgreSQL integration tests
+
+Part A's 370 unit tests all mock `@/lib/prisma`. A "concurrent duplicate
+write" unit test can only prove that when Prisma *is told* to reject a
+write with a canned `P2002`, the calling code maps that rejection to the
+right friendly message. It cannot prove that the database's actual
+unique index will, in fact, serialize two genuinely simultaneous writes
+down to one winner — that guarantee lives in Postgres, not in mocked
+TypeScript. Part B closes that gap: every test below runs the real,
+unmodified application code (the actual exported Server Action or
+transaction function) against a real, disposable PostgreSQL database,
+with two operations launched to genuinely overlap.
+
+### Integration-test architecture
+
+- **Location**: `tests/integration/*.integration.test.ts`, with shared
+  helpers in `tests/integration/helpers/`.
+- **Separate Vitest project**: `vitest.integration.config.ts` is a
+  completely separate config from `vitest.config.ts`. The base
+  `vitest.config.ts` now excludes `tests/integration/**`
+  (`test.exclude`), so plain `npm test` never touches a database and
+  stays exactly as fast as before. The integration suite only runs via
+  the explicit `npm run test:integration` command.
+- **Real seams, minimal mocking**: the only modules ever mocked for
+  integration tests are the three Next.js runtime APIs that literally
+  cannot function outside an actual HTTP request/render —
+  `cookies()`/`headers()` from `next/headers`, `redirect()` from
+  `next/navigation`, and `revalidatePath()` from `next/cache`
+  (`tests/integration/helpers/setup.ts`, registered as a per-worker
+  Vitest `setupFiles` entry). `redirect()` is stubbed to throw a
+  distinguishable `IntegrationRedirectSignal` instead of doing nothing,
+  so tests can assert "the action reached its success path" without a
+  real HTTP response object. Every other module — Prisma, all business
+  logic, `$transaction` boundaries, dedup-key computation, fingerprint
+  computation, audit logging, the advisory-lock admin guard — is the
+  real, unmodified production code.
+- **Authenticated calls**: rather than mocking `getCurrentUser()`, tests
+  create a real `User` and a real `Session` row in the test database,
+  then use `setIntegrationTestSessionToken()` (exported from
+  `setup.ts`) to point the mocked `cookies().get("session_token")` at
+  that real token. `getCurrentUser()`'s own Prisma lookup runs
+  unmodified against real data.
+
+### `TEST_DATABASE_URL` safety guard
+
+`tests/integration/helpers/test-db-guard.ts` is the single choke point
+that decides whether it's safe to point Prisma at a database and run
+destructive setup/cleanup. It fails fast (throws, refuses to run) unless
+**all** of the following hold:
+
+1. `TEST_DATABASE_URL` is set explicitly — there is no fallback to
+   `DATABASE_URL`. An unset `TEST_DATABASE_URL` means "don't run",
+   never "use production by accident."
+2. `TEST_DATABASE_URL` is not byte-identical to `DATABASE_URL`.
+3. The database name parsed out of `TEST_DATABASE_URL` contains `"test"`
+   (case-insensitive).
+
+No part of the connection string (which may embed credentials) is ever
+logged — only the bare database name. This guard runs in two places:
+once in `global-setup.ts` (Vitest `globalSetup`, a separate process,
+before migrations are applied) and again in `setup.ts` (Vitest
+`setupFiles`, per worker process, before `process.env.DATABASE_URL` is
+overridden for that worker) — `globalSetup` and worker processes do not
+share `process.env`, so the check must run in both.
+
+`src/lib/env.ts`'s `validateEnv()` extracts `databaseUrl` from
+`process.env.DATABASE_URL` unconditionally and only *requires* it to be
+set outside `NODE_ENV=test`; `src/lib/prisma.ts` constructs its
+`PrismaClient` with `datasourceUrl: env.databaseUrl`. So simply setting
+`process.env.DATABASE_URL = TEST_DATABASE_URL` before any app module is
+imported (which `setup.ts` does at module load, before any test file's
+`import` statements resolve) is sufficient to redirect the real Prisma
+client at the test database — no changes to `env.ts` or `prisma.ts`
+were needed.
+
+### Migrations, setup, and cleanup strategy
+
+- **Migrations**: `global-setup.ts` runs `npx prisma migrate deploy`
+  once, in a separate subprocess, with `DATABASE_URL` overridden to
+  `TEST_DATABASE_URL` for that subprocess only — the same command used
+  for production deploys, applied to the test database before any test
+  file runs.
+- **Fixtures**: `tests/integration/helpers/fixtures.ts` provides
+  `createTestRegion`, `createTestDutyRule`, `createTestPharmacy`,
+  `createTestUser`, and `createTestSessionToken`, each of which both
+  creates a real row and appends its id to a per-test `TrackedIds`
+  accumulator. Every row name/email is suffixed with a short
+  `testRunId()` (`randomUUID().slice(0, 8)`) so that even concurrent
+  test runs against a shared database can never collide.
+- **Cleanup**: `cleanupTrackedIds()` deletes **only** the rows whose ids
+  were tracked by that test, in FK-safe order (children before
+  parents — e.g. `DutyScheduleWarning`/`AuditLog`/`DutyAssignment`
+  before `DutySchedule`; `Session`/`AuditLog` before `User`). It never
+  issues a table-wide `deleteMany({})`, so it is safe even on a shared
+  test database and can never affect another test's or another
+  developer's data. Every scenario file calls this in `afterEach`.
+- **No sleeps**: `tests/integration/helpers/gate.ts` provides a
+  deferred-promise barrier (`createGate()`/`raceThroughGate()`). Both
+  competing operations are invoked as async closures that each `await
+  gate` as their very first statement — since nothing precedes that
+  await, both closures are already suspended by the time `release()` is
+  called synchronously, so both resume and issue their real database
+  calls in the same microtask tick. This is the only synchronization
+  mechanism used to force overlap; no test uses `setTimeout`/`sleep` for
+  correctness.
+- **Execution order**: `vitest.integration.config.ts` sets
+  `fileParallelism: false` so scenario files run strictly sequentially
+  against the shared test database, avoiding any cross-file races on
+  top of the deliberate in-file ones.
+
+### Concurrency scenarios covered
+
+| # | File | Real path exercised | DB guarantee proven |
+|---|------|---------------------|----------------------|
+| 1 | `public-duty-request-dedup.integration.test.ts` | `createPublicDutyRequestAction` | `DutyRequest.dedupKey` unique constraint: two genuinely concurrent identical public submissions produce exactly one `DutyRequest` row; one caller gets the fresh-success message, the other the friendly duplicate notice; after `reviewDutyRequestAction` closes the request (`dedupKey` cleared to `null`), a new identical submission succeeds and a second historical `DutyRequest` row can coexist. |
+| 2 | `historical-import-fingerprint-dedup.integration.test.ts` | `historicalImportAction` (import mode) | `HistoricalDutyImportBatch.fingerprint` unique constraint: two concurrent imports of the identical accepted-row payload produce exactly one batch and exactly one record set; the loser receives exactly `"Bu geçmiş nöbet aktarımı daha önce içeri alınmış."`; `getOpeningBalanceByPharmacy` (real duty-balance aggregation) reflects the weight exactly once, not twice. |
+| 3 | `schedule-transaction-rollback.integration.test.ts` | `generateAndSaveDutySchedule` | The `$transaction` boundary around `DutySchedule`/`DutyAssignment`/`DutyScheduleWarning`/`AuditLog` creation: when the audit write fails (via a new, production-default-preserving `writeAuditLogFn` injection seam — see below), **no** row from any of those four tables is left behind; a control-case test confirms the same transaction commits all rows together when nothing fails. |
+| 4 | `schedule-uniqueness-concurrency.integration.test.ts` | `generateAndSaveDutySchedule` | `DutySchedule @@unique([year, month, regionId])`: two concurrent generation calls for the same region/year/month leave exactly one `DutySchedule` row; the loser fails with a raw `P2002` (the exact error `createDutyScheduleAction`'s existing, already-unit-tested catch block maps to the friendly duplicate message); no orphaned assignment/warning rows exist from the losing transaction. |
+| 5 | `duty-assignment-uniqueness-concurrency.integration.test.ts` | `editDutyAssignmentAction` | `DutyAssignment @@unique([dutyScheduleId, pharmacyId, date])`: two assignments on the same date, edited concurrently to the same target pharmacy, leave exactly one assignment occupying that pharmacy/date; the loser gets exactly `"Bu eczane aynı tarihte bu çizelgede zaten nöbetçi olarak atanmış."`; the schedule keeps exactly two assignments total; exactly one `AuditLog` row is committed. |
+| 6 | `last-active-admin-concurrency.integration.test.ts` | `setUserStatusAction` | The `pg_advisory_xact_lock`-serialized last-active-admin guard: with exactly two active ADMIN users, each concurrently deactivating the other, exactly one deactivation commits and the other is rejected by `LastActiveAdminError` — the system never reaches zero active admins; exactly one `AuditLog` row is written. |
+
+Every test asserts **persisted database state** after the race — row
+counts, the specific unique field values, child-row consistency, and
+audit-log counts — never only the returned message, a mock call count,
+or "ran without throwing."
+
+### The `writeAuditLogFn` testability seam
+
+`generateAndSaveDutySchedule` had no way to force a failure partway
+through its transaction without weakening the transaction boundary
+itself or monkey-patching Prisma internals. The minimal fix: the
+function now accepts an optional `writeAuditLogFn` parameter, defaulting
+to the real `writeAuditLog`:
+
+```ts
+export async function generateAndSaveDutySchedule({
+  month,
+  year,
+  regionId,
+  userId,
+  writeAuditLogFn = writeAuditLog,
+}: GenerateAndSaveDutyScheduleInput) { ... }
+```
+
+Production call sites never pass this argument, so production behavior
+is byte-identical to before. The integration test passes a stub that
+throws, and because it still runs *inside* the same `tx` the real
+`writeAuditLog` would have used, the failure occurs inside the real
+transaction — proving the rollback boundary, not bypassing it.
+
+### Guarantees now proven against real Postgres (not just mocked)
+
+- `DutyRequest.dedupKey`, `HistoricalDutyImportBatch.fingerprint`,
+  `DutySchedule([year, month, regionId])`, and
+  `DutyAssignment([dutyScheduleId, pharmacyId, date])` unique
+  constraints all genuinely serialize concurrent writes down to exactly
+  one winner, under real overlapping database calls — not simulated by
+  mocking a `P2002` rejection.
+- The `generateAndSaveDutySchedule` transaction is atomic: a failure
+  after `DutySchedule` creation but before commit leaves zero rows in
+  any of the four tables it writes to.
+- The `pg_advisory_xact_lock`-based last-active-admin guard correctly
+  serializes two concurrent deactivation attempts and never allows a
+  zero-active-admin state to commit.
+- The public duty-request dedup key is correctly cleared on review
+  closure, re-enabling a legitimately new submission afterward, proven
+  against the real DB round-trip (not a mocked `update`).
+
+### Remaining untested risks (not covered by Part A or Part B)
+
+- Three or more genuinely concurrent operations racing the same unique
+  key (only two-way races are exercised here).
+- Behavior under real network partition or Postgres connection-pool
+  exhaustion during a transaction (Part B proves logical rollback
+  correctness, not infrastructure-failure resilience).
+- CI/Railway currently has no `TEST_DATABASE_URL` configured — see
+  "CI/opt-in status" below.
+
+### CI / opt-in status
+
+`npm run test:integration` is **opt-in**, not run automatically as part
+of the default test command. If `TEST_DATABASE_URL` is unset in an
+environment (including CI or Railway, unless explicitly configured),
+the suite fails immediately and loudly via the safety guard described
+above — it never silently skips and never falls back to
+`DATABASE_URL`. To run it, provision a dedicated PostgreSQL database
+whose name contains `"test"` (e.g. `pharmacy_duty_scheduler_test`), set
+`TEST_DATABASE_URL` to its connection string, and run `npm run
+test:integration`.
+
+### Unit tests vs. integration tests — the distinction this Part B closes
+
+| | Part A (unit, `npm test`) | Part B (integration, `npm run test:integration`) |
+|---|---|---|
+| Database | Mocked (`vi.mock("@/lib/prisma")`) | Real PostgreSQL |
+| Concurrency | Simulated via a canned `P2002` rejection | Genuinely overlapping calls via a deferred-promise gate |
+| Proves | Error-message translation is correct | The database itself serializes concurrent writes to one winner |
+| Speed | ~5s for 370 tests | ~5-6s for 8 tests (real DB round-trips) |
+| Isolation | Fully isolated, no shared state | Shares a database; isolated via per-test tracked-id cleanup |
+| Runs in CI by default | Yes | No — opt-in, requires `TEST_DATABASE_URL` |

@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { getOpeningBalanceByPharmacy } from "@/lib/balance/duty-balance";
 import { writeAuditLog } from "@/lib/audit";
@@ -12,6 +14,12 @@ export type GenerateAndSaveDutyScheduleInput = {
   // yazımlarıyla aynı veritabanı işlemi (transaction) içinde yazılır ki
   // denetim kaydı başarısız olursa taslak çizelge de geri alınsın.
   userId: string;
+  // Test-only seam: allows integration tests to force a failure inside the
+  // transaction (after the DutySchedule row is created) to prove the
+  // rollback boundary, without weakening or bypassing it. Production code
+  // never passes this — the default is the real writeAuditLog, so
+  // production behavior is unchanged.
+  writeAuditLogFn?: typeof writeAuditLog;
 };
 
 export class DutyScheduleGenerationError extends Error {}
@@ -21,6 +29,7 @@ export async function generateAndSaveDutySchedule({
   year,
   regionId,
   userId,
+  writeAuditLogFn = writeAuditLog,
 }: GenerateAndSaveDutyScheduleInput) {
   const region = await prisma.region.findUnique({
     where: { id: regionId },
@@ -123,7 +132,7 @@ export async function generateAndSaveDutySchedule({
       });
     }
 
-    await writeAuditLog(tx, {
+    await writeAuditLogFn(tx as Prisma.TransactionClient, {
       userId,
       action: "CREATE",
       entity: "DutySchedule",
