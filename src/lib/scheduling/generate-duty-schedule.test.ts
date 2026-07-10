@@ -168,6 +168,87 @@ describe("generateDutySchedule", () => {
     expect(result.assignments.every((a) => a.pharmacyId === "only-one")).toBe(true);
   });
 
+  it("every pharmacy unavailable for the entire month: assigns nobody and warns every day, never assigning an unavailable pharmacy", () => {
+    const monthStart = dateAtUtcMidnight(YEAR, MONTH, 1);
+    const monthEnd = dateAtUtcMidnight(YEAR, MONTH, daysInMonth(YEAR, MONTH));
+
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b"), pharmacy("c")],
+      holidays: [],
+      unavailabilities: [
+        { pharmacyId: "a", startDate: monthStart, endDate: monthEnd },
+        { pharmacyId: "b", startDate: monthStart, endDate: monthEnd },
+        { pharmacyId: "c", startDate: monthStart, endDate: monthEnd },
+      ],
+      historicalAssignments: [],
+    });
+
+    const totalDays = daysInMonth(YEAR, MONTH);
+    expect(result.assignments.length).toBe(0);
+    expect(result.warnings.length).toBe(totalDays);
+    expect(
+      result.warnings.every((w) => w.message === "Bu tarih için yeterli uygun eczane bulunamadı.")
+    ).toBe(true);
+  });
+
+  it("minDaysBetweenDuties relaxation (when too few pharmacies clear the gap) never overrides the unavailability rule", () => {
+    // "a" is fully unavailable all month; "b" is the only real option and
+    // has zero gap from its own last duty (so it would normally fail the
+    // strict minDaysBetweenDuties check every single day). If the pool-
+    // relaxation fallback ever started ignoring unavailability instead of
+    // just the day-gap rule, "a" would start appearing in the assignments.
+    const monthStart = dateAtUtcMidnight(YEAR, MONTH, 1);
+    const monthEnd = dateAtUtcMidnight(YEAR, MONTH, daysInMonth(YEAR, MONTH));
+
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 1,
+      dutyRule: { ...BASE_DUTY_RULE, minDaysBetweenDuties: 30 },
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [{ pharmacyId: "a", startDate: monthStart, endDate: monthEnd }],
+      historicalAssignments: [],
+    });
+
+    expect(result.assignments.every((assignment) => assignment.pharmacyId === "b")).toBe(true);
+    expect(result.assignments.length).toBe(daysInMonth(YEAR, MONTH));
+    expect(result.warnings.length).toBe(0);
+  });
+
+  it("dailyDutyCount exceeding the number of eligible pharmacies fills only as many slots as pharmacies exist, and warns for the rest", () => {
+    const result = generateDutySchedule({
+      month: MONTH,
+      year: YEAR,
+      regionId: REGION_ID,
+      dailyDutyCount: 5,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [pharmacy("a"), pharmacy("b")],
+      holidays: [],
+      unavailabilities: [],
+      historicalAssignments: [],
+    });
+
+    const totalDays = daysInMonth(YEAR, MONTH);
+    // Only 2 pharmacies exist, so at most 2 assignments/day are possible,
+    // never 5 — and every one of those under-filled days should warn.
+    expect(result.assignments.length).toBe(totalDays * 2);
+    expect(result.warnings.length).toBe(totalDays);
+    for (let day = 1; day <= totalDays; day++) {
+      const date = dateAtUtcMidnight(YEAR, MONTH, day);
+      const dayAssignments = result.assignments.filter(
+        (a) => a.date.getTime() === date.getTime()
+      );
+      expect(dayAssignments.length).toBe(2);
+    }
+  });
+
   it("applies holiday weights, with holiday taking priority over weekend", () => {
     // 2026-03-08 is a Sunday; treat it as an official holiday to confirm
     // the holiday weight wins over the (higher) Sunday weekend weight.

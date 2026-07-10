@@ -162,6 +162,68 @@ describe("createPublicDutyRequestAction — duplicate submit protection (DB-back
   });
 });
 
+describe("createPublicDutyRequestAction — MAX_OPEN_PUBLIC_REQUESTS boundary (10)", () => {
+  it("at 9 open requests, a new submission is accepted", async () => {
+    prismaMock.dutyRequest.count.mockResolvedValue(9);
+
+    const result = await createPublicDutyRequestAction(
+      "token-abc",
+      { success: false, message: "" },
+      requestFormData()
+    );
+
+    expect(result).toEqual({
+      success: true,
+      message: "Talebiniz eczacı odası incelemesine gönderildi.",
+    });
+    expect(prismaMock.dutyRequest.create).toHaveBeenCalledOnce();
+  });
+
+  it("at exactly 10 open requests, a new submission is rejected and no row is created", async () => {
+    prismaMock.dutyRequest.count.mockResolvedValue(10);
+
+    const result = await createPublicDutyRequestAction(
+      "token-abc",
+      { success: false, message: "" },
+      requestFormData()
+    );
+
+    expect(result).toEqual({
+      success: false,
+      message:
+        "Bekleyen talep sayınız üst sınıra ulaştı. Lütfen eczacı odasının mevcut taleplerinizi incelemesini bekleyin.",
+    });
+    expect(prismaMock.dutyRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("at 11 open requests (above the cap), a new submission is still rejected", async () => {
+    prismaMock.dutyRequest.count.mockResolvedValue(11);
+
+    const result = await createPublicDutyRequestAction(
+      "token-abc",
+      { success: false, message: "" },
+      requestFormData()
+    );
+
+    expect(result.success).toBe(false);
+    expect(prismaMock.dutyRequest.create).not.toHaveBeenCalled();
+  });
+
+  it("the open-request count query only counts PENDING PUBLIC_LINK requests — closed statuses (APPROVED/REJECTED/CANCELLED/LATE) are excluded by construction", async () => {
+    prismaMock.dutyRequest.count.mockResolvedValue(0);
+
+    await createPublicDutyRequestAction(
+      "token-abc",
+      { success: false, message: "" },
+      requestFormData()
+    );
+
+    expect(prismaMock.dutyRequest.count).toHaveBeenCalledExactlyOnceWith({
+      where: { pharmacyId: "pharmacy-1", status: "PENDING", source: "PUBLIC_LINK" },
+    });
+  });
+});
+
 describe("createPublicDutyRequestAction — public_duty_request_failed logging", () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
   let infoSpy: ReturnType<typeof vi.spyOn>;
