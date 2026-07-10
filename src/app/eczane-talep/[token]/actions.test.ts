@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 
 function p2002(target: string[]) {
@@ -138,6 +138,60 @@ describe("createPublicDutyRequestAction — duplicate submit protection (DB-back
 
     expect(result.success).toBe(false);
     expect(prismaMock.dutyRequest.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("createPublicDutyRequestAction — public_duty_request_failed logging", () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let infoSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+    infoSpy.mockRestore();
+  });
+
+  it("logs the expected duplicate dedupKey rejection at info, not error, without the token or explanation text", async () => {
+    prismaMock.dutyRequest.create.mockRejectedValueOnce(p2002(["dedupKey"]));
+
+    await createPublicDutyRequestAction(
+      "super-secret-token-value",
+      { success: false, message: "" },
+      requestFormData({ explanation: "Çok gizli açıklama metni burada." })
+    );
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledOnce();
+    const record = JSON.parse(infoSpy.mock.calls[0][0] as string);
+    expect(record.event).toBe("public_duty_request_failed");
+    expect(record.reason).toBe("duplicate_dedup_key");
+    expect(record.pharmacyId).toBe("pharmacy-1");
+    const line = infoSpy.mock.calls[0][0] as string;
+    expect(line).not.toContain("super-secret-token-value");
+    expect(line).not.toContain("Çok gizli açıklama metni burada.");
+  });
+
+  it("logs an unexpected create failure at error level with only the derived pharmacyId, not the token", async () => {
+    prismaMock.dutyRequest.create.mockRejectedValueOnce(new Error("db connection dropped"));
+
+    await expect(
+      createPublicDutyRequestAction(
+        "another-secret-token",
+        { success: false, message: "" },
+        requestFormData()
+      )
+    ).rejects.toThrow("db connection dropped");
+
+    expect(errorSpy).toHaveBeenCalledOnce();
+    const record = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(record.event).toBe("public_duty_request_failed");
+    expect(record.reason).toBe("unexpected_create_error");
+    expect(record.pharmacyId).toBe("pharmacy-1");
+    expect(errorSpy.mock.calls[0][0]).not.toContain("another-secret-token");
   });
 });
 

@@ -2,10 +2,30 @@ import { redirect } from "next/navigation";
 import type { User } from "@prisma/client";
 
 import { redirectWithMessage } from "@/lib/flash-redirect";
+import { logger } from "@/lib/observability/logger";
+import { getRequestId } from "@/lib/observability/request-id";
 import { getCurrentUser } from "./session";
 import { hasPermission, type Permission } from "./permissions";
 
 export const UNAUTHORIZED_MESSAGE = "Bu işlem için yetkiniz bulunmuyor.";
+
+// Logs an authenticated-but-under-privileged access attempt. Deliberately
+// does NOT cover the "no session at all" redirect to /giris — that's just
+// "not logged in" and would fire on every anonymous page view, which is
+// the noisy-access-logging this app is avoiding (see
+// docs/security/16-logging-observability-auditability.md).
+async function logAuthorizationDenied(context: {
+  userId: string;
+  permission: Permission;
+  redirectPath?: string;
+}) {
+  logger.warn("authorization_denied", {
+    requestId: await getRequestId(),
+    userId: context.userId,
+    requiredPermission: context.permission,
+    redirectPath: context.redirectPath,
+  });
+}
 
 /**
  * For server actions that return an ActionState-shaped object on failure
@@ -19,6 +39,7 @@ export async function requirePermissionOrState(
     redirect("/giris");
   }
   if (!hasPermission(user.role, permission)) {
+    await logAuthorizationDenied({ userId: user.id, permission });
     return { user: null, state: { success: false, message: UNAUTHORIZED_MESSAGE } };
   }
   return { user };
@@ -39,6 +60,7 @@ export async function requirePermissionOrRedirectWithMessage(
     redirect("/giris");
   }
   if (!hasPermission(user.role, permission)) {
+    await logAuthorizationDenied({ userId: user.id, permission, redirectPath });
     redirectWithMessage(redirectPath, "error", message);
   }
   return user;

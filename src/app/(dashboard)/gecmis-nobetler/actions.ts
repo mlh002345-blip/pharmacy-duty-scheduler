@@ -10,6 +10,8 @@ import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { requirePermissionOrState } from "@/lib/auth/guard";
 import { zodErrorState, type ActionState } from "@/lib/action-state";
+import { logger } from "@/lib/observability/logger";
+import { getRequestId } from "@/lib/observability/request-id";
 import { toDateKey } from "@/lib/scheduling/date-tr";
 import {
   analyzeImportRows,
@@ -144,7 +146,19 @@ export async function historicalImportAction(
     let parsedRows: unknown;
     try {
       parsedRows = JSON.parse(rawRowsValue);
-    } catch {
+    } catch (error) {
+      // Bu, önizleme adımından taşınan gizli alanın (kullanıcı tarafından
+      // asla elle düzenlenmemesi gereken) bozulduğu anlamına gelir — normal
+      // kullanımda olmaması beklenir, bu yüzden sessizce yutulmaz.
+      logger.warn(
+        "historical_import_failed",
+        {
+          requestId: await getRequestId(),
+          userId: guard.user.id,
+          reason: "raw_rows_json_parse_failed",
+        },
+        error
+      );
       return { success: false, message: "Önizleme verisi okunamadı. Lütfen dosyayı yeniden yükleyin." };
     }
     const validated = rawRowsSchema.safeParse(parsedRows);
@@ -254,8 +268,26 @@ export async function historicalImportAction(
     });
   } catch (error) {
     if (isUniqueConstraintError(error)) {
+      // Beklenen bir durum (aynı içerik daha önce içeri alınmış ya da
+      // eşzamanlı bir onay isteğiyle yarışılmış) — ERROR değil, warn.
+      logger.warn("historical_import_failed", {
+        requestId: await getRequestId(),
+        userId: guard.user.id,
+        reason: "duplicate_fingerprint",
+        acceptedRowCount: analysis.totalCount,
+      });
       return { success: false, message: "Bu geçmiş nöbet aktarımı daha önce içeri alınmış." };
     }
+    logger.error(
+      "historical_import_failed",
+      {
+        requestId: await getRequestId(),
+        userId: guard.user.id,
+        reason: "unexpected_transaction_error",
+        acceptedRowCount: analysis.totalCount,
+      },
+      error
+    );
     throw error;
   }
 

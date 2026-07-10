@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 
 class RedirectSignal extends Error {
@@ -239,5 +239,77 @@ describe("historicalImportAction — duplicate confirm protection (DB-backed fin
     // rows for the pharmacy — createMany having run only once means the
     // duplicate confirm cannot have inflated that sum.
     expect(prismaMock.historicalDutyRecord.createMany).toHaveBeenCalledOnce();
+  });
+});
+
+describe("historicalImportAction — historical_import_failed logging", () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    prismaMock.historicalDutyImportBatch.create.mockResolvedValue({ id: "batch-1" });
+    prismaMock.historicalDutyRecord.createMany.mockResolvedValue({ count: 1 });
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it("logs a warn-level event (not a bare unsignalled catch) when rawRows JSON is malformed, without row contents", async () => {
+    const fd = new FormData();
+    fd.set("mode", "import");
+    fd.set("rawRows", "{not valid json");
+    fd.set("fileName", "gecmis.xlsx");
+
+    const result = await historicalImportAction({ success: false, message: "" }, fd);
+
+    expect(result).toEqual({
+      success: false,
+      message: "Önizleme verisi okunamadı. Lütfen dosyayı yeniden yükleyin.",
+    });
+    expect(warnSpy).toHaveBeenCalledOnce();
+    const record = JSON.parse(warnSpy.mock.calls[0][0] as string);
+    expect(record.event).toBe("historical_import_failed");
+    expect(record.reason).toBe("raw_rows_json_parse_failed");
+    expect(record.userId).toBe("admin-1");
+  });
+
+  it("logs the expected duplicate fingerprint rejection at warn, not error, with only a row count (no filename)", async () => {
+    prismaMock.historicalDutyImportBatch.create.mockRejectedValueOnce(p2002(["fingerprint"]));
+
+    await historicalImportAction(
+      { success: false, message: "" },
+      importFormData("import", [importRow()], "hassas-dosya-adi.xlsx")
+    );
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledOnce();
+    const record = JSON.parse(warnSpy.mock.calls[0][0] as string);
+    expect(record.event).toBe("historical_import_failed");
+    expect(record.reason).toBe("duplicate_fingerprint");
+    expect(record.acceptedRowCount).toBe(1);
+    expect(warnSpy.mock.calls[0][0]).not.toContain("hassas-dosya-adi.xlsx");
+  });
+
+  it("logs an unexpected transaction failure at error level, without leaking it as an uninstrumented throw", async () => {
+    prismaMock.historicalDutyImportBatch.create.mockRejectedValueOnce(
+      new Error("db connection dropped")
+    );
+
+    await expect(
+      historicalImportAction(
+        { success: false, message: "" },
+        importFormData("import", [importRow()])
+      )
+    ).rejects.toThrow("db connection dropped");
+
+    expect(errorSpy).toHaveBeenCalledOnce();
+    const record = JSON.parse(errorSpy.mock.calls[0][0] as string);
+    expect(record.event).toBe("historical_import_failed");
+    expect(record.reason).toBe("unexpected_transaction_error");
+    expect(record.error.message).toContain("db connection dropped");
   });
 });

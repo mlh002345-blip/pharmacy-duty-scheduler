@@ -6,6 +6,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { zodErrorState, type ActionState } from "@/lib/action-state";
 import { computePublicRequestDedupKey } from "@/lib/duty-requests/dedup-key";
+import { logger } from "@/lib/observability/logger";
+import { getRequestId } from "@/lib/observability/request-id";
 
 function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -92,11 +94,28 @@ export async function createPublicDutyRequestAction(
     });
   } catch (error) {
     if (isUniqueConstraintError(error)) {
+      // Beklenen bir durum (çift gönderim) — pharmacyId token'dan türetilmiş
+      // olduğu için loglanabilir, ama token'ın kendisi ve açıklama metni
+      // asla loglanmaz.
+      logger.info("public_duty_request_failed", {
+        requestId: await getRequestId(),
+        pharmacyId: pharmacy.id,
+        reason: "duplicate_dedup_key",
+      });
       return {
         success: true,
         message: "Bu talep daha önce alınmış. Lütfen mevcut talebinizin incelenmesini bekleyin.",
       };
     }
+    logger.error(
+      "public_duty_request_failed",
+      {
+        requestId: await getRequestId(),
+        pharmacyId: pharmacy.id,
+        reason: "unexpected_create_error",
+      },
+      error
+    );
     throw error;
   }
 

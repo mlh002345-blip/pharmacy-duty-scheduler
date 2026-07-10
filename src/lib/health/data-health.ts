@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/observability/logger";
+import { getRequestId } from "@/lib/observability/request-id";
 import { todayAtUtcMidnight } from "@/lib/scheduling/date-tr";
 
 export type HealthSeverity = "CRITICAL" | "WARNING" | "INFO";
@@ -424,7 +426,21 @@ export async function getDataHealthReport(options?: {
   if (cachedReport && cachedReport.expiresAt > now) {
     return cachedReport.value;
   }
-  const report = await fetchDataHealthReport();
+  // Only a failed (cache-miss) refresh is logged — a cache hit above
+  // never reaches here, so this cannot fire on every dashboard/veri-kontrol
+  // page load, only on the up-to-once-per-60s refresh, and only when it
+  // actually fails.
+  let report: DataHealthReport;
+  try {
+    report = await fetchDataHealthReport();
+  } catch (error) {
+    logger.error(
+      "data_health_report_failed",
+      { requestId: await getRequestId() },
+      error
+    );
+    throw error;
+  }
   cachedReport = { value: report, expiresAt: now + DATA_HEALTH_CACHE_TTL_MS };
   return report;
 }

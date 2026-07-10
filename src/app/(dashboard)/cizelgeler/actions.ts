@@ -10,6 +10,8 @@ import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { createDutyScheduleSchema } from "@/lib/validations/duty-schedule";
 import { type ActionState, zodErrorState } from "@/lib/action-state";
+import { logger } from "@/lib/observability/logger";
+import { getRequestId } from "@/lib/observability/request-id";
 import {
   DutyScheduleGenerationError,
   generateAndSaveDutySchedule,
@@ -109,6 +111,14 @@ export async function createDutyScheduleAction(
     infoMessages = [...preCheck.warnings, ...result.info];
   } catch (error) {
     if (error instanceof DutyScheduleGenerationError) {
+      logger.warn("schedule_generation_failed", {
+        requestId: await getRequestId(),
+        userId: user.id,
+        regionId,
+        year,
+        month,
+        reason: "precheck_failed",
+      });
       return { success: false, message: error.message };
     }
     // İki eşzamanlı istek aynı bölge/ay/yıl için çizelge oluşturmaya
@@ -118,8 +128,29 @@ export async function createDutyScheduleAction(
     // doğrudan sıralı durumla aynı Türkçe mesaja eşleyip kullanıcıya ham bir
     // hata sayfası yerine anlaşılır bir yanıt döndürüyoruz.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      logger.warn("schedule_generation_failed", {
+        requestId: await getRequestId(),
+        userId: user.id,
+        regionId,
+        year,
+        month,
+        reason: "duplicate_schedule",
+        prismaCode: error.code,
+      });
       return duplicateScheduleState;
     }
+    logger.error(
+      "schedule_generation_failed",
+      {
+        requestId: await getRequestId(),
+        userId: user.id,
+        regionId,
+        year,
+        month,
+        reason: "unexpected_error",
+      },
+      error
+    );
     throw error;
   }
 

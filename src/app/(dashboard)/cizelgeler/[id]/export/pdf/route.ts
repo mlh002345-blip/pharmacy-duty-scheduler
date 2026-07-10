@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasPermission } from "@/lib/auth/permissions";
 import { buildDutySchedulePdf } from "@/lib/pdf/build-schedule-pdf";
+import { logger } from "@/lib/observability/logger";
+import { getRequestId } from "@/lib/observability/request-id";
 import {
   buildDutyScheduleExportFilename,
   loadDutyScheduleForExport,
@@ -28,13 +30,25 @@ export async function GET(
     return NextResponse.json({ message: "Nöbet çizelgesi bulunamadı." }, { status: 404 });
   }
 
-  const buffer = await buildDutySchedulePdf(schedule);
-  const filename = buildDutyScheduleExportFilename(schedule, "pdf");
+  try {
+    const buffer = await buildDutySchedulePdf(schedule);
+    const filename = buildDutyScheduleExportFilename(schedule, "pdf");
 
-  return new NextResponse(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-    },
-  });
+    return new NextResponse(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    });
+  } catch (error) {
+    logger.error(
+      "schedule_pdf_export_failed",
+      { requestId: await getRequestId(), userId: user.id, scheduleId: id },
+      error
+    );
+    return NextResponse.json(
+      { message: "PDF dışa aktarma sırasında bir hata oluştu." },
+      { status: 500 }
+    );
+  }
 }
