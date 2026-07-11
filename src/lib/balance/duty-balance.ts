@@ -1,11 +1,18 @@
 import { prisma } from "@/lib/prisma";
-import { isWeekend } from "@/lib/scheduling/date-tr";
 
 // Eczane başına nöbet dengesi özeti:
 //   Toplam Denge Skoru = geçmiş nöbet puanı (eşleşen kayıtlar)
 //                      + manuel denge düzeltmeleri
 //                      + yeni sistemde üretilen nöbetlerin puanı
 // Geçmiş kayıtlar hiçbir zaman DutyAssignment'a dönüşmez; sadece skora katılır.
+
+type HistoricalGroupRow = {
+  pharmacyId: string;
+  count: bigint;
+  points: number | null;
+  weekend: bigint;
+  holiday: bigint;
+};
 
 export type PharmacyBalanceRow = {
   pharmacyId: string;
@@ -27,7 +34,18 @@ export async function getDutyBalanceRows(options?: {
 }): Promise<PharmacyBalanceRow[]> {
   const pharmacyWhere = options?.regionId ? { regionId: options.regionId } : {};
 
-  const [pharmacies, historicalRecords, adjustmentGroups, generatedGroups] =
+  // Aggregated in the database (GROUP BY pharmacyId) rather than fetched
+  // row-by-row and reduced in JS: at pilot scale, HistoricalDutyRecord can
+  // hold hundreds of thousands of rows, and this report has no pagination
+  // (it's a full roster summary), so an unbounded findMany here was
+  // measured to dominate page load time (see
+  // docs/security/23-large-data-query-plan-validation.md). The weekday
+  // check (Saturday/Sunday via EXTRACT(DOW ...)) matches the app's
+  // existing UTC-only date model (dutyDate is always stored as a
+  // UTC-midnight `timestamp without time zone`, see
+  // src/lib/scheduling/date-tr.ts's dateAtUtcMidnight), so no timezone
+  // conversion happens on either side of the comparison.
+  const [pharmacies, historicalGrouped, adjustmentGroups, generatedGroups] =
     await Promise.all([
       prisma.pharmacy.findMany({
         where: pharmacyWhere,
@@ -39,14 +57,28 @@ export async function getDutyBalanceRows(options?: {
         },
         orderBy: { name: "asc" },
       }),
-      prisma.historicalDutyRecord.findMany({
-        where: {
-          matchStatus: "MATCHED",
-          pharmacyId: { not: null },
-          ...(options?.regionId ? { pharmacy: { regionId: options.regionId } } : {}),
-        },
-        select: { pharmacyId: true, dutyDate: true, weight: true, dutyType: true },
-      }),
+      options?.regionId
+        ? prisma.$queryRaw<HistoricalGroupRow[]>`
+            SELECT "pharmacyId",
+                   count(*) AS count,
+                   sum("weight") AS points,
+                   sum(CASE WHEN EXTRACT(DOW FROM "dutyDate") IN (0, 6) THEN 1 ELSE 0 END) AS weekend,
+                   sum(CASE WHEN "weight" >= 1.5 THEN 1 ELSE 0 END) AS holiday
+            FROM "HistoricalDutyRecord"
+            WHERE "matchStatus" = 'MATCHED' AND "pharmacyId" IS NOT NULL
+              AND "pharmacyId" IN (SELECT "id" FROM "Pharmacy" WHERE "regionId" = ${options.regionId})
+            GROUP BY "pharmacyId"
+          `
+        : prisma.$queryRaw<HistoricalGroupRow[]>`
+            SELECT "pharmacyId",
+                   count(*) AS count,
+                   sum("weight") AS points,
+                   sum(CASE WHEN EXTRACT(DOW FROM "dutyDate") IN (0, 6) THEN 1 ELSE 0 END) AS weekend,
+                   sum(CASE WHEN "weight" >= 1.5 THEN 1 ELSE 0 END) AS holiday
+            FROM "HistoricalDutyRecord"
+            WHERE "matchStatus" = 'MATCHED' AND "pharmacyId" IS NOT NULL
+            GROUP BY "pharmacyId"
+          `,
       prisma.dutyBalanceAdjustment.groupBy({
         by: ["pharmacyId"],
         where: options?.regionId ? { pharmacy: { regionId: options.regionId } } : {},
@@ -70,23 +102,17 @@ export async function getDutyBalanceRows(options?: {
     ])
   );
 
-  const historicalByPharmacy = new Map<
-    string,
-    { count: number; points: number; weekend: number; holiday: number }
-  >();
-  for (const record of historicalRecords) {
-    if (!record.pharmacyId) continue;
-    const entry =
-      historicalByPharmacy.get(record.pharmacyId) ??
-      { count: 0, points: 0, weekend: 0, holiday: 0 };
-    entry.count += 1;
-    entry.points += record.weight;
-    if (isWeekend(record.dutyDate)) entry.weekend += 1;
-    // Tatil/bayram bilgisini içe aktarma sırasında hesaplanan ağırlıktan
-    // türetiyoruz: 1.5 ve üzeri ağırlık tatil/bayram nöbetidir.
-    if (record.weight >= 1.5) entry.holiday += 1;
-    historicalByPharmacy.set(record.pharmacyId, entry);
-  }
+  const historicalByPharmacy = new Map(
+    historicalGrouped.map((row) => [
+      row.pharmacyId,
+      {
+        count: Number(row.count),
+        points: row.points ?? 0,
+        weekend: Number(row.weekend),
+        holiday: Number(row.holiday),
+      },
+    ])
+  );
 
   return pharmacies.map((pharmacy) => {
     const historical = historicalByPharmacy.get(pharmacy.id);

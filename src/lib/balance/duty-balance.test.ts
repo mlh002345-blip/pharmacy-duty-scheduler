@@ -2,9 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const prismaMock = {
   pharmacy: { findMany: vi.fn() },
-  historicalDutyRecord: { findMany: vi.fn(), groupBy: vi.fn() },
+  historicalDutyRecord: { groupBy: vi.fn() },
   dutyBalanceAdjustment: { groupBy: vi.fn() },
   dutyAssignment: { groupBy: vi.fn() },
+  // getDutyBalanceRows aggregates HistoricalDutyRecord via a raw SQL
+  // GROUP BY (see duty-balance.ts) instead of findMany + JS reduction —
+  // moved server-side after full-scale benchmarking showed the unbounded
+  // findMany dominating /nobet-dengesi's response time (see
+  // docs/security/23-large-data-query-plan-validation.md).
+  $queryRaw: vi.fn(),
 };
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
@@ -15,9 +21,22 @@ function pharmacy(id: string, name: string, regionName = "Kadıköy") {
   return { id, name, isActive: true, region: { name: regionName } };
 }
 
+function historicalGroupRow(
+  pharmacyId: string,
+  overrides: Partial<{ count: bigint; points: number | null; weekend: bigint; holiday: bigint }> = {}
+) {
+  return {
+    pharmacyId,
+    count: overrides.count ?? BigInt(0),
+    points: overrides.points ?? 0,
+    weekend: overrides.weekend ?? BigInt(0),
+    holiday: overrides.holiday ?? BigInt(0),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  prismaMock.historicalDutyRecord.findMany.mockResolvedValue([]);
+  prismaMock.$queryRaw.mockResolvedValue([]);
   prismaMock.dutyBalanceAdjustment.groupBy.mockResolvedValue([]);
   prismaMock.dutyAssignment.groupBy.mockResolvedValue([]);
   prismaMock.historicalDutyRecord.groupBy.mockResolvedValue([]);
@@ -49,13 +68,13 @@ describe("getDutyBalanceRows — zero fallback correctness", () => {
 });
 
 describe("getDutyBalanceRows — historical + adjustment + generated combine correctly", () => {
-  it("sums multiple historical records (JS-side accumulation) plus a DB-aggregated adjustment and generated total", async () => {
+  it("combines a DB-aggregated historical group, adjustment, and generated total", async () => {
     prismaMock.pharmacy.findMany.mockResolvedValue([pharmacy("p1", "Deva Eczanesi")]);
-    // A Monday (2026-07-13) at weight 1, and a holiday-weight record — both
-    // for the same pharmacy, exercising the JS-side accumulation loop.
-    prismaMock.historicalDutyRecord.findMany.mockResolvedValue([
-      { pharmacyId: "p1", dutyDate: new Date("2026-07-13"), weight: 1, dutyType: "Normal" },
-      { pharmacyId: "p1", dutyDate: new Date("2026-07-18"), weight: 1.5, dutyType: "Bayram" },
+    // Two historical records for the same pharmacy (one Monday at weight 1,
+    // one holiday-weight record) already pre-aggregated the way the SQL
+    // GROUP BY in duty-balance.ts would return them.
+    prismaMock.$queryRaw.mockResolvedValue([
+      historicalGroupRow("p1", { count: BigInt(2), points: 2.5, weekend: BigInt(1), holiday: BigInt(1) }),
     ]);
     prismaMock.dutyBalanceAdjustment.groupBy.mockResolvedValue([
       { pharmacyId: "p1", _sum: { points: 3 } },
@@ -114,9 +133,7 @@ describe("getDutyBalanceRows — pharmacies missing from a grouped query still a
       pharmacy("p2", "Eczane B"),
     ]);
     // Only p1 has any activity in any of the three grouped sources.
-    prismaMock.historicalDutyRecord.findMany.mockResolvedValue([
-      { pharmacyId: "p1", dutyDate: new Date("2026-07-13"), weight: 2, dutyType: "Normal" },
-    ]);
+    prismaMock.$queryRaw.mockResolvedValue([historicalGroupRow("p1", { count: BigInt(1), points: 2 })]);
     prismaMock.dutyBalanceAdjustment.groupBy.mockResolvedValue([
       { pharmacyId: "p1", _sum: { points: 1 } },
     ]);
@@ -164,11 +181,11 @@ describe("getDutyBalanceRows — region scoping reaches every underlying query",
     expect(prismaMock.pharmacy.findMany).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ where: { regionId: "region-1" } })
     );
-    expect(prismaMock.historicalDutyRecord.findMany).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ pharmacy: { regionId: "region-1" } }),
-      })
-    );
+    // $queryRaw is invoked as a tagged template, so the mock receives
+    // (stringsArray, ...substitutions) — the regionId is one of the
+    // interpolated values rather than a structured `where` object.
+    expect(prismaMock.$queryRaw).toHaveBeenCalledOnce();
+    expect(prismaMock.$queryRaw.mock.calls[0]).toContain("region-1");
     expect(prismaMock.dutyBalanceAdjustment.groupBy).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ where: { pharmacy: { regionId: "region-1" } } })
     );
