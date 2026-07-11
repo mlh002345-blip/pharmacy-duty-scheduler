@@ -23,6 +23,7 @@ import {
   MAX_IMPORT_ROWS,
   parseHistoricalExcel,
 } from "@/lib/historical/parse-excel";
+import { preflightZipArchive, ZipPreflightError } from "@/lib/zip-preflight";
 import type { ImportActionState } from "./import-state";
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -177,6 +178,30 @@ export async function historicalImportAction(
     }
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
+      // Cheap ZIP-metadata check (entry count/size/compression ratio)
+      // BEFORE exceljs decompresses any entry content — see
+      // src/lib/zip-preflight.ts for why this order matters (a small
+      // crafted archive can otherwise balloon to hundreds of MB in
+      // memory during parseHistoricalExcel's own workbook.xlsx.load()).
+      try {
+        await preflightZipArchive(buffer);
+      } catch (error) {
+        if (error instanceof ZipPreflightError) {
+          const isResourceLimit = [
+            "too_many_entries",
+            "entry_too_large",
+            "total_too_large",
+            "compression_ratio_too_high",
+          ].includes(error.reasonCode);
+          logger.warn(isResourceLimit ? "excel_resource_limit_exceeded" : "excel_upload_rejected", {
+            requestId: await getRequestId(),
+            reasonCode: error.reasonCode,
+            fileSize: file.size,
+          });
+          return { success: false, message: error.message };
+        }
+        throw error;
+      }
       inputRows = await parseHistoricalExcel(buffer);
       fileName = file.name;
     } catch (error) {
@@ -290,6 +315,13 @@ export async function historicalImportAction(
     );
     throw error;
   }
+
+  logger.info("excel_import_completed", {
+    requestId: await getRequestId(),
+    userId: guard.user.id,
+    acceptedRowCount: analysis.totalCount,
+    matchedCount: analysis.matchedCount,
+  });
 
   redirectWithMessage(
     "/gecmis-nobetler",

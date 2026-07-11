@@ -26,7 +26,10 @@
     "test:perf:cleanup": "tsx scripts/perf/cleanup.ts",
     "test:chaos:preflight": "tsx scripts/chaos/preflight.ts",
     "test:chaos": "vitest run --config vitest.chaos.config.ts",
-    "test:chaos:cleanup": "tsx scripts/chaos/cleanup.ts"
+    "test:chaos:cleanup": "tsx scripts/chaos/cleanup.ts",
+    "test:file:preflight": "tsx scripts/file-security/preflight.ts",
+    "test:file": "vitest run --config vitest.file-security.config.ts",
+    "test:file:cleanup": "tsx scripts/file-security/cleanup.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -39,6 +42,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "exceljs": "4.4.0",
+    "jszip": "3.10.1",
     "lucide-react": "^1.23.0",
     "next": "16.2.10",
     "pdfkit": "0.19.1",

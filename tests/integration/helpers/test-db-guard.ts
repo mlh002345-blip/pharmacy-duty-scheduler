@@ -36,6 +36,7 @@ const RESTORE_MARKER_PATTERN = /test|integration|restore|staging|recovery/i;
 const E2E_MARKER_PATTERN = /test|integration|e2e|staging/i;
 const PERF_MARKER_PATTERN = /perf|performance|benchmark|load|test|testing|staging/i;
 const CHAOS_MARKER_PATTERN = /chaos|resilience|failure|fault|test|testing|staging/i;
+const FILE_TEST_MARKER_PATTERN = /filetest|uploadtest|exceltest|xlsxtest|test|testing|staging/i;
 const PRODUCTION_MARKER_PATTERN = /prod|production|live/i;
 
 function parseConnectionUrl(value: string, label: string): URL {
@@ -228,6 +229,23 @@ export function resolveChaosDatabaseUrl(): string {
   });
 }
 
+// Used by tests/file-security/ and scripts/file-security/ — the Excel/
+// XLSX import-export resource/security test database. Never anything
+// this guard would allow to resolve to DATABASE_URL, so a file-security
+// run (which writes real HistoricalDutyRecord/HistoricalDutyImportBatch
+// rows, some deliberately triggering rollback) can never touch
+// production data.
+export function resolveFileTestDatabaseUrl(): string {
+  return resolveGuardedDatabaseUrl({
+    envVarName: "FILE_TEST_DATABASE_URL",
+    operationDescription: "run Excel/XLSX import-export resource-security tests",
+    markerPattern: FILE_TEST_MARKER_PATTERN,
+    markerDescription:
+      '"filetest", "uploadtest", "exceltest", "xlsxtest", "test", "testing", or "staging"',
+    exampleDatabaseName: "pharmacy_duty_scheduler_filetest",
+  });
+}
+
 // Called from the per-worker setup file: makes the app's own
 // src/lib/prisma.ts (via src/lib/env.ts) resolve to the test database for
 // this process only. This never touches the real DATABASE_URL value itself
@@ -245,4 +263,12 @@ export function pointProcessAtChaosDatabase(): string {
   const chaosUrl = resolveChaosDatabaseUrl();
   process.env.DATABASE_URL = chaosUrl;
   return chaosUrl;
+}
+
+// Same as pointProcessAtTestDatabase(), for the file-security-test
+// worker setup file.
+export function pointProcessAtFileTestDatabase(): string {
+  const fileTestUrl = resolveFileTestDatabaseUrl();
+  process.env.DATABASE_URL = fileTestUrl;
+  return fileTestUrl;
 }

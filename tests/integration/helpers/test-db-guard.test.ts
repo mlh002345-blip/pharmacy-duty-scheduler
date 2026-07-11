@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   resolveChaosDatabaseUrl,
   resolveE2EDatabaseUrl,
+  resolveFileTestDatabaseUrl,
   resolvePerfDatabaseUrl,
   resolveRestoreDatabaseUrl,
   resolveTestDatabaseUrl,
@@ -19,6 +20,7 @@ const ORIGINAL_RESTORE_DATABASE_URL = process.env.RESTORE_DATABASE_URL;
 const ORIGINAL_E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const ORIGINAL_PERF_DATABASE_URL = process.env.PERF_DATABASE_URL;
 const ORIGINAL_CHAOS_DATABASE_URL = process.env.CHAOS_DATABASE_URL;
+const ORIGINAL_FILE_TEST_DATABASE_URL = process.env.FILE_TEST_DATABASE_URL;
 const ORIGINAL_DATABASE_URL = process.env.DATABASE_URL;
 
 function restoreEnv() {
@@ -32,6 +34,8 @@ function restoreEnv() {
   else process.env.PERF_DATABASE_URL = ORIGINAL_PERF_DATABASE_URL;
   if (ORIGINAL_CHAOS_DATABASE_URL === undefined) delete process.env.CHAOS_DATABASE_URL;
   else process.env.CHAOS_DATABASE_URL = ORIGINAL_CHAOS_DATABASE_URL;
+  if (ORIGINAL_FILE_TEST_DATABASE_URL === undefined) delete process.env.FILE_TEST_DATABASE_URL;
+  else process.env.FILE_TEST_DATABASE_URL = ORIGINAL_FILE_TEST_DATABASE_URL;
   if (ORIGINAL_DATABASE_URL === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = ORIGINAL_DATABASE_URL;
 }
@@ -449,6 +453,78 @@ describe("resolveChaosDatabaseUrl", () => {
     let caught: unknown;
     try {
       resolveChaosDatabaseUrl();
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).message).not.toContain(secretPassword);
+  });
+});
+
+describe("resolveFileTestDatabaseUrl", () => {
+  afterEach(() => {
+    restoreEnv();
+  });
+
+  it("throws when FILE_TEST_DATABASE_URL is missing", () => {
+    delete process.env.FILE_TEST_DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://user:pass@prod-host:5432/pharmacy_duty_scheduler";
+    expect(() => resolveFileTestDatabaseUrl()).toThrow(/FILE_TEST_DATABASE_URL is not set/);
+  });
+
+  it("throws when FILE_TEST_DATABASE_URL equals DATABASE_URL", () => {
+    const url = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    process.env.FILE_TEST_DATABASE_URL = url;
+    process.env.DATABASE_URL = url;
+    expect(() => resolveFileTestDatabaseUrl()).toThrow(/must not be the same value as DATABASE_URL/);
+  });
+
+  it("throws when FILE_TEST_DATABASE_URL resolves to the same host/port/db as DATABASE_URL", () => {
+    process.env.DATABASE_URL = "postgresql://app:secret1@db.internal:5432/pharmacy_filetest";
+    process.env.FILE_TEST_DATABASE_URL =
+      "postgresql://other:secret2@db.internal:5432/pharmacy_filetest?sslmode=require";
+    expect(() => resolveFileTestDatabaseUrl()).toThrow(/same host\/port\/database as DATABASE_URL/);
+  });
+
+  it.each(["filetest", "uploadtest", "exceltest", "xlsxtest", "test", "testing", "staging"])(
+    "accepts a database name containing the marker %j",
+    (marker) => {
+      process.env.FILE_TEST_DATABASE_URL = `postgresql://user:pass@localhost:5432/pharmacy_${marker}`;
+      delete process.env.DATABASE_URL;
+      expect(resolveFileTestDatabaseUrl()).toBe(process.env.FILE_TEST_DATABASE_URL);
+    }
+  );
+
+  it("throws when the database name has no recognized file-test marker", () => {
+    process.env.FILE_TEST_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveFileTestDatabaseUrl()).toThrow(/does not contain/);
+  });
+
+  it("rejects a database name containing a production marker even alongside a file-test marker", () => {
+    process.env.FILE_TEST_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_production_filetest";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveFileTestDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it("rejects a hostname containing a production marker", () => {
+    process.env.FILE_TEST_DATABASE_URL = "postgresql://user:pass@prod-db.internal:5432/pharmacy_filetest";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveFileTestDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it("rejects a file:/SQLite file-test target", () => {
+    process.env.FILE_TEST_DATABASE_URL = "file:./filetest.db";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveFileTestDatabaseUrl()).toThrow(/must be a PostgreSQL connection string/);
+  });
+
+  it("never includes the password or query-string secrets in any thrown error message", () => {
+    const secretPassword = "sUp3rSecretPassw0rd!!!";
+    process.env.FILE_TEST_DATABASE_URL = `postgresql://user:${secretPassword}@prod-host:5432/pharmacy_filetest`;
+    delete process.env.DATABASE_URL;
+    let caught: unknown;
+    try {
+      resolveFileTestDatabaseUrl();
     } catch (error) {
       caught = error;
     }

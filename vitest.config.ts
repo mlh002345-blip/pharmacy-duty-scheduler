@@ -24,11 +24,17 @@ export default defineConfig({
     // inject real faults (stopping the local PostgreSQL service,
     // terminating backends) and must never run as part of the normal,
     // fast, fully-mocked `npm test`.
+    // Excel/XLSX file-security tests (tests/file-security/specs/*.filesec.test.ts)
+    // run only via `npm run test:file` (vitest.file-security.config.ts) —
+    // they parse real (including deliberately malicious/oversized)
+    // workbooks against FILE_TEST_DATABASE_URL and must never run as
+    // part of the normal, fast, fully-mocked `npm test`.
     exclude: [
       "node_modules/**",
       "tests/integration/**/*.integration.test.ts",
       "tests/e2e/**",
       "tests/chaos/**",
+      "tests/file-security/**",
     ],
   },
 });

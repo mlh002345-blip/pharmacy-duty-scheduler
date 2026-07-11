@@ -67,3 +67,8 @@ next-env.d.ts
 # Chaos/DB-resilience test run manifests — never committed; the concise
 # markdown summary under docs/ is what gets committed instead
 /chaos-output/
+
+# Excel/XLSX file-security test run manifests and generated fixtures
+# (some deliberately large/zip-bomb-shaped) — never committed; the
+# concise markdown summary under docs/ is what gets committed instead
+/file-security-output/
