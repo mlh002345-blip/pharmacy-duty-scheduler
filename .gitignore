@@ -58,3 +58,8 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Performance-benchmark output (manifests, EXPLAIN ANALYZE JSON,
+# measurement reports) — never committed; the concise markdown summaries
+# under docs/ are what gets committed instead
+/benchmark-output/

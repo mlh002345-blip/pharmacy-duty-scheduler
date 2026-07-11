@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   resolveE2EDatabaseUrl,
+  resolvePerfDatabaseUrl,
   resolveRestoreDatabaseUrl,
   resolveTestDatabaseUrl,
   sanitizedDatabaseIdentifier,
@@ -15,6 +16,7 @@ import {
 const ORIGINAL_TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const ORIGINAL_RESTORE_DATABASE_URL = process.env.RESTORE_DATABASE_URL;
 const ORIGINAL_E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
+const ORIGINAL_PERF_DATABASE_URL = process.env.PERF_DATABASE_URL;
 const ORIGINAL_DATABASE_URL = process.env.DATABASE_URL;
 
 function restoreEnv() {
@@ -24,6 +26,8 @@ function restoreEnv() {
   else process.env.RESTORE_DATABASE_URL = ORIGINAL_RESTORE_DATABASE_URL;
   if (ORIGINAL_E2E_DATABASE_URL === undefined) delete process.env.E2E_DATABASE_URL;
   else process.env.E2E_DATABASE_URL = ORIGINAL_E2E_DATABASE_URL;
+  if (ORIGINAL_PERF_DATABASE_URL === undefined) delete process.env.PERF_DATABASE_URL;
+  else process.env.PERF_DATABASE_URL = ORIGINAL_PERF_DATABASE_URL;
   if (ORIGINAL_DATABASE_URL === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = ORIGINAL_DATABASE_URL;
 }
@@ -301,6 +305,78 @@ describe("resolveE2EDatabaseUrl", () => {
     process.env.E2E_DATABASE_URL = "file:./e2e.db";
     delete process.env.DATABASE_URL;
     expect(() => resolveE2EDatabaseUrl()).toThrow(/must be a PostgreSQL connection string/);
+  });
+});
+
+describe("resolvePerfDatabaseUrl", () => {
+  afterEach(() => {
+    restoreEnv();
+  });
+
+  it("throws when PERF_DATABASE_URL is missing", () => {
+    delete process.env.PERF_DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://user:pass@prod-host:5432/pharmacy_duty_scheduler";
+    expect(() => resolvePerfDatabaseUrl()).toThrow(/PERF_DATABASE_URL is not set/);
+  });
+
+  it("throws when PERF_DATABASE_URL equals DATABASE_URL", () => {
+    const url = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    process.env.PERF_DATABASE_URL = url;
+    process.env.DATABASE_URL = url;
+    expect(() => resolvePerfDatabaseUrl()).toThrow(/must not be the same value as DATABASE_URL/);
+  });
+
+  it("throws when PERF_DATABASE_URL resolves to the same host/port/db as DATABASE_URL", () => {
+    process.env.DATABASE_URL = "postgresql://app:secret1@db.internal:5432/pharmacy_perf";
+    process.env.PERF_DATABASE_URL =
+      "postgresql://other:secret2@db.internal:5432/pharmacy_perf?sslmode=require";
+    expect(() => resolvePerfDatabaseUrl()).toThrow(/same host\/port\/database as DATABASE_URL/);
+  });
+
+  it.each(["perf", "performance", "benchmark", "load", "test", "testing", "staging"])(
+    "accepts a database name containing the marker %j",
+    (marker) => {
+      process.env.PERF_DATABASE_URL = `postgresql://user:pass@localhost:5432/pharmacy_${marker}`;
+      delete process.env.DATABASE_URL;
+      expect(resolvePerfDatabaseUrl()).toBe(process.env.PERF_DATABASE_URL);
+    }
+  );
+
+  it("throws when the database name has no recognized perf marker", () => {
+    process.env.PERF_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    delete process.env.DATABASE_URL;
+    expect(() => resolvePerfDatabaseUrl()).toThrow(/does not contain/);
+  });
+
+  it("rejects a database name containing a production marker even alongside a perf marker", () => {
+    process.env.PERF_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_production_perf";
+    delete process.env.DATABASE_URL;
+    expect(() => resolvePerfDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it("rejects a hostname containing a production marker", () => {
+    process.env.PERF_DATABASE_URL = "postgresql://user:pass@prod-db.internal:5432/pharmacy_perf";
+    delete process.env.DATABASE_URL;
+    expect(() => resolvePerfDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it("rejects a file:/SQLite perf target", () => {
+    process.env.PERF_DATABASE_URL = "file:./perf.db";
+    delete process.env.DATABASE_URL;
+    expect(() => resolvePerfDatabaseUrl()).toThrow(/must be a PostgreSQL connection string/);
+  });
+
+  it("never includes the password or query-string secrets in any thrown error message", () => {
+    const secretPassword = "sUp3rSecretPassw0rd!!!";
+    process.env.PERF_DATABASE_URL = `postgresql://user:${secretPassword}@prod-host:5432/pharmacy_perf`;
+    delete process.env.DATABASE_URL;
+    let caught: unknown;
+    try {
+      resolvePerfDatabaseUrl();
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).message).not.toContain(secretPassword);
   });
 });
 

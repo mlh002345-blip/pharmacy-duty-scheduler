@@ -18,7 +18,12 @@
     "db:backup:production": "tsx scripts/backup-restore/backup-production-db.ts",
     "db:restore:test": "tsx scripts/backup-restore/restore-backup-to-test.ts",
     "db:verify:restore": "tsx scripts/backup-restore/verify-restored-db.ts",
-    "db:recovery:rehearsal": "tsx scripts/backup-restore/recovery-rehearsal.ts"
+    "db:recovery:rehearsal": "tsx scripts/backup-restore/recovery-rehearsal.ts",
+    "test:perf:preflight": "tsx scripts/perf/preflight.ts",
+    "test:perf:seed": "tsx scripts/perf/seed-perf-data.ts",
+    "test:perf:measure": "tsx scripts/perf/measure.ts",
+    "test:perf:plans": "tsx scripts/perf/plans.ts",
+    "test:perf:cleanup": "tsx scripts/perf/cleanup.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

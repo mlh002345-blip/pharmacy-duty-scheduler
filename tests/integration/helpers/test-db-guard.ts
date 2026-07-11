@@ -34,6 +34,7 @@
 const TEST_MARKER_PATTERN = /test|integration/i;
 const RESTORE_MARKER_PATTERN = /test|integration|restore|staging|recovery/i;
 const E2E_MARKER_PATTERN = /test|integration|e2e|staging/i;
+const PERF_MARKER_PATTERN = /perf|performance|benchmark|load|test|testing|staging/i;
 const PRODUCTION_MARKER_PATTERN = /prod|production|live/i;
 
 function parseConnectionUrl(value: string, label: string): URL {
@@ -190,6 +191,20 @@ export function resolveE2EDatabaseUrl(): string {
     markerPattern: E2E_MARKER_PATTERN,
     markerDescription: '"test", "testing", "integration", "e2e", or "staging"',
     exampleDatabaseName: "pharmacy_duty_scheduler_e2e",
+  });
+}
+
+// Used by scripts/perf/ — the performance/query-plan benchmark database.
+// Accepts a broader marker set since operators may reasonably name it
+// after "perf"/"benchmark"/"load" rather than "test".
+export function resolvePerfDatabaseUrl(): string {
+  return resolveGuardedDatabaseUrl({
+    envVarName: "PERF_DATABASE_URL",
+    operationDescription: "run performance benchmarks",
+    markerPattern: PERF_MARKER_PATTERN,
+    markerDescription:
+      '"perf", "performance", "benchmark", "load", "test", "testing", or "staging"',
+    exampleDatabaseName: "pharmacy_duty_scheduler_perf",
   });
 }
 
