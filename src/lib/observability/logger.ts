@@ -49,16 +49,31 @@ export type SafeError = {
 // and a short, truncated message.
 const MAX_MESSAGE_LENGTH = 200;
 
+// Some real Prisma connection-error messages ("Can't reach database
+// server ... tried postgresql://user:pass@host:port") embed the full
+// DATABASE_URL, credentials included — confirmed against a real
+// PrismaClientInitializationError in Step 6's chaos testing (see
+// docs/security/24-db-resilience-connection-pool-validation.md). Simple
+// length truncation alone does not protect against this when the URL
+// appears early in the message, so any connection-string-shaped
+// substring is redacted before truncation, regardless of where in the
+// message it falls.
+const CONNECTION_STRING_PATTERN = /postgres(ql)?:\/\/\S+/gi;
+
+function redactMessage(message: string): string {
+  return message.replace(CONNECTION_STRING_PATTERN, "[REDACTED_CONNECTION_STRING]");
+}
+
 export function toSafeError(error: unknown): SafeError {
   if (!error || typeof error !== "object") {
-    return typeof error === "string" ? { message: error.slice(0, MAX_MESSAGE_LENGTH) } : {};
+    return typeof error === "string" ? { message: redactMessage(error).slice(0, MAX_MESSAGE_LENGTH) } : {};
   }
   const candidate = error as { name?: unknown; code?: unknown; message?: unknown };
   const safe: SafeError = {};
   if (typeof candidate.name === "string") safe.name = candidate.name;
   if (typeof candidate.code === "string") safe.code = candidate.code;
   if (typeof candidate.message === "string") {
-    safe.message = candidate.message.slice(0, MAX_MESSAGE_LENGTH);
+    safe.message = redactMessage(candidate.message).slice(0, MAX_MESSAGE_LENGTH);
   }
   return safe;
 }

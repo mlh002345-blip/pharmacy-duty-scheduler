@@ -104,9 +104,13 @@ export async function loginAction(
   }
 
   await clearAccountLoginRateLimit(accountBucketKey);
-  logger.info("auth_login_succeeded", { requestId: await getRequestId(), userId: user.id });
-
   await createSession(user.id);
+  // Logged only after the session is actually created — a DB outage
+  // between credential verification and session creation (see Step 6's
+  // chaos test, docs/security/24-db-resilience-connection-pool-validation.md)
+  // would otherwise log "succeeded" for a login that never actually
+  // established a session.
+  logger.info("auth_login_succeeded", { requestId: await getRequestId(), userId: user.id });
   redirect("/");
 }
 

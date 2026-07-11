@@ -133,4 +133,54 @@ describe("logger", () => {
     expect(record.error.message).toBe("db down");
     expect(record.error.name).toBe("Error");
   });
+
+  // Step 6 (DB resilience chaos testing,
+  // docs/security/24-db-resilience-connection-pool-validation.md)
+  // requires that no log line generated while handling a real
+  // PostgreSQL/Prisma connection failure ever contains DATABASE_URL,
+  // credentials, or SQL parameter values — verified here against a
+  // realistic Prisma connection-error shape, not just a context key.
+  describe("redaction under real DB-connection-error shapes", () => {
+    it("never leaks a connection string embedded in a Prisma-style error message", () => {
+      const secretUrl = "postgresql://app:sUp3rSecret@db.internal:5432/pharmacy_duty_scheduler";
+      const prismaLikeError = Object.assign(
+        new Error(
+          `Can't reach database server at db.internal:5432 (tried ${secretUrl}). Please make sure your database server is running.`
+        ),
+        { name: "PrismaClientInitializationError", code: "P1001" }
+      );
+
+      logger.error("database_read_failed", { requestId: "r1" }, prismaLikeError);
+
+      const line = errorSpy.mock.calls[0][0] as string;
+      expect(line).not.toContain("sUp3rSecret");
+      expect(line).not.toContain("postgresql://");
+    });
+
+    it("never leaks a raw connection string passed directly as a log context value", () => {
+      logger.error("database_connection_recovered", {
+        requestId: "r1",
+        // A caller mistakenly passing the connection string under a
+        // non-obviously-sensitive key must still be caught — the actual
+        // call sites in this app never do this (sanitizedDatabaseIdentifier
+        // is always used instead), but the logger's own redaction must
+        // not depend on every call site getting the key name right for
+        // the *known* sensitive key patterns it already matches.
+        databaseUrl: "postgresql://app:sUp3rSecret@db.internal:5432/pharmacy_duty_scheduler",
+      });
+
+      const line = errorSpy.mock.calls[0][0] as string;
+      expect(line).not.toContain("sUp3rSecret");
+    });
+
+    it("truncates a very long Prisma error message rather than including it in full", () => {
+      const secretUrl = "postgresql://app:sUp3rSecret@db.internal:5432/pharmacy_duty_scheduler";
+      // Padding placed *before* the secret so a naive fixed-length
+      // truncation could still leak it if truncation happened at the end
+      // instead of bounding the whole message.
+      const padded = "x".repeat(300) + secretUrl;
+      const safe = toSafeError(new Error(padded));
+      expect(safe.message!.length).toBeLessThanOrEqual(200);
+    });
+  });
 });
