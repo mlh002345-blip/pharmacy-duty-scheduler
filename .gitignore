@@ -72,3 +72,9 @@ next-env.d.ts
 # (some deliberately large/zip-bomb-shaped) — never committed; the
 # concise markdown summary under docs/ is what gets committed instead
 /file-security-output/
+
+# Dependency/license/advisory review raw output (full machine-readable
+# license inventory, sanitized npm audit/ls dumps) — never committed;
+# the concise markdown summary under docs/security/27-*.md is what gets
+# committed instead
+/dependency-review-output/
