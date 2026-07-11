@@ -63,3 +63,7 @@ next-env.d.ts
 # measurement reports) — never committed; the concise markdown summaries
 # under docs/ are what gets committed instead
 /benchmark-output/
+
+# Chaos/DB-resilience test run manifests — never committed; the concise
+# markdown summary under docs/ is what gets committed instead
+/chaos-output/

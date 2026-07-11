@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  resolveChaosDatabaseUrl,
   resolveE2EDatabaseUrl,
   resolvePerfDatabaseUrl,
   resolveRestoreDatabaseUrl,
@@ -17,6 +18,7 @@ const ORIGINAL_TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const ORIGINAL_RESTORE_DATABASE_URL = process.env.RESTORE_DATABASE_URL;
 const ORIGINAL_E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const ORIGINAL_PERF_DATABASE_URL = process.env.PERF_DATABASE_URL;
+const ORIGINAL_CHAOS_DATABASE_URL = process.env.CHAOS_DATABASE_URL;
 const ORIGINAL_DATABASE_URL = process.env.DATABASE_URL;
 
 function restoreEnv() {
@@ -28,6 +30,8 @@ function restoreEnv() {
   else process.env.E2E_DATABASE_URL = ORIGINAL_E2E_DATABASE_URL;
   if (ORIGINAL_PERF_DATABASE_URL === undefined) delete process.env.PERF_DATABASE_URL;
   else process.env.PERF_DATABASE_URL = ORIGINAL_PERF_DATABASE_URL;
+  if (ORIGINAL_CHAOS_DATABASE_URL === undefined) delete process.env.CHAOS_DATABASE_URL;
+  else process.env.CHAOS_DATABASE_URL = ORIGINAL_CHAOS_DATABASE_URL;
   if (ORIGINAL_DATABASE_URL === undefined) delete process.env.DATABASE_URL;
   else process.env.DATABASE_URL = ORIGINAL_DATABASE_URL;
 }
@@ -373,6 +377,78 @@ describe("resolvePerfDatabaseUrl", () => {
     let caught: unknown;
     try {
       resolvePerfDatabaseUrl();
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).message).not.toContain(secretPassword);
+  });
+});
+
+describe("resolveChaosDatabaseUrl", () => {
+  afterEach(() => {
+    restoreEnv();
+  });
+
+  it("throws when CHAOS_DATABASE_URL is missing", () => {
+    delete process.env.CHAOS_DATABASE_URL;
+    process.env.DATABASE_URL = "postgresql://user:pass@prod-host:5432/pharmacy_duty_scheduler";
+    expect(() => resolveChaosDatabaseUrl()).toThrow(/CHAOS_DATABASE_URL is not set/);
+  });
+
+  it("throws when CHAOS_DATABASE_URL equals DATABASE_URL", () => {
+    const url = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    process.env.CHAOS_DATABASE_URL = url;
+    process.env.DATABASE_URL = url;
+    expect(() => resolveChaosDatabaseUrl()).toThrow(/must not be the same value as DATABASE_URL/);
+  });
+
+  it("throws when CHAOS_DATABASE_URL resolves to the same host/port/db as DATABASE_URL", () => {
+    process.env.DATABASE_URL = "postgresql://app:secret1@db.internal:5432/pharmacy_chaos";
+    process.env.CHAOS_DATABASE_URL =
+      "postgresql://other:secret2@db.internal:5432/pharmacy_chaos?sslmode=require";
+    expect(() => resolveChaosDatabaseUrl()).toThrow(/same host\/port\/database as DATABASE_URL/);
+  });
+
+  it.each(["chaos", "resilience", "failure", "fault", "test", "testing", "staging"])(
+    "accepts a database name containing the marker %j",
+    (marker) => {
+      process.env.CHAOS_DATABASE_URL = `postgresql://user:pass@localhost:5432/pharmacy_${marker}`;
+      delete process.env.DATABASE_URL;
+      expect(resolveChaosDatabaseUrl()).toBe(process.env.CHAOS_DATABASE_URL);
+    }
+  );
+
+  it("throws when the database name has no recognized chaos marker", () => {
+    process.env.CHAOS_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_duty_scheduler";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveChaosDatabaseUrl()).toThrow(/does not contain/);
+  });
+
+  it("rejects a database name containing a production marker even alongside a chaos marker", () => {
+    process.env.CHAOS_DATABASE_URL = "postgresql://user:pass@localhost:5432/pharmacy_production_chaos";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveChaosDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it("rejects a hostname containing a production marker", () => {
+    process.env.CHAOS_DATABASE_URL = "postgresql://user:pass@prod-db.internal:5432/pharmacy_chaos";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveChaosDatabaseUrl()).toThrow(/looks like a production database/);
+  });
+
+  it("rejects a file:/SQLite chaos target", () => {
+    process.env.CHAOS_DATABASE_URL = "file:./chaos.db";
+    delete process.env.DATABASE_URL;
+    expect(() => resolveChaosDatabaseUrl()).toThrow(/must be a PostgreSQL connection string/);
+  });
+
+  it("never includes the password or query-string secrets in any thrown error message", () => {
+    const secretPassword = "sUp3rSecretPassw0rd!!!";
+    process.env.CHAOS_DATABASE_URL = `postgresql://user:${secretPassword}@prod-host:5432/pharmacy_chaos`;
+    delete process.env.DATABASE_URL;
+    let caught: unknown;
+    try {
+      resolveChaosDatabaseUrl();
     } catch (error) {
       caught = error;
     }

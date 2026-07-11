@@ -23,7 +23,10 @@
     "test:perf:seed": "tsx scripts/perf/seed-perf-data.ts",
     "test:perf:measure": "tsx scripts/perf/measure.ts",
     "test:perf:plans": "tsx scripts/perf/plans.ts",
-    "test:perf:cleanup": "tsx scripts/perf/cleanup.ts"
+    "test:perf:cleanup": "tsx scripts/perf/cleanup.ts",
+    "test:chaos:preflight": "tsx scripts/chaos/preflight.ts",
+    "test:chaos": "vitest run --config vitest.chaos.config.ts",
+    "test:chaos:cleanup": "tsx scripts/chaos/cleanup.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

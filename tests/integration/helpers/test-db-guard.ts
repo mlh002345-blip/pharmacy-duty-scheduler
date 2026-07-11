@@ -35,6 +35,7 @@ const TEST_MARKER_PATTERN = /test|integration/i;
 const RESTORE_MARKER_PATTERN = /test|integration|restore|staging|recovery/i;
 const E2E_MARKER_PATTERN = /test|integration|e2e|staging/i;
 const PERF_MARKER_PATTERN = /perf|performance|benchmark|load|test|testing|staging/i;
+const CHAOS_MARKER_PATTERN = /chaos|resilience|failure|fault|test|testing|staging/i;
 const PRODUCTION_MARKER_PATTERN = /prod|production|live/i;
 
 function parseConnectionUrl(value: string, label: string): URL {
@@ -208,6 +209,25 @@ export function resolvePerfDatabaseUrl(): string {
   });
 }
 
+// Used by tests/chaos/ and scripts/chaos/ — the PostgreSQL
+// failure/latency/connection-pool resilience test database. This target
+// is subject to destructive local fault injection (pg_terminate_backend,
+// stopping/starting the local PostgreSQL service, ALTER DATABASE
+// CONNECTION LIMIT, scoped lock/statement timeouts) — never anything
+// this guard would allow to resolve to DATABASE_URL, so a chaos run can
+// never accidentally kill production connections or restart a shared
+// production service.
+export function resolveChaosDatabaseUrl(): string {
+  return resolveGuardedDatabaseUrl({
+    envVarName: "CHAOS_DATABASE_URL",
+    operationDescription: "run database resilience/chaos tests",
+    markerPattern: CHAOS_MARKER_PATTERN,
+    markerDescription:
+      '"chaos", "resilience", "failure", "fault", "test", "testing", or "staging"',
+    exampleDatabaseName: "pharmacy_duty_scheduler_chaos",
+  });
+}
+
 // Called from the per-worker setup file: makes the app's own
 // src/lib/prisma.ts (via src/lib/env.ts) resolve to the test database for
 // this process only. This never touches the real DATABASE_URL value itself
@@ -216,4 +236,13 @@ export function pointProcessAtTestDatabase(): string {
   const testUrl = resolveTestDatabaseUrl();
   process.env.DATABASE_URL = testUrl;
   return testUrl;
+}
+
+// Same as pointProcessAtTestDatabase(), for the chaos-test worker setup
+// file — makes the app's own src/lib/prisma.ts resolve to the guarded
+// chaos database for this process only.
+export function pointProcessAtChaosDatabase(): string {
+  const chaosUrl = resolveChaosDatabaseUrl();
+  process.env.DATABASE_URL = chaosUrl;
+  return chaosUrl;
 }
