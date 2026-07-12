@@ -3,7 +3,28 @@
 Step 8 of the pre-pilot infrastructure and security test plan. Target:
 `https://pharmacy-duty-scheduler-production.up.railway.app`.
 
-## This pass could not complete live validation
+## Update (2026-07-12): live evidence obtained via Chrome DevTools
+
+The session-level blockers below (egress-proxy denial, then the user's
+corporate machine blocking shell scripts) were both real and are
+preserved below for the record, but the user separately completed a
+**manual live check via Chrome DevTools** against the real Railway URL,
+closing most of the "NOT LIVE VERIFIED" items in this document. Live
+results: HTTPS page load succeeds; `Cache-Control`,
+`Permissions-Policy`, `Referrer-Policy`, `X-Content-Type-Options:
+nosniff`, `X-Frame-Options: DENY`, and `x-request-id` all present;
+session cookie has `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`;
+logout removed the old session cookie and re-login created a new one;
+`Strict-Transport-Security` and `Content-Security-Policy` were absent
+(as expected — never set); `x-powered-by: Next.js` was present
+(previously unchecked). Full before/after detail, and the three
+follow-up header/CSP fixes this evidence justified, are in
+`docs/security/26-live-https-cookie-header-validation.md`'s "Update"
+section — this document's per-item checklist below is left as the
+original static-only analysis for methodology reference, with results
+superseded where noted.
+
+## This pass could not complete live validation (original, 2026-07-11)
 
 Two independent attempts to reach the live Railway URL both failed for
 environmental reasons, not application reasons:

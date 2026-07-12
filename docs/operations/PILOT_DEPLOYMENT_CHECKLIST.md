@@ -46,11 +46,12 @@ step-by-step companion.
       whoever is on call for the pilot window — local rehearsal has
       passed (R-07 notes a live Railway rehearsal is recommended, not
       yet mandatory, before pilot).
-- [ ] Complete R-03's mandatory live check (TLS/redirect/cookie/header
-      validation against the real deployed URL,
-      `docs/testing/LIVE_HTTPS_COOKIE_HEADER_VALIDATION.md`'s
-      "Environment setup" section) before the **first** pilot-triggering
-      deploy if not already completed.
+- [x] R-03's live TLS/cookie/header check is complete (Chrome DevTools
+      against the real deployed URL, see
+      `docs/security/26-*.md`'s "Update" section) — this deploy carries
+      the HSTS/CSP/`poweredByHeader` fixes that live check justified.
+      Confirm those three headers appear live via the post-deploy smoke
+      test below (first deploy of this commit only).
 
 ## Deploy
 
@@ -108,9 +109,14 @@ step-by-step companion.
       request to the live domain is reachable from wherever this
       checklist is being run, spot-check
       `X-Frame-Options`/`X-Content-Type-Options`/`Referrer-Policy`/
-      `Permissions-Policy`/`x-request-id` are present (all VERIFIED IN
-      CODE per `docs/security/26-*.md`; a live spot-check after each
-      deploy catches any accidental regression to `next.config.ts`).
+      `Permissions-Policy`/`x-request-id`/`Strict-Transport-Security`/
+      `Content-Security-Policy` are present, and `x-powered-by` is
+      **absent** (all VERIFIED IN CODE + VERIFIED LOCALLY per
+      `docs/security/26-*.md`; a live spot-check after each deploy
+      catches any accidental regression to `next.config.ts` or
+      `src/middleware.ts`). For the **first** deploy of this commit
+      specifically, this check also confirms the new HSTS/CSP/
+      `poweredByHeader` fixes actually took effect live.
 
 ## Monitoring (ongoing during pilot)
 

@@ -3,7 +3,13 @@
 Step 9 (final step) of the pre-pilot infrastructure and security test
 plan. This is the single command sequence that should be run before any
 pilot-triggering deploy, and was run in full during this pass with the
-results recorded below.
+results recorded below. Updated 2026-07-12: re-run after the Step 8
+header/CSP follow-up (HSTS, nonce-based Content-Security-Policy,
+`poweredByHeader: false`) added 14 new tests (`next.config.test.ts`
+extended, `src/middleware.test.ts` extended, new
+`src/lib/security/csp.test.ts`) and the full E2E suite was re-run
+against the changed `next.config.ts`/`src/middleware.ts` (production
+build, CSP active) with zero regressions.
 
 ## Environment requirements
 
@@ -69,7 +75,7 @@ suites' own last-recorded clean-run evidence (Steps 5–7).
 | `npx prisma migrate status` | `Database schema is up to date!` (7 migrations, target `pharmacy_duty_scheduler`) |
 | `npx tsc --noEmit` | Clean, zero errors |
 | `npm run lint` | Clean, zero errors/warnings |
-| `npm test` | **51 test files, 589 tests passing** |
+| `npm test` | **52 test files, 603 tests passing** (589 + 14 new: CSP/HSTS/`poweredByHeader` unit and middleware tests) |
 | `npm run test:preflight` | Guard PASSED against `pharmacy_duty_scheduler_test`, schema up to date |
 | `npm run test:integration` | **7 test files, 13 tests passing** |
 | `npm run test:e2e` | **29/29 Playwright tests passing** (real Chromium, real production build, real local PostgreSQL) |
@@ -80,12 +86,13 @@ suites' own last-recorded clean-run evidence (Steps 5–7).
 | `npm audit` | 4 moderate findings, 0 critical/high/low — all 4 triaged as **NOT REACHABLE** in `docs/security/27-*.md` |
 | `npm audit --omit=dev` | Identical 4 findings (same set is reachable from the production subtree) |
 
-**Total automated test count across the full program**: 589 (`npm test`,
-which already includes the perf/seed pure-unit tests) + 13 (integration)
-+ 29 (E2E) + 18 (chaos suite, `tests/chaos/**` — excluded from `npm
-test`, last executed in full during Step 6) + 41 (file-security suite,
-`tests/file-security/**` — excluded from `npm test`, last executed in
-full during Step 7) = **690 distinct automated tests**, none
+**Total automated test count across the full program**: 603 (`npm test`,
+which already includes the perf/seed pure-unit tests and this update's
+14 new CSP/HSTS tests) + 13 (integration) + 29 (E2E) + 18 (chaos suite,
+`tests/chaos/**` — excluded from `npm test`, last executed in full
+during Step 6) + 41 (file-security suite, `tests/file-security/**` —
+excluded from `npm test`, last executed in full during Step 7) = **704
+distinct automated tests**, none
 double-counted (each suite's `vitest.config.ts`/dedicated config
 excludes the others' test directories). The chaos and file-security
 suites were not rerun in full during this pass since Step 9 made no

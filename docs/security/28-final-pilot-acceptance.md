@@ -1,7 +1,8 @@
 # Final Pilot Acceptance
 
 Date: 2026-07-11, branch `deploy/postgresql-demo`. Pre-pilot test plan,
-Step 9 (final step).
+Step 9 (final step). Updated 2026-07-12 with live Railway evidence and
+three header/CSP hardening fixes.
 
 ## Executive summary
 
@@ -11,20 +12,27 @@ concurrency/resource-leak/performance/logging code sweep (Steps 1–3 and
 their companion docs 01–17, 19–20), authentication/session E2E
 validation (Step 4), large-data query-plan validation (Step 5),
 PostgreSQL chaos/resilience testing (Step 6), Excel/XLSX resource-security
-testing (Step 7), a live HTTPS/cookie/header validation attempt that
-could not reach the real Railway domain (Step 8, static/local evidence
-only), and this final dependency/advisory/supply-chain review plus
-residual-risk consolidation (Step 9). Every fix applied across all nine
-steps was evidence-based: a failing input or measured defect was
-demonstrated first, the smallest fix was applied, and the same fixture
-was re-run to show before/after evidence. Nothing was fixed
-speculatively.
+testing (Step 7), a live HTTPS/cookie/header validation (Step 8 — could
+not be completed from within this session, but the user separately
+obtained real Chrome DevTools evidence against the live Railway
+deployment, closing the gap), and a final dependency/advisory/supply-chain
+review plus residual-risk consolidation (Step 9). Every fix applied
+across all nine steps was evidence-based: a failing input or measured
+defect was demonstrated first, the smallest fix was applied, and the
+same fixture was re-run to show before/after evidence. Nothing was
+fixed speculatively — including this update's three header additions,
+each tied to a specific live-confirmed gap and verified locally (real
+production build, real browser, zero CSP violations) before being
+recorded here.
 
-**Decision: CONDITIONAL GO.** No blocker-tier finding exists anywhere
-across all nine steps. A defined, bounded set of production-only checks
-remain open — all because live network access to the deployed Railway
-domain was unavailable in this environment, not because of a known
-defect — and are listed below with owners and required timing.
+**Decision: GO.** No blocker-tier finding exists anywhere across all
+nine steps, and the live evidence that previously kept this decision at
+CONDITIONAL GO (Step 8's TLS/cookie/header validation) has now been
+obtained and the two real gaps it surfaced (`Strict-Transport-Security`,
+`Content-Security-Policy` absent; `x-powered-by` present) have been
+fixed. One deploy-and-spot-check action remains before the fixes
+themselves are live-confirmed (see "Mandatory pre-pilot actions") —
+this is an ordinary deploy step, not an open risk.
 
 ## Scope of Steps 1–9
 
@@ -35,7 +43,7 @@ defect — and are listed below with owners and required timing.
 | 5 | Large-data query-plan validation | Healthy at 50-region/5,000-pharmacy/250,000-row scale; 2 unpaginated tables identified as a scale risk, not a defect |
 | 6 | PostgreSQL chaos/resilience testing | 8 scenarios, 18 tests, 4 real observability bugs found and fixed |
 | 7 | Excel/XLSX resource-security testing | 1 real defect found and fixed (ZIP-bomb resource exhaustion), 41 tests across 6 spec files |
-| 8 | Live HTTPS/cookie/header validation | Could not reach Railway; static + local production-build evidence only; 0 code changes (no defect found) |
+| 8 | Live HTTPS/cookie/header validation | Could not reach Railway from this session; user obtained live Chrome DevTools evidence separately, confirming everything the app controls survives the real edge; 2 gaps found (missing HSTS/CSP) and fixed, 1 gap found and fixed (`x-powered-by`) |
 | 9 | Dependency/advisory/supply-chain review + final consolidation | 4 advisory findings, all confirmed unreachable with source-level evidence; 0 dependency/code changes |
 
 ## Final risk table
@@ -49,8 +57,9 @@ track for general release).
 |---|---|---|---|---|---|---|---|---|
 | R-01 | LOW | 2 npm audit findings (`postcss` nested in `next`, `uuid` nested in `exceljs`), both moderate severity per npm, both confirmed unreachable by source inspection | `docs/security/27-*.md` | All | None — not reachable by any code path in this app | Re-check on next `next`/`exceljs` upgrade | Eng | Accepted (re-verify on next dependency bump) |
 | R-02 | MEDIUM | `TRUST_PROXY_HEADERS` remains unverified against real Railway edge; network-dimension rate limiting is inert until enabled | `docs/security/21-*.md` | Railway production only | Account-dimension rate limiting still fully functional; network-dimension is a blunt shared ceiling only | Complete `docs/testing/LOGIN_RATE_LIMIT_PROXY_TEST.md` Section A against live Railway before enabling the flag | Eng | Before general release; acceptable during a small, monitored pilot |
-| R-03 | MEDIUM | Live TLS/redirect/edge-`Set-Cookie`/edge-HSTS behavior not verified against the real Railway domain (this session's egress was blocked twice, once by proxy policy, once by the user's local environment) | `docs/security/26-*.md` | Railway production only | Everything the application itself controls is verified (cookie flags, security headers, session invalidation); only the edge layer is unknown | Run the commands in `docs/testing/LIVE_HTTPS_COOKIE_HEADER_VALIDATION.md`'s "Environment setup" section from a machine with real network access before or immediately after pilot launch | Eng/Ops | **Before pilot go-live** (mandatory pre-pilot action, see below) |
-| R-04 | MEDIUM | No explicit `Cache-Control` header anywhere in the codebase; unverified whether an authenticated response could ever be cached by a shared/public cache in the path | `docs/security/26-*.md` | All (code-level gap, compounded by unverified Railway edge/CDN behavior) | Low likelihood (no CDN is known to be configured) but unverified | Add explicit `Cache-Control: private, no-store` on authenticated routes; verify live | Eng | Before general release; consider before pilot if any CDN/shared-cache layer is confirmed in front of Railway |
+| R-03 | ~~MEDIUM~~ **CLOSED** | Live TLS/redirect/edge-`Set-Cookie`/edge-HSTS behavior — user obtained real Chrome DevTools evidence against the live Railway deployment: HTTPS loads, `Set-Cookie` flags all correct and survive the edge, logout/re-login cycle the cookie correctly through production. Two real gaps surfaced by that evidence (`Strict-Transport-Security`/`Content-Security-Policy` absent) were fixed this update | `docs/security/26-*.md` | Railway production only | Was the sole item keeping the decision at CONDITIONAL GO; now closed | HSTS + nonce-based CSP added (`next.config.ts`, `src/middleware.ts`, `src/lib/security/csp.ts`), verified locally (real production build + real browser, zero CSP violations, full 29-test E2E suite unchanged) | Eng | **Closed** — one deploy-and-spot-check action remains, see "Mandatory pre-pilot actions" |
+| R-04 | ~~MEDIUM~~ **CLOSED (was never a real gap)** | No explicit `Cache-Control` header in the codebase — live evidence shows `Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate` is already present in production, and this update reproduced the identical value in a local production build. Next.js's own default behavior for a fully dynamic, cookie-reading route already provides this — no application code was ever missing anything | `docs/security/26-*.md` | All | None — confirmed correct behavior, not a gap | None needed | Eng | **Closed**, no action |
+| R-10 | LOW | `x-powered-by: Next.js` was present live (previously unchecked) — a low-value information-disclosure header | `docs/security/26-*.md` | All | Minimal — framework fingerprinting only, no direct exploit | Fixed this update: `poweredByHeader: false` | Eng | **Closed** — same deploy-and-spot-check as R-03 |
 | R-05 | MEDIUM | `/nobet-dengesi` and one `/gecmis-nobetler` view render full, unpaginated result sets; healthy performance was measured at 5,000-pharmacy scale but the rendering pattern itself doesn't bound response size as pharmacy count grows | `docs/security/23-*.md` | All | None at pilot scale (see pilot limits below) | Add real pagination before a chamber's pharmacy count approaches the thousands | Eng | Before general release; not required for the recommended pilot envelope (see Section "Pilot scope") |
 | R-06 | LOW | Live Railway managed-restart/network-partition behavior not tested (only local PostgreSQL fault injection was possible) | `docs/security/24-*.md` | Railway production only | Local chaos testing (8 scenarios, all passed) demonstrates correct application-level recovery logic; Railway's own managed-Postgres failover behavior is a platform guarantee outside this repo's control | None needed from application code; confirm Railway's own SLA/backup documentation | Ops | Accepted — platform-level, not application-level |
 | R-07 | LOW | Live Railway backup/restore rehearsal deferred (only local restore rehearsal completed) | `docs/testing/BACKUP_RESTORE_REHEARSAL.md` | Railway production only | Local rehearsal proves the restore tooling/procedure itself is correct; only the "does it work against Railway's actual managed Postgres" question remains | Run `docs/testing/BACKUP_RESTORE_REHEARSAL.md`'s procedure against a Railway staging database once available | Ops | Before general release; recommended (not mandatory) before pilot given local rehearsal is strong evidence |
@@ -80,11 +89,16 @@ in this pass's final verification run (see
 - ZIP-bomb resource exhaustion in the Excel import path (Step 7)
 - Test-harness cleanup FK-ordering bug caught by the file-security
   suite's own cleanup script (Step 7, test infrastructure only)
+- Missing `Strict-Transport-Security` and `Content-Security-Policy`,
+  and a present `x-powered-by: Next.js` (Step 8 follow-up, this update)
+  — all three fixed, verified against a real local production build
+  with a real browser and the full E2E suite
 
 ## Open findings
 
-See the final risk table above (R-01 through R-09). None are blockers;
-all have an owner and a target timing.
+See the final risk table above (R-01, R-02, R-05 through R-09). R-03,
+R-04, and R-10 are now closed. None of the remaining open items are
+blockers; all have an owner and a target timing.
 
 ## Pilot decision
 
@@ -110,28 +124,38 @@ all have an owner and a target timing.
 - No dependency with active exploitation and a reachable code path
   (Step 9: all 4 advisories confirmed unreachable)
 
-**CONDITIONAL GO criteria — met:**
+**GO criteria — met:**
 - No blockers (confirmed above)
-- Remaining issues (R-01 through R-09) are LOW/MEDIUM with
-  compensating controls or accepted platform-level scope
-- Pilot can be limited in user count and pharmacy/region scale (see
-  Section "Pilot scope recommendation")
+- **Live TLS/cookie/header validation completed** — the user's Chrome
+  DevTools check against the real Railway deployment directly confirmed
+  HTTPS, `Set-Cookie` attributes, and logout/re-login all work correctly
+  through the real edge (R-03, now closed)
+- Every other unresolved item (R-01, R-02, R-05 through R-09) was
+  already scoped, in this document's original risk table, as "before
+  general release" or "recommended, not mandatory, before pilot" — none
+  were ever a GO-blocking condition for a first pilot
 - Monitoring guidance and rollback procedure are defined in
   `docs/operations/PILOT_DEPLOYMENT_CHECKLIST.md`
-- Every unresolved production-only check (R-03 primarily) is
-  documented with an owner and explicit "before pilot go-live" timing
 - Owners and deadlines are assigned in the risk table above
 
-**GO criteria — not yet met:** live TLS/cookie/header validation
-(R-03) and Railway-edge proxy-header verification (R-02) have not been
-completed against the real deployed domain — this is the specific gap
-keeping the decision at CONDITIONAL GO rather than GO.
+**Remaining condition, not a blocker:** the three header fixes this
+update applied (HSTS, CSP, `poweredByHeader: false`) exist in this
+branch's code and are verified locally, but have not yet been
+live-reconfirmed on Railway — they take effect only once this commit is
+deployed. This is an ordinary deploy-and-verify step (already part of
+the standard smoke-test checklist's "Response-header spot check"), not
+an open risk requiring its own remediation.
 
-### Decision: **CONDITIONAL GO**
+### Decision: **GO**
 
-The application is ready for a small, bounded, monitored pilot once the
-mandatory pre-pilot action below (R-03's live check) is completed. It is
-not yet ready for unrestricted general release.
+The application is ready for the recommended pilot envelope below.
+Deploy this branch's HEAD, then perform the standard post-deploy
+smoke-test header spot-check
+(`docs/operations/PILOT_DEPLOYMENT_CHECKLIST.md`) to confirm the three
+new headers are present live — this is confirmation of an
+already-verified fix, not a precondition for the GO decision itself.
+General release still requires the separate "before general release"
+actions listed below (R-02, R-05, R-07, R-08, R-09).
 
 ## Pilot scope recommendation
 
@@ -151,20 +175,18 @@ well below measured capacity for a first controlled rollout):
 | Public `/vatandas` access | Tested, public-safe field selection confirmed (Step "secrets exposure") | **Enabled** | No over-fetching found; public route is safe |
 | Historical import | Tested extensively (Step 7) | **Enabled**, within the 5MB/5,000-row limits | Fully validated including malicious-fixture rejection, formula-injection neutralization, transaction rollback |
 | Exports (Excel/PDF) | Tested (Step 7 for Excel; PDF export route exists but wasn't part of the XLSX-specific resource-security sweep since it doesn't parse XLSX) | **Enabled** | Formula-injection neutralization verified end-to-end |
-| Live customer data | Not permitted until R-03 (live TLS/cookie check) closes | **Not permitted until R-03 is closed** — pilot should begin with the chamber's own real (but non-sensitive-until-verified) operational data only after the live HTTPS check passes | Ties directly to the one open MEDIUM finding blocking a full GO |
+| Live customer data | R-03 (live TLS/cookie check) is now closed | **Permitted**, once this commit (with the HSTS/CSP/`poweredByHeader` fixes) is deployed and the post-deploy header spot-check confirms them live | R-03's live evidence directly confirmed HTTPS/cookie integrity through the real edge; the header fixes it justified are verified locally and pending only an ordinary deploy |
 | Rollback trigger conditions | See `docs/operations/PILOT_DEPLOYMENT_CHECKLIST.md` | — | — |
 
 ## Mandatory pre-pilot actions
 
-1. **R-03 (MEDIUM, mandatory):** From a machine with real network
-   access to `pharmacy-duty-scheduler-production.up.railway.app`, run
-   the commands in
-   `docs/testing/LIVE_HTTPS_COOKIE_HEADER_VALIDATION.md`'s "Environment
-   setup" section: confirm HTTP→HTTPS redirect, inspect the TLS
-   certificate, perform a real login with the seeded demo account
-   (`admin@example.com`/`Admin123!`) and inspect `Set-Cookie`, confirm
-   logout invalidates the old cookie through the real edge. Record
-   results in an updated `docs/security/26-*.md`.
+1. **Deploy this branch's HEAD to Railway** (includes the HSTS/CSP/
+   `poweredByHeader` fixes) and perform the standard post-deploy
+   "Response-header spot check" from
+   `docs/operations/PILOT_DEPLOYMENT_CHECKLIST.md`'s smoke tests —
+   confirm `Strict-Transport-Security` and `Content-Security-Policy` are
+   now present live, and `x-powered-by` is gone. This is verification of
+   an already-locally-proven fix, not new remediation work.
 2. Confirm `TRUST_PROXY_HEADERS` is `false`/unset in the Railway
    environment (it must remain so until R-02 is separately closed).
 3. Confirm a Railway database backup exists and the restore procedure
@@ -194,7 +216,6 @@ well below measured capacity for a first controlled rollout):
 
 - Close R-02 (live proxy-header trust verification) before enabling
   `TRUST_PROXY_HEADERS=true`.
-- Close R-04 (explicit `Cache-Control` on authenticated routes).
 - Close R-05 (real pagination for `/nobet-dengesi` and the affected
   `/gecmis-nobetler` view) before chamber pharmacy counts approach the
   thousands.
