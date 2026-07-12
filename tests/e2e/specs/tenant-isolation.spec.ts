@@ -233,10 +233,12 @@ test.describe("two-organization tenant isolation (real browser, real Postgres)",
 
     await addSessionCookie(context, token, baseURL!);
     await page.goto("/eczaneler");
-    // requireOrganizationMember() redirects PLATFORM_ADMIN to /giris —
-    // there is no /platform area yet, so a PLATFORM_ADMIN session must
-    // never render a tenant dashboard page.
-    await expect(page).toHaveURL(/\/giris/);
+    // requireOrganizationMember() redirects PLATFORM_ADMIN away from
+    // /eczaneler to /giris, which in turn recognizes an already-logged-in
+    // PLATFORM_ADMIN and sends it on to its own separately-guarded area,
+    // /platform (see tests/e2e/specs/platform-access.spec.ts) — the
+    // tenant dashboard itself must never render for this role.
+    await expect(page).toHaveURL(/\/platform/);
   });
 });
 

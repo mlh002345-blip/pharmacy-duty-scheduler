@@ -212,8 +212,16 @@ export async function cleanupTrackedIds(tracked: TrackedIds): Promise<void> {
 
   // Organization.onDelete is Restrict for Region/User/AuditLog — deleting
   // it last, after every dependent row above, is required for this to
-  // succeed.
+  // succeed. AuditLog.organizationId is also Restrict, and platform-level
+  // actions (Organization create/update/status-toggle) write AuditLog
+  // rows with entity: "Organization" that none of the entity-specific
+  // cleanup above covers — delete every remaining AuditLog row still
+  // pointing at a tracked organization before deleting the organizations
+  // themselves.
   if (tracked.organizationIds.length > 0) {
+    await prisma.auditLog.deleteMany({
+      where: { organizationId: { in: tracked.organizationIds } },
+    });
     await prisma.organization.deleteMany({ where: { id: { in: tracked.organizationIds } } });
   }
 }
