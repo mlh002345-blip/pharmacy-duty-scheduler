@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirectWithMessage } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { UserForm } from "../../user-form";
 import { updateUserAction } from "../../actions";
 
@@ -11,14 +11,14 @@ export default async function KullaniciDuzenlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requirePermissionOrRedirectWithMessage(
+  const currentUser = await requireOrganizationRoleOrRedirect(
     "manageUsers",
     "/",
     "Bu sayfaya erişim yetkiniz bulunmuyor."
   );
   const { id } = await params;
-  const user = await prisma.user.findUnique({
-    where: { id },
+  const user = await prisma.user.findFirst({
+    where: { id, organizationId: currentUser.organizationId },
     select: {
       id: true,
       name: true,

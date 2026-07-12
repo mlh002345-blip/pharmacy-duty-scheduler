@@ -33,7 +33,7 @@ describe("Excel export neutralizes formula-injection payloads end-to-end", () =>
       data: { dutyScheduleId: schedule.id, pharmacyId: pharmacy.id, date: new Date(Date.UTC(2034, 0, 1)) },
     });
 
-    const loaded = await loadDutyScheduleForExport(schedule.id);
+    const loaded = await loadDutyScheduleForExport(schedule.id, region.organizationId);
     expect(loaded).not.toBeNull();
     const buffer = await buildDutyScheduleExcel(loaded!);
 

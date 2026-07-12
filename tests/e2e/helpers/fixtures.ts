@@ -6,6 +6,7 @@ import { hashPassword } from "@/lib/auth/password";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
 import { hashAccountIdentifier } from "@/lib/auth/login-rate-limit";
 import { UNTRUSTED_NETWORK_BUCKET_KEY } from "@/lib/security/client-identity";
+import { normalizeText } from "@/lib/historical/normalize";
 
 import { e2ePrisma } from "./db";
 
@@ -20,6 +21,7 @@ export function testRunId(): string {
 }
 
 export type TrackedIds = {
+  organizationIds: string[];
   userIds: string[];
   userEmails: string[];
   sessionTokens: string[];
@@ -31,6 +33,7 @@ export type TrackedIds = {
 
 export function newTrackedIds(): TrackedIds {
   return {
+    organizationIds: [],
     userIds: [],
     userEmails: [],
     sessionTokens: [],
@@ -47,11 +50,30 @@ export function newTrackedIds(): TrackedIds {
 // value read back from a database column.
 export const E2E_TEST_PASSWORD = "E2eTest1234!";
 
+// Most E2E specs only need one organization (single-tenant scenarios);
+// tenant-isolation specs call this explicitly for a second organization
+// and pass its id into createE2EUser/createE2ERegion.
+export async function createE2EOrganization(tracked: TrackedIds) {
+  const id = testRunId();
+  const organization = await e2ePrisma.organization.create({
+    data: { name: `E2E Oda ${id}`, province: "E2E", slug: `e2e-oda-${id}`, isActive: true },
+  });
+  tracked.organizationIds.push(organization.id);
+  return organization;
+}
+
 export async function createE2EUser(
   tracked: TrackedIds,
-  overrides: Partial<{ role: UserRole; isActive: boolean; email: string; password: string }> = {}
+  overrides: Partial<{
+    role: UserRole;
+    isActive: boolean;
+    email: string;
+    password: string;
+    organizationId: string;
+  }> = {}
 ) {
   const id = testRunId();
+  const organizationId = overrides.organizationId ?? (await createE2EOrganization(tracked)).id;
   const user = await e2ePrisma.user.create({
     data: {
       name: `E2E Kullanıcı ${id}`,
@@ -59,6 +81,7 @@ export async function createE2EUser(
       passwordHash: await hashPassword(overrides.password ?? E2E_TEST_PASSWORD),
       role: overrides.role ?? "VIEWER",
       isActive: overrides.isActive ?? true,
+      organizationId,
     },
   });
   tracked.userIds.push(user.id);
@@ -81,14 +104,16 @@ export async function createE2ESession(tracked: TrackedIds, userId: string, expi
 
 export async function createE2ERegion(
   tracked: TrackedIds,
-  overrides: Partial<{ name: string; dailyDutyCount: number }> = {}
+  overrides: Partial<{ name: string; dailyDutyCount: number; organizationId: string }> = {}
 ) {
+  const organizationId = overrides.organizationId ?? (await createE2EOrganization(tracked)).id;
   const region = await e2ePrisma.region.create({
     data: {
       name: overrides.name ?? `E2E Bölge ${testRunId()}`,
       district: "E2E İlçe",
       dailyDutyCount: overrides.dailyDutyCount ?? 1,
       isActive: true,
+      organizationId,
     },
   });
   tracked.regionIds.push(region.id);
@@ -100,9 +125,11 @@ export async function createE2EPharmacy(
   regionId: string,
   overrides: Partial<{ name: string; requestToken: string; isActive: boolean }> = {}
 ) {
+  const name = overrides.name ?? `E2E Eczane ${testRunId()}`;
   const pharmacy = await e2ePrisma.pharmacy.create({
     data: {
-      name: overrides.name ?? `E2E Eczane ${testRunId()}`,
+      name,
+      normalizedName: normalizeText(name),
       pharmacistName: "E2E Eczacı",
       phone: "0000000000",
       address: "E2E Adres",
@@ -229,6 +256,11 @@ export async function cleanupTrackedIds(tracked: TrackedIds): Promise<void> {
     });
     await e2ePrisma.session.deleteMany({ where: { userId: { in: tracked.userIds } } });
     await e2ePrisma.user.deleteMany({ where: { id: { in: tracked.userIds } } });
+  }
+  if (tracked.organizationIds.length > 0) {
+    // Organization.onDelete is Restrict for Region/User/AuditLog —
+    // deleting it last, after every dependent row above, is required.
+    await e2ePrisma.organization.deleteMany({ where: { id: { in: tracked.organizationIds } } });
   }
 }
 

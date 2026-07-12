@@ -16,13 +16,19 @@ const ADMIN_GUARD_LOCK_KEY = "pharmacy-duty-scheduler:last-active-admin";
 
 export class LastActiveAdminError extends Error {}
 
+// Kural her organizasyon için ayrı ayrı geçerlidir — bir organizasyonun tek
+// aktif yöneticisi, başka bir organizasyonda aktif yönetici bulunduğu için
+// pasife alınabilir hale gelmemelidir. advisory lock anahtarı da organizasyon
+// bazında ayrıştırılır ki farklı organizasyonlardaki eşzamanlı pasife alma
+// istekleri birbirini gereksiz yere bloklamasın.
 export async function assertLastActiveAdminNotRemoved(
-  tx: Prisma.TransactionClient
+  tx: Prisma.TransactionClient,
+  organizationId: string
 ): Promise<void> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${ADMIN_GUARD_LOCK_KEY}))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${ADMIN_GUARD_LOCK_KEY} || ':' || ${organizationId}))`;
 
   const activeAdminCount = await tx.user.count({
-    where: { role: "ADMIN", isActive: true },
+    where: { role: "ADMIN", isActive: true, organizationId },
   });
   if (activeAdminCount <= 1) {
     throw new LastActiveAdminError("Sistemde en az bir aktif yönetici bulunmalıdır.");

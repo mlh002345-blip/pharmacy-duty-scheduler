@@ -2,18 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 
 const prismaMock = {
-  region: { findUnique: vi.fn() },
+  region: { findFirst: vi.fn() },
   dutySchedule: { findUnique: vi.fn() },
 };
 
-const requirePermissionOrState = vi.fn();
+const requireOrganizationRole = vi.fn();
 const getSchedulePreCheck = vi.fn();
 const generateAndSaveDutySchedule = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/auth/guard", () => ({
-  requirePermissionOrState: (...args: unknown[]) => requirePermissionOrState(...args),
-  requirePermissionOrRedirect: vi.fn(),
+vi.mock("@/lib/auth/tenant", () => ({
+  requireOrganizationRole: (...args: unknown[]) => requireOrganizationRole(...args),
+  requireOrganizationRoleOrRedirect: vi.fn(),
 }));
 vi.mock("@/lib/scheduling/schedule-precheck", () => ({
   getSchedulePreCheck: (...args: unknown[]) => getSchedulePreCheck(...args),
@@ -55,8 +55,10 @@ function makeFormData() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requirePermissionOrState.mockResolvedValue({ user: { id: "staff-1", role: "STAFF" } });
-  prismaMock.region.findUnique.mockResolvedValue(region());
+  requireOrganizationRole.mockResolvedValue({
+    user: { id: "staff-1", role: "STAFF", organizationId: "org-1" },
+  });
+  prismaMock.region.findFirst.mockResolvedValue(region());
   prismaMock.dutySchedule.findUnique.mockResolvedValue(null); // no pre-existing schedule
   getSchedulePreCheck.mockResolvedValue({
     canGenerate: true,

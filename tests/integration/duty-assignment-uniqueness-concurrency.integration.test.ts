@@ -28,7 +28,10 @@ describe("concurrent DutyAssignment uniqueness (real Postgres @@unique([dutySche
     const pharmacyA = await createTestPharmacy(tracked, region.id);
     const pharmacyB = await createTestPharmacy(tracked, region.id);
     const targetPharmacy = await createTestPharmacy(tracked, region.id);
-    const admin = await createTestUser(tracked, { role: "ADMIN" });
+    const admin = await createTestUser(tracked, {
+      role: "ADMIN",
+      organizationId: region.organizationId,
+    });
     const token = await createTestSessionToken(admin.id);
     setIntegrationTestSessionToken(token);
 
@@ -88,12 +91,21 @@ describe("concurrent DutyAssignment uniqueness (real Postgres @@unique([dutySche
     ];
 
     const winners = outcomes.filter((o) => o !== null && o.redirected).length;
+    // The loser can be rejected via either of two legitimate paths,
+    // depending on how the real race resolves: the DB-level P2002 unique-
+    // constraint mapping (its in-memory snapshot was stale, its own write
+    // hit the DB constraint), or the in-memory isAlreadyAssignedOnDate
+    // check (its snapshot happened to already reflect the winner's
+    // committed write by the time it ran). Both are the same underlying
+    // invariant — the second concurrent request never creates a
+    // duplicate — so either message counts as "loser correctly rejected".
+    const loserMessages = [
+      "Bu eczane aynı tarihte bu çizelgede zaten nöbetçi olarak atanmış.",
+      "Seçilen eczane bu tarihte zaten atanmış.",
+    ];
     const losers = outcomes.filter(
       (o) =>
-        o !== null &&
-        !o.redirected &&
-        o.result?.errors?.pharmacyId?.[0] ===
-          "Bu eczane aynı tarihte bu çizelgede zaten nöbetçi olarak atanmış."
+        o !== null && !o.redirected && loserMessages.includes(o.result?.errors?.pharmacyId?.[0] ?? "")
     ).length;
     expect(winners).toBe(1);
     expect(losers).toBe(1);

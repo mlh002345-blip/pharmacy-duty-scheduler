@@ -20,7 +20,7 @@ import { EmptyState } from "@/components/layout/empty-state";
 import { ListBanner } from "@/components/layout/list-banner";
 import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import {
   DUTY_REQUEST_SOURCE_LABELS,
@@ -67,11 +67,13 @@ export default async function NobetTalepleriPage({
     page: pageParam,
   } = await searchParams;
 
-  const user = await getCurrentUser();
-  const canManage = !!user && hasPermission(user.role, "manageSetupData");
-  const isAdmin = !!user && hasPermission(user.role, "manageUsers");
+  const user = await requireOrganizationMember();
+  const canManage = hasPermission(user.role, "manageSetupData");
+  const isAdmin = hasPermission(user.role, "manageUsers");
 
-  const where: Prisma.DutyRequestWhereInput = {};
+  const where: Prisma.DutyRequestWhereInput = {
+    pharmacy: { region: { organizationId: user.organizationId } },
+  };
   if (status && (STATUS_VALUES as readonly string[]).includes(status)) {
     where.status = status as DutyRequestStatus;
   }
@@ -79,7 +81,12 @@ export default async function NobetTalepleriPage({
     where.requestType = requestType as DutyRequestType;
   }
   if (regionId) where.regionId = regionId;
-  if (q) where.pharmacy = { name: { contains: q, mode: "insensitive" } };
+  if (q) {
+    where.pharmacy = {
+      region: { organizationId: user.organizationId },
+      name: { contains: q, mode: "insensitive" },
+    };
+  }
   const fromDate = from ? new Date(from) : null;
   const toDate = to ? new Date(to) : null;
   if (fromDate && !Number.isNaN(fromDate.getTime())) {
@@ -110,11 +117,20 @@ export default async function NobetTalepleriPage({
       take: DEFAULT_PAGE_SIZE,
     }),
     prisma.dutyRequest.count({ where }),
-    prisma.dutyRequest.count({ where: { status: "PENDING" } }),
-    prisma.region.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.dutyRequest.count({
+      where: {
+        status: "PENDING",
+        pharmacy: { region: { organizationId: user.organizationId } },
+      },
+    }),
+    prisma.region.findMany({
+      where: { organizationId: user.organizationId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
     canManage
       ? prisma.pharmacy.findMany({
-          where: { isActive: true },
+          where: { isActive: true, region: { organizationId: user.organizationId } },
           select: { id: true, name: true, region: { select: { name: true } } },
           orderBy: { name: "asc" },
         })

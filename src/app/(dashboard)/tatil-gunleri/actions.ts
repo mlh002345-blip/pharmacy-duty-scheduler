@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
+import { requireOrganizationRole, requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { holidaySchema } from "@/lib/validations/holiday";
@@ -35,7 +35,7 @@ export async function createHolidayAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -54,6 +54,7 @@ export async function createHolidayAction(
         },
       });
       await writeAuditLog(tx, {
+        organizationId: user.organizationId,
         userId: user.id,
         action: "CREATE",
         entity: "Holiday",
@@ -77,7 +78,7 @@ export async function updateHolidayAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -102,6 +103,7 @@ export async function updateHolidayAction(
         },
       });
       await writeAuditLog(tx, {
+        organizationId: user.organizationId,
         userId: user.id,
         action: "UPDATE",
         entity: "Holiday",
@@ -122,7 +124,7 @@ export async function updateHolidayAction(
 }
 
 export async function deleteHolidayAction(id: string) {
-  const user = await requirePermissionOrRedirect("manageSetupData", "/tatil-gunleri");
+  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/tatil-gunleri");
 
   const holiday = await prisma.holiday.findUnique({ where: { id } });
   if (!holiday) {
@@ -132,6 +134,7 @@ export async function deleteHolidayAction(id: string) {
   await prisma.$transaction(async (tx) => {
     await tx.holiday.delete({ where: { id } });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "DELETE",
       entity: "Holiday",

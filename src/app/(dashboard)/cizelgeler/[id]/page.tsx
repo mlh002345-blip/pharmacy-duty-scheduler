@@ -28,7 +28,7 @@ import {
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
 import { findDutyRequestConflicts } from "@/lib/scheduling/duty-assignment-edit";
 import { DUTY_REQUEST_TYPE_LABELS } from "@/lib/duty-requests/labels";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import {
   BALANCE_STATUS_LABELS,
@@ -69,12 +69,12 @@ export default async function CizelgeDetayPage({
   const { id } = await params;
   const { success, error } = await searchParams;
 
-  const user = await getCurrentUser();
-  const canPublish = !!user && hasPermission(user.role, "publishSchedule");
-  const canEditAssignment = !!user && hasPermission(user.role, "editAssignment");
+  const user = await requireOrganizationMember();
+  const canPublish = hasPermission(user.role, "publishSchedule");
+  const canEditAssignment = hasPermission(user.role, "editAssignment");
 
-  const schedule = await prisma.dutySchedule.findUnique({
-    where: { id },
+  const schedule = await prisma.dutySchedule.findFirst({
+    where: { id, region: { organizationId: user.organizationId } },
     select: {
       id: true,
       month: true,

@@ -29,7 +29,7 @@ describe("concurrent DutySchedule uniqueness (real Postgres @@unique([year, mont
     const admin = await createTestUser(tracked, { role: "ADMIN" });
 
     const attempt = () =>
-      generateAndSaveDutySchedule({ month: 10, year: 2027, regionId: region.id, userId: admin.id });
+      generateAndSaveDutySchedule({ month: 10, year: 2027, regionId: region.id, organizationId: region.organizationId, userId: admin.id });
 
     const [r1, r2] = await raceThroughGate(attempt, attempt);
 

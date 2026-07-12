@@ -25,7 +25,10 @@ describe("concurrent historical-import fingerprint dedup (real Postgres)", () =>
   it("creates exactly one batch + record set when the same import is submitted concurrently twice", async () => {
     const region = await createTestRegion(tracked);
     const pharmacy = await createTestPharmacy(tracked, region.id);
-    const admin = await createTestUser(tracked, { role: "ADMIN" });
+    const admin = await createTestUser(tracked, {
+      role: "ADMIN",
+      organizationId: region.organizationId,
+    });
     const token = await createTestSessionToken(admin.id);
     setIntegrationTestSessionToken(token);
 

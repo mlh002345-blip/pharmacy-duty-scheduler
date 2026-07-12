@@ -16,6 +16,7 @@ import {
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/layout/empty-state";
 import { prisma } from "@/lib/prisma";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { getDutyBalanceRows } from "@/lib/balance/duty-balance";
 import {
   BALANCE_STATUS_LABELS,
@@ -39,14 +40,20 @@ export default async function NobetDengesiPage({
 }) {
   const { regionId } = await searchParams;
 
+  const user = await requireOrganizationMember();
+
   const regions = await prisma.region.findMany({
+    where: { organizationId: user.organizationId },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
   const selectedRegionId =
     regionId && regions.some((r) => r.id === regionId) ? regionId : undefined;
 
-  const rows = await getDutyBalanceRows({ regionId: selectedRegionId });
+  const rows = await getDutyBalanceRows({
+    organizationId: user.organizationId,
+    regionId: selectedRegionId,
+  });
   const activeRows = rows.filter((row) => row.isActive);
   const mean = meanOf(activeRows.map((row) => row.totalBalance));
   const maxBalance = rows.reduce((max, row) => Math.max(max, row.totalBalance), 0);

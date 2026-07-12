@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
+import { requireOrganizationRole, requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { hashPassword } from "@/lib/auth/password";
 import { clearSessionCookie, invalidateUserSessions } from "@/lib/auth/session";
 import { assertLastActiveAdminNotRemoved, LastActiveAdminError } from "@/lib/auth/admin-guard";
@@ -39,7 +39,7 @@ export async function createUserAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageUsers");
+  const guard = await requireOrganizationRole("manageUsers");
   if (!guard.user) return guard.state;
   const { user: currentUser } = guard;
 
@@ -76,9 +76,11 @@ export async function createUserAction(
           role: parsed.data.role,
           isActive: parsed.data.isActive,
           passwordHash,
+          organizationId: currentUser.organizationId,
         },
       });
       await writeAuditLog(tx, {
+        organizationId: currentUser.organizationId,
         userId: currentUser.id,
         action: "CREATE",
         entity: "User",
@@ -106,7 +108,7 @@ export async function updateUserAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageUsers");
+  const guard = await requireOrganizationRole("manageUsers");
   if (!guard.user) return guard.state;
   const { user: currentUser } = guard;
 
@@ -122,7 +124,9 @@ export async function updateUserAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  const before = await prisma.user.findUnique({ where: { id } });
+  const before = await prisma.user.findFirst({
+    where: { id, organizationId: currentUser.organizationId },
+  });
   if (!before) {
     return { success: false, message: "Kullanıcı bulunamadı." };
   }
@@ -164,7 +168,7 @@ export async function updateUserAction(
   try {
     await prisma.$transaction(async (tx) => {
       if (isDeactivatingAdmin) {
-        await assertLastActiveAdminNotRemoved(tx);
+        await assertLastActiveAdminNotRemoved(tx, currentUser.organizationId);
       }
 
       const updated = await tx.user.update({
@@ -183,6 +187,7 @@ export async function updateUserAction(
       }
 
       await writeAuditLog(tx, {
+        organizationId: currentUser.organizationId,
         userId: currentUser.id,
         action: "UPDATE",
         entity: "User",
@@ -229,9 +234,11 @@ export async function updateUserAction(
 // sessizce iptal eden bir "toggle" değildir. Son aktif yönetici koruması
 // aynen korunur.
 export async function setUserStatusAction(id: string, isActive: boolean) {
-  const currentUser = await requirePermissionOrRedirect("manageUsers", "/kullanicilar");
+  const currentUser = await requireOrganizationRoleOrRedirect("manageUsers", "/kullanicilar");
 
-  const user = await prisma.user.findUnique({ where: { id } });
+  const user = await prisma.user.findFirst({
+    where: { id, organizationId: currentUser.organizationId },
+  });
   if (!user) {
     redirectWithMessage("/kullanicilar", "error", "Kullanıcı bulunamadı.");
   }
@@ -253,13 +260,14 @@ export async function setUserStatusAction(id: string, isActive: boolean) {
   try {
     updated = await prisma.$transaction(async (tx) => {
       if (isDeactivatingAdmin) {
-        await assertLastActiveAdminNotRemoved(tx);
+        await assertLastActiveAdminNotRemoved(tx, currentUser.organizationId);
       }
       const next = await tx.user.update({
         where: { id },
         data: { isActive },
       });
       await writeAuditLog(tx, {
+        organizationId: currentUser.organizationId,
         userId: currentUser.id,
         action: "UPDATE",
         entity: "User",

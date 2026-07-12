@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { hashPassword } from "@/lib/auth/password";
+import { normalizeText } from "@/lib/historical/normalize";
 
 import { findAllManifests, writeManifest, type FileTestManifest } from "../../../scripts/file-security/manifest";
 import { fileTestPrisma } from "./db";
@@ -15,6 +16,7 @@ function currentManifest(): FileTestManifest {
     runId: RUN_ID,
     marker: FILE_TEST_MARKER,
     createdAt: new Date().toISOString(),
+    organizationIds: [],
     regionIds: [],
     pharmacyIds: [],
     userIds: [],
@@ -32,7 +34,35 @@ export function fileTestRunId(): string {
   return RUN_ID;
 }
 
-export async function createFileTestAdmin() {
+// Most file-security specs only need one organization (single-tenant
+// scenarios) — this default organization is created once per process
+// and reused by createFileTestAdmin/createFileTestRegion unless an
+// explicit organizationId is passed. Tenant-isolation-specific tests
+// call createFileTestOrganization() again for a genuinely second org.
+let defaultOrganizationId: string | undefined;
+
+export async function createFileTestOrganization() {
+  const id = randomUUID().slice(0, 8);
+  const organization = await fileTestPrisma.organization.create({
+    data: {
+      name: `${FILE_TEST_MARKER}-Org-${id}`,
+      province: "FileTest",
+      slug: `${FILE_TEST_MARKER.toLowerCase()}-org-${id}`,
+      isActive: true,
+    },
+  });
+  track((m) => m.organizationIds.push(organization.id));
+  return organization;
+}
+
+async function defaultOrganization(): Promise<string> {
+  if (!defaultOrganizationId) {
+    defaultOrganizationId = (await createFileTestOrganization()).id;
+  }
+  return defaultOrganizationId;
+}
+
+export async function createFileTestAdmin(organizationId?: string) {
   const id = randomUUID().slice(0, 8);
   const user = await fileTestPrisma.user.create({
     data: {
@@ -41,6 +71,7 @@ export async function createFileTestAdmin() {
       passwordHash: await hashPassword("FileTest1234!"),
       role: "ADMIN",
       isActive: true,
+      organizationId: organizationId ?? (await defaultOrganization()),
     },
   });
   track((m) => m.userIds.push(user.id));
@@ -55,13 +86,14 @@ export async function createFileTestSession(userId: string) {
   return token;
 }
 
-export async function createFileTestRegion() {
+export async function createFileTestRegion(organizationId?: string) {
   const region = await fileTestPrisma.region.create({
     data: {
       name: `${FILE_TEST_MARKER}-Bölge-${randomUUID().slice(0, 6)}`,
       district: "Test İlçe",
       dailyDutyCount: 1,
       isActive: true,
+      organizationId: organizationId ?? (await defaultOrganization()),
     },
   });
   track((m) => m.regionIds.push(region.id));
@@ -69,9 +101,11 @@ export async function createFileTestRegion() {
 }
 
 export async function createFileTestPharmacy(regionId: string, name?: string) {
+  const pharmacyName = name ?? `${FILE_TEST_MARKER}-Eczane-${randomUUID().slice(0, 6)}`;
   const pharmacy = await fileTestPrisma.pharmacy.create({
     data: {
-      name: name ?? `${FILE_TEST_MARKER}-Eczane-${randomUUID().slice(0, 6)}`,
+      name: pharmacyName,
+      normalizedName: normalizeText(pharmacyName),
       pharmacistName: "Test Eczacı",
       phone: "0000000000",
       address: "Test Adres",

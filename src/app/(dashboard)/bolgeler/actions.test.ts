@@ -70,7 +70,7 @@ function regionFormData(overrides: Record<string, string> = {}) {
 }
 
 function region(overrides: Partial<Record<string, unknown>> = {}) {
-  return { id: "region-1", name: "Kadıköy", isActive: true, ...overrides };
+  return { id: "region-1", name: "Kadıköy", isActive: true, organizationId: "org-1", ...overrides };
 }
 
 beforeEach(() => {
@@ -80,8 +80,8 @@ beforeEach(() => {
 
 describe("deleteRegionAction — deleteSetupData is ADMIN-only", () => {
   it("STAFF cannot delete a region", async () => {
-    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF" });
-    prismaMock.region.findUnique.mockResolvedValue(region());
+    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF", organizationId: "org-1" });
+    prismaMock.region.findFirst.mockResolvedValue(region());
 
     await expect(deleteRegionAction("region-1")).rejects.toBeInstanceOf(RedirectSignal);
 
@@ -89,8 +89,8 @@ describe("deleteRegionAction — deleteSetupData is ADMIN-only", () => {
   });
 
   it("VIEWER cannot delete a region", async () => {
-    getCurrentUser.mockResolvedValue({ id: "viewer-1", role: "VIEWER" });
-    prismaMock.region.findUnique.mockResolvedValue(region());
+    getCurrentUser.mockResolvedValue({ id: "viewer-1", role: "VIEWER", organizationId: "org-1" });
+    prismaMock.region.findFirst.mockResolvedValue(region());
 
     await expect(deleteRegionAction("region-1")).rejects.toBeInstanceOf(RedirectSignal);
 
@@ -98,19 +98,19 @@ describe("deleteRegionAction — deleteSetupData is ADMIN-only", () => {
   });
 
   it("ADMIN can delete a region when safety guards allow (no pharmacies attached)", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    prismaMock.region.findUnique.mockResolvedValue(region());
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
+    prismaMock.region.findFirst.mockResolvedValue(region());
     prismaMock.region.delete.mockResolvedValue(region());
 
     await expect(deleteRegionAction("region-1")).rejects.toBeInstanceOf(RedirectSignal);
 
     expect(prismaMock.region.delete).toHaveBeenCalledExactlyOnceWith({
-      where: { id: "region-1" },
+      where: { id: "region-1", organizationId: "org-1" },
     });
   });
 
   it("ADMIN is still blocked by the safety guard when pharmacies are attached", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
     prismaMock.pharmacy.count.mockResolvedValue(3);
 
     let caught: unknown;
@@ -128,8 +128,8 @@ describe("deleteRegionAction — deleteSetupData is ADMIN-only", () => {
   });
 
   it("propagates an audit-log failure instead of reporting success (transaction, not a swallowed error)", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    prismaMock.region.findUnique.mockResolvedValue(region());
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
+    prismaMock.region.findFirst.mockResolvedValue(region());
     prismaMock.region.delete.mockResolvedValue(region());
     writeAuditLog.mockRejectedValueOnce(new Error("db connection dropped"));
 
@@ -146,7 +146,7 @@ describe("deleteRegionAction — deleteSetupData is ADMIN-only", () => {
 
 describe("createRegionAction / updateRegionAction — concurrent duplicate name", () => {
   beforeEach(() => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
   });
 
   it("maps a P2002 unique-constraint violation on create to the same friendly duplicate message", async () => {
@@ -160,8 +160,8 @@ describe("createRegionAction / updateRegionAction — concurrent duplicate name"
   });
 
   it("maps a P2002 unique-constraint violation on update to the same friendly duplicate message", async () => {
-    prismaMock.region.findUnique.mockResolvedValue({ id: "region-1", name: "Eski İsim" });
-    prismaMock.region.findFirst.mockResolvedValue(null); // pre-check sees no duplicate
+    prismaMock.region.findFirst.mockResolvedValueOnce({ id: "region-1", name: "Eski İsim" }); // before lookup
+    prismaMock.region.findFirst.mockResolvedValueOnce(null); // duplicate-name pre-check
     prismaMock.region.update.mockRejectedValueOnce(p2002());
 
     const result = await updateRegionAction(
@@ -196,25 +196,28 @@ describe("createRegionAction / updateRegionAction — concurrent duplicate name"
 
 describe("setRegionStatusAction — explicit desired state, retry-safe", () => {
   beforeEach(() => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
   });
 
   it("double-submitting a deactivate call leaves the region inactive", async () => {
-    prismaMock.region.findUnique.mockResolvedValue(region({ isActive: true }));
+    prismaMock.region.findFirst.mockResolvedValue(region({ isActive: true }));
     prismaMock.region.update.mockResolvedValue(region({ isActive: false }));
 
     await expect(setRegionStatusAction("region-1", false)).rejects.toBeInstanceOf(RedirectSignal);
-    prismaMock.region.findUnique.mockResolvedValue(region({ isActive: false }));
+    prismaMock.region.findFirst.mockResolvedValue(region({ isActive: false }));
     await expect(setRegionStatusAction("region-1", false)).rejects.toBeInstanceOf(RedirectSignal);
 
     expect(prismaMock.region.update).toHaveBeenCalledTimes(2);
     for (const call of prismaMock.region.update.mock.calls) {
-      expect(call[0]).toEqual({ where: { id: "region-1" }, data: { isActive: false } });
+      expect(call[0]).toEqual({
+        where: { id: "region-1", organizationId: "org-1" },
+        data: { isActive: false },
+      });
     }
   });
 
   it("double-submitting an activate call leaves the region active", async () => {
-    prismaMock.region.findUnique.mockResolvedValue(region({ isActive: false }));
+    prismaMock.region.findFirst.mockResolvedValue(region({ isActive: false }));
     prismaMock.region.update.mockResolvedValue(region({ isActive: true }));
 
     await expect(setRegionStatusAction("region-1", true)).rejects.toBeInstanceOf(RedirectSignal);
@@ -222,7 +225,10 @@ describe("setRegionStatusAction — explicit desired state, retry-safe", () => {
 
     expect(prismaMock.region.update).toHaveBeenCalledTimes(2);
     for (const call of prismaMock.region.update.mock.calls) {
-      expect(call[0]).toEqual({ where: { id: "region-1" }, data: { isActive: true } });
+      expect(call[0]).toEqual({
+        where: { id: "region-1", organizationId: "org-1" },
+        data: { isActive: true },
+      });
     }
   });
 });

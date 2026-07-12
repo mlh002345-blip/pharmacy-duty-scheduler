@@ -20,7 +20,7 @@ import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layo
 import { prisma } from "@/lib/prisma";
 import { getTurkishMonthName } from "@/lib/scheduling/date-tr";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import { deleteDutyScheduleAction } from "./actions";
 
@@ -34,12 +34,14 @@ export default async function CizelgelerPage({
   const { success, error, page: pageParam } = await searchParams;
   const page = parsePageParam(pageParam);
 
-  const user = await getCurrentUser();
-  const canGenerate = !!user && hasPermission(user.role, "generateSchedule");
-  const canDelete = !!user && hasPermission(user.role, "deleteSchedule");
+  const user = await requireOrganizationMember();
+  const canGenerate = hasPermission(user.role, "generateSchedule");
+  const canDelete = hasPermission(user.role, "deleteSchedule");
 
+  const where = { region: { organizationId: user.organizationId } };
   const [schedules, totalCount] = await Promise.all([
     prisma.dutySchedule.findMany({
+      where,
       select: {
         id: true,
         month: true,
@@ -53,7 +55,7 @@ export default async function CizelgelerPage({
       skip: (page - 1) * DEFAULT_PAGE_SIZE,
       take: DEFAULT_PAGE_SIZE,
     }),
-    prisma.dutySchedule.count(),
+    prisma.dutySchedule.count({ where }),
   ]);
 
   return (

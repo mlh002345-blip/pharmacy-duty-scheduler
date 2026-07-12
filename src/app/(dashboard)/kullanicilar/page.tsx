@@ -15,7 +15,7 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { StatusToggleButton } from "@/components/layout/status-toggle-button";
 import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirectWithMessage } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
 import { setUserStatusAction } from "./actions";
 
@@ -26,7 +26,7 @@ export default async function KullanicilarPage({
 }: {
   searchParams: Promise<{ success?: string; error?: string; page?: string }>;
 }) {
-  const currentUser = await requirePermissionOrRedirectWithMessage(
+  const currentUser = await requireOrganizationRoleOrRedirect(
     "manageUsers",
     "/",
     "Bu sayfaya erişim yetkiniz bulunmuyor."
@@ -36,6 +36,7 @@ export default async function KullanicilarPage({
 
   const [users, totalCount] = await Promise.all([
     prisma.user.findMany({
+      where: { organizationId: currentUser.organizationId },
       select: {
         id: true,
         name: true,
@@ -48,7 +49,7 @@ export default async function KullanicilarPage({
       skip: (page - 1) * DEFAULT_PAGE_SIZE,
       take: DEFAULT_PAGE_SIZE,
     }),
-    prisma.user.count(),
+    prisma.user.count({ where: { organizationId: currentUser.organizationId } }),
   ]);
 
   return (

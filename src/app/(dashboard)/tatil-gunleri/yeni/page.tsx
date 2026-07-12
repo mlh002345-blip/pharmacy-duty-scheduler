@@ -1,10 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { HolidayForm } from "../holiday-form";
 import { createHolidayAction } from "../actions";
 
 export default async function YeniTatilGunuPage() {
-  await requirePermissionOrRedirect("manageSetupData", "/tatil-gunleri");
+  await requireOrganizationRoleOrRedirect("manageSetupData", "/tatil-gunleri");
 
   return (
     <div className="flex flex-col gap-6">

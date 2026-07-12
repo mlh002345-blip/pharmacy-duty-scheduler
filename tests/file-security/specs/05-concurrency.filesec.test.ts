@@ -103,13 +103,13 @@ describe("concurrent file operations", () => {
         await fileTestPrisma.dutyAssignment.create({
           data: { dutyScheduleId: schedule.id, pharmacyId: pharmacy.id, date: new Date(Date.UTC(2035, 0, 1 + i)) },
         });
-        return { scheduleId: schedule.id, pharmacyName: pharmacy.name };
+        return { scheduleId: schedule.id, pharmacyName: pharmacy.name, organizationId: region.organizationId };
       })
     );
 
     const buffers = await Promise.all(
-      schedules.map(async ({ scheduleId }) => {
-        const loaded = await loadDutyScheduleForExport(scheduleId);
+      schedules.map(async ({ scheduleId, organizationId }) => {
+        const loaded = await loadDutyScheduleForExport(scheduleId, organizationId);
         return buildDutyScheduleExcel(loaded!);
       })
     );

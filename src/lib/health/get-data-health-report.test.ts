@@ -31,19 +31,19 @@ beforeEach(() => {
 describe("getDataHealthReport — short-lived TTL cache", () => {
   it("returns a cached result within the TTL without re-querying the database", async () => {
     const t0 = 1_000_000;
-    await getDataHealthReport({ now: t0 });
+    await getDataHealthReport("org-1", { now: t0 });
     expect(prismaMock.region.findMany).toHaveBeenCalledOnce();
 
-    await getDataHealthReport({ now: t0 + 30_000 }); // 30s later, still within 60s TTL
+    await getDataHealthReport("org-1", { now: t0 + 30_000 }); // 30s later, still within 60s TTL
     expect(prismaMock.region.findMany).toHaveBeenCalledOnce(); // not called again
   });
 
   it("recomputes once the TTL has elapsed", async () => {
     const t0 = 2_000_000;
-    await getDataHealthReport({ now: t0 });
+    await getDataHealthReport("org-1", { now: t0 });
     expect(prismaMock.region.findMany).toHaveBeenCalledOnce();
 
-    await getDataHealthReport({ now: t0 + 60_001 }); // just past the 60s TTL
+    await getDataHealthReport("org-1", { now: t0 + 60_001 }); // just past the 60s TTL
     expect(prismaMock.region.findMany).toHaveBeenCalledTimes(2);
   });
 
@@ -51,8 +51,8 @@ describe("getDataHealthReport — short-lived TTL cache", () => {
     const t0 = 3_000_000;
     prismaMock.holiday.count.mockResolvedValue(0); // triggers a WARNING finding
 
-    const first = await getDataHealthReport({ now: t0 });
-    const second = await getDataHealthReport({ now: t0 + 1000 });
+    const first = await getDataHealthReport("org-1", { now: t0 });
+    const second = await getDataHealthReport("org-1", { now: t0 + 1000 });
 
     expect(second).toEqual(first);
     expect(first.warnings.some((w) => w.message.includes("Tatil günleri tanımlanmamış"))).toBe(
@@ -67,7 +67,7 @@ describe("getDataHealthReport — invalid unavailability date ranges", () => {
       { pharmacyName: "Merkez Eczanesi", startDate: new Date("2026-07-10"), endDate: new Date("2026-07-05") },
     ]);
 
-    const report = await getDataHealthReport({ now: 4_000_000 });
+    const report = await getDataHealthReport("org-1", { now: 4_000_000 });
 
     expect(prismaMock.$queryRaw).toHaveBeenCalledOnce();
     expect(
@@ -82,7 +82,7 @@ describe("getDataHealthReport — invalid unavailability date ranges", () => {
   it("does not report anything when the DB-filtered query returns no invalid rows", async () => {
     prismaMock.$queryRaw.mockResolvedValue([]);
 
-    const report = await getDataHealthReport({ now: 5_000_000 });
+    const report = await getDataHealthReport("org-1", { now: 5_000_000 });
 
     expect(
       report.critical.some((f) => f.message.includes("mazeret bitiş tarihi başlangıç tarihinden önce"))

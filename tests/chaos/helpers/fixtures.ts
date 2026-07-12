@@ -4,6 +4,7 @@ import type { UserRole } from "@prisma/client";
 
 import { hashPassword } from "@/lib/auth/password";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
+import { normalizeText } from "@/lib/historical/normalize";
 
 import { findLatestManifest, writeManifest, type ChaosManifest } from "../../../scripts/chaos/manifest";
 import { chaosPrisma } from "./db";
@@ -25,6 +26,7 @@ function currentManifest(): ChaosManifest {
     runId: RUN_ID,
     marker: CHAOS_MARKER,
     createdAt: new Date().toISOString(),
+    organizationIds: [],
     regionIds: [],
     pharmacyIds: [],
     userIds: [],
@@ -44,9 +46,16 @@ export function chaosRunId(): string {
 }
 
 export async function createChaosUser(
-  overrides: Partial<{ role: UserRole; isActive: boolean; email: string; password: string }> = {}
+  overrides: Partial<{
+    role: UserRole;
+    isActive: boolean;
+    email: string;
+    password: string;
+    organizationId: string;
+  }> = {}
 ) {
   const id = randomUUID().slice(0, 8);
+  const organizationId = overrides.organizationId ?? (await createChaosOrganization()).id;
   const user = await chaosPrisma.user.create({
     data: {
       name: `${CHAOS_MARKER} Kullanıcı ${id}`,
@@ -54,6 +63,7 @@ export async function createChaosUser(
       passwordHash: await hashPassword(overrides.password ?? "ChaosTest1234!"),
       role: overrides.role ?? "ADMIN",
       isActive: overrides.isActive ?? true,
+      organizationId,
     },
   });
   track((m) => m.userIds.push(user.id));
@@ -68,13 +78,31 @@ export async function createChaosSession(userId: string, expiresAt?: Date) {
   return token;
 }
 
-export async function createChaosRegion(overrides: Partial<{ name: string; dailyDutyCount: number }> = {}) {
+export async function createChaosOrganization() {
+  const id = randomUUID().slice(0, 8);
+  const organization = await chaosPrisma.organization.create({
+    data: {
+      name: `${CHAOS_MARKER}-Org-${id}`,
+      province: "Chaos",
+      slug: `${CHAOS_MARKER.toLowerCase()}-org-${id}`,
+      isActive: true,
+    },
+  });
+  track((m) => m.organizationIds.push(organization.id));
+  return organization;
+}
+
+export async function createChaosRegion(
+  overrides: Partial<{ name: string; dailyDutyCount: number; organizationId: string }> = {}
+) {
+  const organizationId = overrides.organizationId ?? (await createChaosOrganization()).id;
   const region = await chaosPrisma.region.create({
     data: {
       name: overrides.name ?? `${CHAOS_MARKER}-Region-${randomUUID().slice(0, 6)}`,
       district: "Chaos İlçe",
       dailyDutyCount: overrides.dailyDutyCount ?? 1,
       isActive: true,
+      organizationId,
     },
   });
   track((m) => m.regionIds.push(region.id));
@@ -85,9 +113,11 @@ export async function createChaosPharmacy(
   regionId: string,
   overrides: Partial<{ name: string; isActive: boolean }> = {}
 ) {
+  const name = overrides.name ?? `${CHAOS_MARKER}-Pharmacy-${randomUUID().slice(0, 6)}`;
   const pharmacy = await chaosPrisma.pharmacy.create({
     data: {
-      name: overrides.name ?? `${CHAOS_MARKER}-Pharmacy-${randomUUID().slice(0, 6)}`,
+      name,
+      normalizedName: normalizeText(name),
       pharmacistName: "Chaos Eczacı",
       phone: "0000000000",
       address: "Chaos Adres",

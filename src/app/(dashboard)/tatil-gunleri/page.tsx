@@ -15,7 +15,7 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { prisma } from "@/lib/prisma";
 import { HOLIDAY_TYPE_LABELS } from "@/lib/validations/holiday";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import { deleteHolidayAction } from "./actions";
 
@@ -28,8 +28,8 @@ export default async function TatilGunleriPage({
 }) {
   const { success, error } = await searchParams;
 
-  const user = await getCurrentUser();
-  const canManage = !!user && hasPermission(user.role, "manageSetupData");
+  const user = await requireOrganizationMember();
+  const canManage = hasPermission(user.role, "manageSetupData");
 
   const holidays = await prisma.holiday.findMany({ orderBy: { date: "asc" } });
 

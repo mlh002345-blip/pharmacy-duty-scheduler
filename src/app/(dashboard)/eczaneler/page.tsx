@@ -21,7 +21,7 @@ import { DeleteButton } from "@/components/layout/delete-button";
 import { StatusToggleButton } from "@/components/layout/status-toggle-button";
 import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import { deletePharmacyAction, setPharmacyStatusAction } from "./actions";
 
@@ -41,11 +41,13 @@ export default async function EczanelerPage({
 }) {
   const { success, error, q, regionId, status, page: pageParam } = await searchParams;
 
-  const user = await getCurrentUser();
-  const canManage = !!user && hasPermission(user.role, "manageSetupData");
-  const canDelete = !!user && hasPermission(user.role, "deleteSetupData");
+  const user = await requireOrganizationMember();
+  const canManage = hasPermission(user.role, "manageSetupData");
+  const canDelete = hasPermission(user.role, "deleteSetupData");
 
-  const where: Prisma.PharmacyWhereInput = {};
+  const where: Prisma.PharmacyWhereInput = {
+    region: { organizationId: user.organizationId },
+  };
   if (q) {
     where.OR = [
       { name: { contains: q } },
@@ -79,7 +81,11 @@ export default async function EczanelerPage({
       take: DEFAULT_PAGE_SIZE,
     }),
     prisma.pharmacy.count({ where }),
-    prisma.region.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    prisma.region.findMany({
+      where: { organizationId: user.organizationId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (

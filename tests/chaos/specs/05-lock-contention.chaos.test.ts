@@ -2,7 +2,12 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { assertLastActiveAdminNotRemoved } from "@/lib/auth/admin-guard";
 
-import { createChaosPharmacy, createChaosRegion, createChaosUser } from "../helpers/fixtures";
+import {
+  createChaosOrganization,
+  createChaosPharmacy,
+  createChaosRegion,
+  createChaosUser,
+} from "../helpers/fixtures";
 import { chaosPrisma } from "../helpers/db";
 
 // Scenario E — lock contention (Step 6, item 8). Two real, concurrent
@@ -14,11 +19,13 @@ describe("scenario E: lock contention", () => {
   });
 
   it("last-active-admin advisory lock: a second waiter is bounded by a scoped lock_timeout, not left hanging, and succeeds once the holder releases", async () => {
-    // Two active admins so the guard itself would pass for either call —
-    // isolating this test to lock *contention* behavior, not the guard's
-    // own business rule.
-    await createChaosUser({ role: "ADMIN" });
-    await createChaosUser({ role: "ADMIN" });
+    // Two active admins in the SAME organization so the guard itself would
+    // pass for either call — isolating this test to lock *contention*
+    // behavior, not the guard's own business rule (the guard is
+    // organization-scoped, so both admins must share one org).
+    const organization = await createChaosOrganization();
+    await createChaosUser({ role: "ADMIN", organizationId: organization.id });
+    await createChaosUser({ role: "ADMIN", organizationId: organization.id });
 
     // Holder: acquires the advisory lock and keeps its transaction open
     // until this test explicitly releases it — a deterministic gate, not
@@ -33,7 +40,7 @@ describe("scenario E: lock contention", () => {
     });
 
     const holderTx = chaosPrisma.$transaction(async (tx) => {
-      await assertLastActiveAdminNotRemoved(tx);
+      await assertLastActiveAdminNotRemoved(tx, organization.id);
       holderAcquired();
       await holderCanCommit;
     });
@@ -47,7 +54,7 @@ describe("scenario E: lock contention", () => {
     try {
       await chaosPrisma.$transaction(async (tx) => {
         await tx.$executeRaw`SET LOCAL lock_timeout = '800ms'`;
-        await assertLastActiveAdminNotRemoved(tx);
+        await assertLastActiveAdminNotRemoved(tx, organization.id);
       });
     } catch (error) {
       waiterError = error;
@@ -69,7 +76,7 @@ describe("scenario E: lock contention", () => {
     // succeed immediately — the lock is genuinely gone, not stuck.
     await expect(
       chaosPrisma.$transaction(async (tx) => {
-        await assertLastActiveAdminNotRemoved(tx);
+        await assertLastActiveAdminNotRemoved(tx, organization.id);
       })
     ).resolves.toBeUndefined();
   }, 30_000);

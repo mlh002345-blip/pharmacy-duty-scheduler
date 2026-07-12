@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { StatCard } from "@/components/layout/stat-card";
 import { PageHeader } from "@/components/layout/page-header";
 import { getDataHealthReport, type HealthFinding } from "@/lib/health/data-health";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,8 @@ function FindingList({
 }
 
 export default async function VeriKontrolPage() {
-  const report = await getDataHealthReport();
+  const user = await requireOrganizationMember();
+  const report = await getDataHealthReport(user.organizationId);
   const now = new Date();
 
   return (

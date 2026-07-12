@@ -164,12 +164,65 @@ function SectionEmpty() {
 export default async function VatandasEkraniPage({
   searchParams,
 }: {
-  searchParams: Promise<{ regionId?: string; date?: string }>;
+  searchParams: Promise<{ regionId?: string; date?: string; org?: string }>;
 }) {
-  const { regionId: regionIdParam, date: dateParam } = await searchParams;
+  const { regionId: regionIdParam, date: dateParam, org: orgSlugParam } = await searchParams;
+
+  // Bu sayfa kimlik doğrulama gerektirmez; organizasyon bağlamı yalnızca
+  // ?org=<slug> parametresinden (veya tek aktif organizasyon varsa ondan)
+  // türetilir — asla bölge/eczane kayıtları önce organizasyon sınırı
+  // olmadan global olarak çekilip sonradan filtrelenmez.
+  const organization = orgSlugParam
+    ? await prisma.organization.findFirst({
+        where: { slug: orgSlugParam, isActive: true },
+        select: { id: true, name: true, slug: true },
+      })
+    : await (async () => {
+        const activeOrganizations = await prisma.organization.findMany({
+          where: { isActive: true },
+          select: { id: true, name: true, slug: true },
+          orderBy: { name: "asc" },
+          take: 2,
+        });
+        return activeOrganizations.length === 1 ? activeOrganizations[0] : null;
+      })();
+
+  if (!organization) {
+    const organizations = orgSlugParam
+      ? []
+      : await prisma.organization.findMany({
+          where: { isActive: true },
+          select: { name: true, slug: true },
+          orderBy: { name: "asc" },
+        });
+    return (
+      <div className="bg-background flex min-h-screen flex-col items-center justify-center gap-4 px-4 py-10 text-center">
+        <MapPin className="text-muted-foreground size-8" />
+        <h1 className="text-xl font-semibold tracking-tight">Eczacı Odası Seçin</h1>
+        {organizations.length === 0 ? (
+          <p className="text-muted-foreground max-w-sm text-sm">
+            Bu bağlantı geçersiz veya artık kullanılamıyor.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {organizations.map((org) => (
+              <li key={org.slug}>
+                <a
+                  className="text-primary underline underline-offset-2"
+                  href={`/vatandas?org=${encodeURIComponent(org.slug)}`}
+                >
+                  {org.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
 
   const regions = await prisma.region.findMany({
-    where: { isActive: true },
+    where: { isActive: true, organizationId: organization.id },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
@@ -247,6 +300,7 @@ export default async function VatandasEkraniPage({
             {/* Bölge / tarih seçimi (hero üzerine bindirilmiş kart) */}
             <div className="relative z-10 mx-auto -mt-12 w-full max-w-3xl rounded-2xl border bg-white p-4 shadow-lg sm:p-5">
               <form method="get" className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <input type="hidden" name="org" value={organization.slug} />
                 <div className="flex flex-1 flex-col gap-1.5">
                   <label htmlFor="regionId" className="text-sm font-medium">
                     Bölge

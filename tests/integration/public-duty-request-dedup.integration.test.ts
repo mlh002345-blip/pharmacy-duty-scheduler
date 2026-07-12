@@ -80,7 +80,10 @@ describe("concurrent public duty-request dedup (real Postgres)", () => {
     const region = await createTestRegion(tracked);
     const pharmacy = await createTestPharmacy(tracked, region.id);
     const requestToken = pharmacy.requestToken!;
-    const admin = await createTestUser(tracked, { role: "ADMIN" });
+    const admin = await createTestUser(tracked, {
+      role: "ADMIN",
+      organizationId: region.organizationId,
+    });
     const sessionToken = await createTestSessionToken(admin.id);
 
     const first = await createPublicDutyRequestAction(

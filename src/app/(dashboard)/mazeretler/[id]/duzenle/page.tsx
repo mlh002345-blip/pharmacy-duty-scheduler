@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { UnavailabilityForm } from "../../unavailability-form";
 import { updateUnavailabilityAction } from "../../actions";
 
@@ -11,11 +11,17 @@ export default async function MazeretDuzenlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requirePermissionOrRedirect("manageSetupData", "/mazeretler");
+  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/mazeretler");
   const { id } = await params;
   const [unavailability, pharmacies] = await Promise.all([
-    prisma.unavailability.findUnique({ where: { id } }),
-    prisma.pharmacy.findMany({ include: { region: true }, orderBy: { name: "asc" } }),
+    prisma.unavailability.findFirst({
+      where: { id, pharmacy: { region: { organizationId: user.organizationId } } },
+    }),
+    prisma.pharmacy.findMany({
+      where: { region: { organizationId: user.organizationId } },
+      include: { region: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
   if (!unavailability) notFound();
 

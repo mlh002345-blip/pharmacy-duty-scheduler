@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { StatCard } from "@/components/layout/stat-card";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import { getTurkishMonthName, todayAtUtcMidnight } from "@/lib/scheduling/date-tr";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
@@ -29,10 +29,17 @@ import { getDataHealthReport } from "@/lib/health/data-health";
 export const dynamic = "force-dynamic";
 
 export default async function PanelPage() {
-  const user = await getCurrentUser();
-  const canGenerate = !!user && hasPermission(user.role, "generateSchedule");
-  const canManage = !!user && hasPermission(user.role, "manageSetupData");
-  const canViewAuditLog = !!user && hasPermission(user.role, "manageUsers");
+  const user = await requireOrganizationMember();
+  const canGenerate = hasPermission(user.role, "generateSchedule");
+  const canManage = hasPermission(user.role, "manageSetupData");
+  const canViewAuditLog = hasPermission(user.role, "manageUsers");
+  const organization = await prisma.organization.findUnique({
+    where: { id: user.organizationId },
+    select: { slug: true },
+  });
+  const vatandasHref = organization?.slug
+    ? `/vatandas?org=${encodeURIComponent(organization.slug)}`
+    : "/vatandas";
 
   const today = todayAtUtcMidnight();
 
@@ -50,15 +57,24 @@ export default async function PanelPage() {
     pendingDutyRequestCount,
     historicalRecordCount,
   ] = await Promise.all([
-    prisma.pharmacy.count(),
-    prisma.pharmacy.count({ where: { isActive: true } }),
-    prisma.region.count({ where: { isActive: true } }),
-    prisma.dutyRule.count(),
+    prisma.pharmacy.count({ where: { region: { organizationId: user.organizationId } } }),
+    prisma.pharmacy.count({
+      where: { isActive: true, region: { organizationId: user.organizationId } },
+    }),
+    prisma.region.count({ where: { isActive: true, organizationId: user.organizationId } }),
+    prisma.dutyRule.count({ where: { region: { organizationId: user.organizationId } } }),
     prisma.holiday.count(),
-    prisma.dutySchedule.count({ where: { status: "DRAFT" } }),
-    prisma.dutySchedule.count({ where: { status: "PUBLISHED" } }),
+    prisma.dutySchedule.count({
+      where: { status: "DRAFT", region: { organizationId: user.organizationId } },
+    }),
+    prisma.dutySchedule.count({
+      where: { status: "PUBLISHED", region: { organizationId: user.organizationId } },
+    }),
     prisma.dutyAssignment.findFirst({
-      where: { date: today, dutySchedule: { status: "PUBLISHED" } },
+      where: {
+        date: today,
+        dutySchedule: { status: "PUBLISHED", region: { organizationId: user.organizationId } },
+      },
       select: {
         pharmacy: { select: { name: true } },
         dutySchedule: { select: { region: { select: { name: true } } } },
@@ -66,11 +82,12 @@ export default async function PanelPage() {
       orderBy: { dutySchedule: { region: { name: "asc" } } },
     }),
     prisma.auditLog.findFirst({
-      where: { entity: "DutyAssignment" },
+      where: { entity: "DutyAssignment", organizationId: user.organizationId },
       select: { createdAt: true, user: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     }),
     prisma.dutySchedule.findMany({
+      where: { region: { organizationId: user.organizationId } },
       select: {
         id: true,
         month: true,
@@ -81,14 +98,16 @@ export default async function PanelPage() {
       orderBy: { createdAt: "desc" },
       take: 4,
     }),
-    prisma.dutyRequest.count({ where: { status: "PENDING" } }),
-    prisma.historicalDutyRecord.count(),
+    prisma.dutyRequest.count({
+      where: { status: "PENDING", pharmacy: { region: { organizationId: user.organizationId } } },
+    }),
+    prisma.historicalDutyRecord.count({ where: { batch: { organizationId: user.organizationId } } }),
   ]);
 
   // Veri kontrolü yapıldı mı? — /veri-kontrol ile aynı sağlık raporunu
   // yeniden kullanır; oda ölçeğindeki veri hacminde ("düzine" seviyesinde
   // kayıt) bu sorgu setinin panelde de çalıştırılması hafif kalır.
-  const dataHealthReport = await getDataHealthReport();
+  const dataHealthReport = await getDataHealthReport(user.organizationId);
 
   const todayLabel = new Date().toLocaleDateString("tr-TR", {
     weekday: "long",
@@ -185,7 +204,7 @@ export default async function PanelPage() {
     {
       label: "Vatandaş Ekranı",
       description: "Vatandaşların gördüğü nöbet ekranını açın",
-      href: "/vatandas",
+      href: vatandasHref,
       icon: Globe,
       featured: false,
     },
@@ -273,7 +292,7 @@ export default async function PanelPage() {
             </p>
           )}
           <Link
-            href="/vatandas"
+            href={vatandasHref}
             className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-white underline-offset-4 hover:underline"
           >
             Vatandaş ekranında görüntüle <ArrowRight className="size-3.5" />

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
 import { getTurkishDayName } from "@/lib/scheduling/date-tr";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { editDutyAssignmentAction } from "../../assignment-actions";
 import { AssignmentEditForm } from "./assignment-edit-form";
 
@@ -13,10 +13,16 @@ export default async function AtamaDuzenlePage({
   params: Promise<{ id: string; assignmentId: string }>;
 }) {
   const { id: scheduleId, assignmentId } = await params;
-  await requirePermissionOrRedirect("editAssignment", `/cizelgeler/${scheduleId}`);
+  const user = await requireOrganizationRoleOrRedirect(
+    "editAssignment",
+    `/cizelgeler/${scheduleId}`
+  );
 
-  const assignment = await prisma.dutyAssignment.findUnique({
-    where: { id: assignmentId },
+  const assignment = await prisma.dutyAssignment.findFirst({
+    where: {
+      id: assignmentId,
+      dutySchedule: { region: { organizationId: user.organizationId } },
+    },
     select: {
       date: true,
       pharmacyId: true,

@@ -5,6 +5,7 @@ import { setUserStatusAction } from "@/app/(dashboard)/kullanicilar/actions";
 import { IntegrationRedirectSignal, setIntegrationTestSessionToken } from "./helpers/setup";
 import { raceThroughGate } from "./helpers/gate";
 import {
+  createTestOrganization,
   createTestSessionToken,
   createTestUser,
   cleanupTrackedIds,
@@ -24,8 +25,13 @@ describe("concurrent last-active-admin guard (real Postgres pg_advisory_xact_loc
     // blocked by a separate, earlier guard, so each admin deactivates the
     // OTHER one — both requests race to bring the system to zero active
     // admins, which assertLastActiveAdminNotRemoved must prevent.
-    const adminOne = await createTestUser(tracked, { role: "ADMIN" });
-    const adminTwo = await createTestUser(tracked, { role: "ADMIN" });
+    // Guard is organization-scoped, so both admins must share one org —
+    // otherwise "exactly two active admins" would actually mean one
+    // active admin per (separate) organization, and the guard would
+    // permit both deactivations.
+    const organization = await createTestOrganization(tracked);
+    const adminOne = await createTestUser(tracked, { role: "ADMIN", organizationId: organization.id });
+    const adminTwo = await createTestUser(tracked, { role: "ADMIN", organizationId: organization.id });
     const tokenOne = await createTestSessionToken(adminOne.id);
     const tokenTwo = await createTestSessionToken(adminTwo.id);
 

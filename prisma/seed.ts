@@ -456,6 +456,7 @@ async function main() {
     month: currentMonth,
     year: currentYear,
     regionId: publishedRegion.id,
+    organizationId: organization.id,
     userId: adminUser.id,
   });
   await prisma.dutySchedule.update({
@@ -467,6 +468,7 @@ async function main() {
     month: currentMonth,
     year: currentYear,
     regionId: draftRegion.id,
+    organizationId: organization.id,
     userId: adminUser.id,
   });
 

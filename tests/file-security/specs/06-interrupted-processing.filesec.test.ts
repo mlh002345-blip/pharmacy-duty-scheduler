@@ -126,25 +126,25 @@ describe("interrupted processing releases resources and leaves no partial state"
       data: { dutyScheduleId: schedule.id, pharmacyId: pharmacy.id, date: new Date(Date.UTC(2036, 1, 1)) },
     });
 
-    const original = appPrisma.dutySchedule.findUnique.bind(appPrisma.dutySchedule);
+    const original = appPrisma.dutySchedule.findFirst.bind(appPrisma.dutySchedule);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (appPrisma.dutySchedule as any).findUnique = async () => {
+    (appPrisma.dutySchedule as any).findFirst = async () => {
       throw new Error("[test] simulated interruption during export generation");
     };
     let thrown: unknown;
     try {
-      await loadDutyScheduleForExport(schedule.id);
+      await loadDutyScheduleForExport(schedule.id, region.organizationId);
     } catch (error) {
       thrown = error;
     } finally {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (appPrisma.dutySchedule as any).findUnique = original;
+      (appPrisma.dutySchedule as any).findFirst = original;
     }
     expect(thrown).toBeDefined();
 
     // Next export, after the interception is restored, must succeed
     // normally and produce a complete, correct file.
-    const loaded = await loadDutyScheduleForExport(schedule.id);
+    const loaded = await loadDutyScheduleForExport(schedule.id, region.organizationId);
     expect(loaded).not.toBeNull();
     const buffer = await buildDutyScheduleExcel(loaded!);
     const readBack = new ExcelJS.Workbook();

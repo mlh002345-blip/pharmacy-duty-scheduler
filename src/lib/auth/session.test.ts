@@ -39,7 +39,14 @@ const {
 } = await import("./session");
 
 function activeUser(overrides: Partial<Record<string, unknown>> = {}) {
-  return { id: "user-1", isActive: true, role: "STAFF", ...overrides };
+  return {
+    id: "user-1",
+    isActive: true,
+    role: "STAFF",
+    organizationId: "org-1",
+    organization: { id: "org-1", isActive: true },
+    ...overrides,
+  };
 }
 
 beforeEach(() => {
@@ -65,7 +72,7 @@ describe("getCurrentUser — session validation", () => {
     expect(user).toEqual(activeUser());
     expect(prismaMock.session.findUnique).toHaveBeenCalledExactlyOnceWith({
       where: { token: "valid-token" },
-      include: { user: true },
+      include: { user: { include: { organization: true } } },
     });
 
     vi.useRealTimers();

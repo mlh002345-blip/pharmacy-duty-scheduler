@@ -17,7 +17,7 @@ import { EmptyState } from "@/components/layout/empty-state";
 import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import { getDutyBalanceRows } from "@/lib/balance/duty-balance";
 import { formatPoints } from "@/lib/balance/balance-status";
@@ -34,21 +34,23 @@ export default async function GecmisNobetlerPage({
 }) {
   const { success, error } = await searchParams;
 
-  const user = await getCurrentUser();
-  const canManage = !!user && hasPermission(user.role, "manageSetupData");
-  const isAdmin = !!user && hasPermission(user.role, "manageUsers");
+  const user = await requireOrganizationMember();
+  const canManage = hasPermission(user.role, "manageSetupData");
+  const isAdmin = hasPermission(user.role, "manageUsers");
 
   const [recordStats, matchedPoints, batches, adjustments, balanceRows, pharmacies] =
     await Promise.all([
       prisma.historicalDutyRecord.groupBy({
         by: ["matchStatus"],
+        where: { batch: { organizationId: user.organizationId } },
         _count: { _all: true },
       }),
       prisma.historicalDutyRecord.aggregate({
-        where: { matchStatus: "MATCHED" },
+        where: { matchStatus: "MATCHED", batch: { organizationId: user.organizationId } },
         _sum: { weight: true },
       }),
       prisma.historicalDutyImportBatch.findMany({
+        where: { organizationId: user.organizationId },
         select: {
           id: true,
           fileName: true,
@@ -63,6 +65,7 @@ export default async function GecmisNobetlerPage({
         take: 5,
       }),
       prisma.dutyBalanceAdjustment.findMany({
+        where: { pharmacy: { region: { organizationId: user.organizationId } } },
         select: {
           id: true,
           points: true,
@@ -74,9 +77,9 @@ export default async function GecmisNobetlerPage({
         orderBy: { createdAt: "desc" },
         take: 10,
       }),
-      getDutyBalanceRows(),
+      getDutyBalanceRows({ organizationId: user.organizationId }),
       prisma.pharmacy.findMany({
-        where: { isActive: true },
+        where: { isActive: true, region: { organizationId: user.organizationId } },
         select: { id: true, name: true, region: { select: { name: true } } },
         orderBy: { name: "asc" },
       }),

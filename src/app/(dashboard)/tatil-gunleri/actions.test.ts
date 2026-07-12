@@ -24,14 +24,14 @@ const prismaMock = {
   $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
 };
 
-const requirePermissionOrState = vi.fn();
+const requireOrganizationRole = vi.fn();
 const writeAuditLog = vi.fn();
 const revalidatePath = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/auth/guard", () => ({
-  requirePermissionOrState: (...args: unknown[]) => requirePermissionOrState(...args),
-  requirePermissionOrRedirect: vi.fn(),
+vi.mock("@/lib/auth/tenant", () => ({
+  requireOrganizationRole: (...args: unknown[]) => requireOrganizationRole(...args),
+  requireOrganizationRoleOrRedirect: vi.fn(),
 }));
 vi.mock("@/lib/audit", () => ({
   writeAuditLog: (...args: unknown[]) => writeAuditLog(...args),
@@ -58,7 +58,9 @@ function holidayFormData(overrides: Record<string, string> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requirePermissionOrState.mockResolvedValue({ user: { id: "admin-1", role: "ADMIN" } });
+  requireOrganizationRole.mockResolvedValue({
+    user: { id: "admin-1", role: "ADMIN", organizationId: "org-1" },
+  });
 });
 
 describe("createHolidayAction — duplicate date/type", () => {

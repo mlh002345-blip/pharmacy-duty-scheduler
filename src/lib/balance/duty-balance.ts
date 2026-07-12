@@ -29,10 +29,17 @@ export type PharmacyBalanceRow = {
   totalBalance: number;
 };
 
-export async function getDutyBalanceRows(options?: {
+export async function getDutyBalanceRows(options: {
+  organizationId: string;
   regionId?: string;
 }): Promise<PharmacyBalanceRow[]> {
-  const pharmacyWhere = options?.regionId ? { regionId: options.regionId } : {};
+  // regionId (if provided) must already be verified by the caller to
+  // belong to organizationId — this function additionally scopes every
+  // query by organizationId directly so an unverified/cross-tenant
+  // regionId can never widen results beyond the caller's own organization.
+  const pharmacyWhere = options.regionId
+    ? { regionId: options.regionId, region: { organizationId: options.organizationId } }
+    : { region: { organizationId: options.organizationId } };
 
   // Aggregated in the database (GROUP BY pharmacyId) rather than fetched
   // row-by-row and reduced in JS: at pilot scale, HistoricalDutyRecord can
@@ -57,7 +64,7 @@ export async function getDutyBalanceRows(options?: {
         },
         orderBy: { name: "asc" },
       }),
-      options?.regionId
+      options.regionId
         ? prisma.$queryRaw<HistoricalGroupRow[]>`
             SELECT "pharmacyId",
                    count(*) AS count,
@@ -66,7 +73,11 @@ export async function getDutyBalanceRows(options?: {
                    sum(CASE WHEN "weight" >= 1.5 THEN 1 ELSE 0 END) AS holiday
             FROM "HistoricalDutyRecord"
             WHERE "matchStatus" = 'MATCHED' AND "pharmacyId" IS NOT NULL
-              AND "pharmacyId" IN (SELECT "id" FROM "Pharmacy" WHERE "regionId" = ${options.regionId})
+              AND "pharmacyId" IN (
+                SELECT p."id" FROM "Pharmacy" p
+                JOIN "Region" r ON r."id" = p."regionId"
+                WHERE p."regionId" = ${options.regionId} AND r."organizationId" = ${options.organizationId}
+              )
             GROUP BY "pharmacyId"
           `
         : prisma.$queryRaw<HistoricalGroupRow[]>`
@@ -77,16 +88,21 @@ export async function getDutyBalanceRows(options?: {
                    sum(CASE WHEN "weight" >= 1.5 THEN 1 ELSE 0 END) AS holiday
             FROM "HistoricalDutyRecord"
             WHERE "matchStatus" = 'MATCHED' AND "pharmacyId" IS NOT NULL
+              AND "pharmacyId" IN (
+                SELECT p."id" FROM "Pharmacy" p
+                JOIN "Region" r ON r."id" = p."regionId"
+                WHERE r."organizationId" = ${options.organizationId}
+              )
             GROUP BY "pharmacyId"
           `,
       prisma.dutyBalanceAdjustment.groupBy({
         by: ["pharmacyId"],
-        where: options?.regionId ? { pharmacy: { regionId: options.regionId } } : {},
+        where: { pharmacy: pharmacyWhere },
         _sum: { points: true },
       }),
       prisma.dutyAssignment.groupBy({
         by: ["pharmacyId"],
-        where: options?.regionId ? { pharmacy: { regionId: options.regionId } } : {},
+        where: { pharmacy: pharmacyWhere },
         _sum: { weight: true },
         _count: { _all: true },
       }),

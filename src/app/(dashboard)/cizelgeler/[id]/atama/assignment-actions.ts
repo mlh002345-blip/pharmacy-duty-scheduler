@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrState } from "@/lib/auth/guard";
+import { requireOrganizationRole } from "@/lib/auth/tenant";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { editDutyAssignmentSchema } from "@/lib/validations/duty-assignment";
@@ -23,7 +23,7 @@ export async function editDutyAssignmentAction(
   _prevState: EditAssignmentActionState,
   formData: FormData
 ): Promise<EditAssignmentActionState> {
-  const guard = await requirePermissionOrState("editAssignment");
+  const guard = await requireOrganizationRole("editAssignment");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -37,8 +37,13 @@ export async function editDutyAssignmentAction(
   const { pharmacyId: candidatePharmacyId, reason } = parsed.data;
   const confirmOverride = formData.get("confirmOverride") === "true";
 
-  const assignment = await prisma.dutyAssignment.findUnique({
-    where: { id: assignmentId },
+  // DutyAssignment has no direct organizationId — ownership is derived
+  // through dutySchedule.region.organizationId. Verified here, before
+  // any mutating call, never fetched globally and compared only in the
+  // UI — a cross-organization assignmentId gets the same "not found" as
+  // a truly-missing one.
+  const assignment = await prisma.dutyAssignment.findFirst({
+    where: { id: assignmentId, dutySchedule: { region: { organizationId: user.organizationId } } },
     include: {
       pharmacy: true,
       dutySchedule: {
@@ -58,8 +63,11 @@ export async function editDutyAssignmentAction(
     };
   }
 
-  const candidate = await prisma.pharmacy.findUnique({
-    where: { id: candidatePharmacyId },
+  // Cross-tenant relation validation: candidatePharmacyId is
+  // client-supplied — only trusted after confirming it belongs to the
+  // same organization as the assignment being edited.
+  const candidate = await prisma.pharmacy.findFirst({
+    where: { id: candidatePharmacyId, region: { organizationId: user.organizationId } },
   });
   if (
     !candidate ||
@@ -180,6 +188,7 @@ export async function editDutyAssignmentAction(
       };
 
       await writeAuditLog(tx, {
+        organizationId: user.organizationId,
         userId: user.id,
         action: "UPDATE",
         entity: "DutyAssignment",

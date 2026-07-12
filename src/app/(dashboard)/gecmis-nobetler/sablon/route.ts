@@ -14,15 +14,17 @@ import { getRequestId } from "@/lib/observability/request-id";
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) redirect("/giris");
-  if (!hasPermission(user.role, "manageSetupData")) {
+  if (!user.organizationId || !hasPermission(user.role, "manageSetupData")) {
     return NextResponse.json(
       { message: "Bu işlem için yetkiniz bulunmuyor." },
       { status: 403 }
     );
   }
+  const organizationId = user.organizationId;
 
   try {
     const samplePharmacies = await prisma.pharmacy.findMany({
+      where: { region: { organizationId } },
       take: 3,
       orderBy: { name: "asc" },
       select: {

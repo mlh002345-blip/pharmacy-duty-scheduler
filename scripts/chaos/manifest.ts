@@ -10,6 +10,7 @@ export type ChaosManifest = {
   runId: string;
   marker: string; // e.g. "CHAOS-<runId>"
   createdAt: string;
+  organizationIds: string[];
   regionIds: string[];
   pharmacyIds: string[];
   userIds: string[];

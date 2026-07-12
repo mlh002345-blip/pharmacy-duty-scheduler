@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
-import { requirePermissionOrState } from "@/lib/auth/guard";
+import { requireOrganizationRole } from "@/lib/auth/tenant";
 import { zodErrorState, type ActionState } from "@/lib/action-state";
 import { DUTY_REQUEST_TYPE_LABELS } from "@/lib/duty-requests/labels";
 
@@ -30,7 +30,7 @@ export async function createDutyRequestAction(
   _state: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return { success: false, message: guard.state.message };
 
   const parsed = createRequestSchema.safeParse({
@@ -45,8 +45,9 @@ export async function createDutyRequestAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  const pharmacy = await prisma.pharmacy.findUnique({
-    where: { id: parsed.data.pharmacyId },
+  // Cross-tenant relation validation: pharmacyId is client-supplied.
+  const pharmacy = await prisma.pharmacy.findFirst({
+    where: { id: parsed.data.pharmacyId, region: { organizationId: guard.user.organizationId } },
     select: { id: true, name: true, regionId: true },
   });
   if (!pharmacy) {
@@ -72,6 +73,7 @@ export async function createDutyRequestAction(
       },
     });
     await writeAuditLog(tx, {
+      organizationId: guard.user.organizationId,
       userId: guard.user.id,
       action: "CREATE",
       entity: "DutyRequest",
@@ -105,7 +107,7 @@ export async function reviewDutyRequestAction(
   _state: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return { success: false, message: guard.state.message };
 
   const parsed = reviewSchema.safeParse({
@@ -125,8 +127,8 @@ export async function reviewDutyRequestAction(
     };
   }
 
-  const request = await prisma.dutyRequest.findUnique({
-    where: { id: requestId },
+  const request = await prisma.dutyRequest.findFirst({
+    where: { id: requestId, pharmacy: { region: { organizationId: guard.user.organizationId } } },
     select: {
       id: true,
       status: true,
@@ -153,7 +155,11 @@ export async function reviewDutyRequestAction(
   // yazılır.
   const reviewed = await prisma.$transaction(async (tx) => {
     const { count } = await tx.dutyRequest.updateMany({
-      where: { id: requestId, status: { in: ["PENDING", "LATE"] } },
+      where: {
+        id: requestId,
+        status: { in: ["PENDING", "LATE"] },
+        pharmacy: { region: { organizationId: guard.user.organizationId } },
+      },
       data: {
         status: decision,
         reviewedById: guard.user.id,
@@ -170,6 +176,7 @@ export async function reviewDutyRequestAction(
       return false;
     }
     await writeAuditLog(tx, {
+      organizationId: guard.user.organizationId,
       userId: guard.user.id,
       action: "UPDATE",
       entity: "DutyRequest",

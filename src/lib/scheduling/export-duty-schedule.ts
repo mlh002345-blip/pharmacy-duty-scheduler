@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { toAsciiSlug } from "@/lib/slug";
 
-export async function loadDutyScheduleForExport(scheduleId: string) {
-  return prisma.dutySchedule.findUnique({
-    where: { id: scheduleId },
+export async function loadDutyScheduleForExport(scheduleId: string, organizationId: string) {
+  return prisma.dutySchedule.findFirst({
+    where: { id: scheduleId, region: { organizationId } },
     select: {
       id: true,
       month: true,
