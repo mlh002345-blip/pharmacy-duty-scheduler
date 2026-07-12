@@ -206,6 +206,14 @@ export async function cleanupTrackedIds(tracked: TrackedIds): Promise<void> {
     await prisma.auditLog.deleteMany({
       where: { OR: [{ entity: "User", entityId: { in: tracked.userIds } }, { userId: { in: tracked.userIds } }] },
     });
+    // PharmacyImportBatch.createdById -> User has no cascade (only
+    // PharmacyImportBatch.organizationId does, and that only fires when
+    // the Organization row itself is deleted, further below) — a batch
+    // created by a tracked user must be deleted here or user.deleteMany
+    // hits a FK violation. PharmacyImportRow cascades from its batch.
+    await prisma.pharmacyImportBatch.deleteMany({
+      where: { createdById: { in: tracked.userIds } },
+    });
     await prisma.session.deleteMany({ where: { userId: { in: tracked.userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: tracked.userIds } } });
   }

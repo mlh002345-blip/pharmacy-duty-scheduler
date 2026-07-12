@@ -254,12 +254,27 @@ export async function cleanupTrackedIds(tracked: TrackedIds): Promise<void> {
         OR: [{ entity: "User", entityId: { in: tracked.userIds } }, { userId: { in: tracked.userIds } }],
       },
     });
+    // PharmacyImportBatch.createdById -> User has no cascade — a batch
+    // created by a tracked user must be deleted here or user.deleteMany
+    // hits a FK violation (PharmacyImportRow cascades from its batch).
+    await e2ePrisma.pharmacyImportBatch.deleteMany({
+      where: { createdById: { in: tracked.userIds } },
+    });
     await e2ePrisma.session.deleteMany({ where: { userId: { in: tracked.userIds } } });
     await e2ePrisma.user.deleteMany({ where: { id: { in: tracked.userIds } } });
   }
   if (tracked.organizationIds.length > 0) {
     // Organization.onDelete is Restrict for Region/User/AuditLog —
     // deleting it last, after every dependent row above, is required.
+    // AuditLog.organizationId is also Restrict, and platform/import
+    // actions write AuditLog rows (entity: "Organization" /
+    // "PharmacyImportBatch") that none of the entity-specific cleanup
+    // above covers — delete every remaining AuditLog row still pointing
+    // at a tracked organization before deleting the organizations
+    // themselves.
+    await e2ePrisma.auditLog.deleteMany({
+      where: { organizationId: { in: tracked.organizationIds } },
+    });
     await e2ePrisma.organization.deleteMany({ where: { id: { in: tracked.organizationIds } } });
   }
 }

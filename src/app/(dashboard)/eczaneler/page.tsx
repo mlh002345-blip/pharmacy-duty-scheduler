@@ -44,6 +44,7 @@ export default async function EczanelerPage({
   const user = await requireOrganizationMember();
   const canManage = hasPermission(user.role, "manageSetupData");
   const canDelete = hasPermission(user.role, "deleteSetupData");
+  const canImport = hasPermission(user.role, "importPharmacies");
 
   const where: Prisma.PharmacyWhereInput = {
     region: { organizationId: user.organizationId },
@@ -95,11 +96,18 @@ export default async function EczanelerPage({
         description={`Sisteme kayıtlı eczaneler (${totalCount} kayıt).`}
         icon={Building2}
         actions={
-          canManage ? (
-            <Button asChild>
-              <Link href="/eczaneler/yeni">Yeni Ekle</Link>
-            </Button>
-          ) : undefined
+          <>
+            {canImport && (
+              <Button variant="outline" asChild>
+                <Link href="/eczaneler/ice-aktar">Excel ile İçe Aktar</Link>
+              </Button>
+            )}
+            {canManage && (
+              <Button asChild>
+                <Link href="/eczaneler/yeni">Yeni Ekle</Link>
+              </Button>
+            )}
+          </>
         }
       />
 
