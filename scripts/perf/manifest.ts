@@ -12,6 +12,7 @@ export type PerfManifest = {
   marker: string; // e.g. "PERF-<runId>" — prefixed into every generated row's identifying text field
   profile: "quick" | "full";
   createdAt: string;
+  organizationId: string;
   regionIds: string[];
   pharmacyIds: string[];
   userIds: string[];

@@ -1,6 +1,7 @@
 import type { UserRole } from "@prisma/client";
 
 export const ROLE_LABELS: Record<UserRole, string> = {
+  PLATFORM_ADMIN: "Platform Yöneticisi",
   ADMIN: "Yönetici",
   STAFF: "Oda Yetkilisi",
   VIEWER: "Görüntüleyici",
@@ -14,9 +15,16 @@ export type Permission =
   | "publishSchedule"
   | "deleteSchedule"
   | "exportSchedule"
-  | "manageUsers";
+  | "manageUsers"
+  | "importPharmacies";
 
+// PLATFORM_ADMIN intentionally holds none of these organization-scoped
+// permissions — it manages Organizations themselves (see
+// src/lib/auth/platform.ts), never an organization's own data. Granting
+// it any of these would let a platform operator silently act inside a
+// tenant, which docs/architecture/MULTI_TENANCY.md explicitly forbids.
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
+  PLATFORM_ADMIN: [],
   ADMIN: [
     "manageSetupData",
     "deleteSetupData",
@@ -26,6 +34,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "deleteSchedule",
     "exportSchedule",
     "manageUsers",
+    "importPharmacies",
   ],
   STAFF: [
     "manageSetupData",

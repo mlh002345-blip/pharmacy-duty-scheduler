@@ -83,6 +83,12 @@ async function main(): Promise<void> {
   const regionsDeleted = await perfPrisma.region.deleteMany({ where: { id: { in: regionIds } } });
   log(`Region: ${regionsDeleted.count}`);
 
+  // Organization.onDelete is Restrict for Region/User/AuditLog/
+  // HistoricalDutyImportBatch — deleting it last, after every dependent
+  // row above, is required for this to succeed.
+  const orgDeleted = await perfPrisma.organization.deleteMany({ where: { id: manifest.organizationId } });
+  log(`Organization: ${orgDeleted.count}`);
+
   log("Cleanup complete.");
 }
 

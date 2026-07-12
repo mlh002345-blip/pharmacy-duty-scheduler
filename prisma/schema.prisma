@@ -11,9 +11,35 @@ datasource db {
 }
 
 enum UserRole {
+  // Platform-level: manages Organizations themselves (create/(de)activate,
+  // assign first ADMIN). Never a member of any organization
+  // (organizationId is null for this role only) and never granted access
+  // to any organization's own data — see docs/architecture/MULTI_TENANCY.md.
+  PLATFORM_ADMIN
   ADMIN
   STAFF
   VIEWER
+}
+
+// Tenant boundary. One pharmacist chamber ("Eczacı Odası") per row. Bilecik
+// is created as ordinary seed/fixture data, never referenced by name in
+// application logic — see docs/architecture/MULTI_TENANCY.md.
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  province  String
+  slug      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                     User[]
+  regions                   Region[]
+  auditLogs                 AuditLog[]
+  historicalImportBatches   HistoricalDutyImportBatch[]
+  pharmacyImportBatches     PharmacyImportBatch[]
+
+  @@index([isActive])
 }
 
 model User {
@@ -26,11 +52,19 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Null only for PLATFORM_ADMIN — every ordinary (ADMIN/STAFF/VIEWER)
+  // user belongs to exactly one organization.
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
   auditLogs                AuditLog[]
   sessions                 Session[]
   historicalImportBatches  HistoricalDutyImportBatch[]
   dutyBalanceAdjustments   DutyBalanceAdjustment[]
   reviewedDutyRequests     DutyRequest[]
+  pharmacyImportBatches    PharmacyImportBatch[]
+
+  @@index([organizationId])
 }
 
 model Session {
@@ -47,23 +81,36 @@ model Session {
 
 model Region {
   id             String   @id @default(cuid())
-  name           String   @unique
+  name           String
   district       String
   dailyDutyCount Int      @default(1)
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
   pharmacies            Pharmacy[]
   dutyRule              DutyRule?
   dutySchedules         DutySchedule[]
   historicalDutyRecords HistoricalDutyRecord[]
   dutyRequests          DutyRequest[]
+  pharmacyImportRows    PharmacyImportRow[]
+
+  // Region names may repeat across organizations, but not within one.
+  @@unique([organizationId, name])
+  @@index([organizationId])
 }
 
 model Pharmacy {
   id             String   @id @default(cuid())
   name           String
+  // Türkçe'ye duyarlı normalizasyon (src/lib/historical/normalize.ts'teki
+  // normalizeText ile aynı algoritma) — organizasyon+bölge içinde eczane
+  // kimliğinin DB seviyesinde tekilliğini sağlar; kullanıcıya hiçbir zaman
+  // gösterilmez.
+  normalizedName String
   pharmacistName String
   phone          String
   address        String
@@ -86,6 +133,10 @@ model Pharmacy {
   dutyBalanceAdjustments DutyBalanceAdjustment[]
   dutyRequests           DutyRequest[]
 
+  // Pharmacy identity is unique within a region (and therefore within an
+  // organization, since a Region belongs to exactly one organization) —
+  // never globally. Identical names may exist across organizations.
+  @@unique([regionId, normalizedName])
   @@index([regionId])
   @@index([isActive])
 }
@@ -217,12 +268,20 @@ model AuditLog {
   after     String?
   createdAt DateTime    @default(now())
 
+  // Explicit (not derived through userId) so audit-log queries stay a
+  // single indexed WHERE, and so the log remains readable even if a user
+  // is later reassigned — an audit trail must reflect the tenant the
+  // action happened in, not the actor's current tenant.
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
   userId String
   user   User @relation(fields: [userId], references: [id])
 
   dutyAssignmentId String?
   dutyAssignment   DutyAssignment? @relation(fields: [dutyAssignmentId], references: [id])
 
+  @@index([organizationId, createdAt])
   @@index([userId])
   @@index([entity, entityId])
   @@index([createdAt])
@@ -249,10 +308,15 @@ model HistoricalDutyImportBatch {
   fingerprint    String?  @unique
   createdAt      DateTime @default(now())
 
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
   importedById String?
   importedBy   User?   @relation(fields: [importedById], references: [id])
 
   records HistoricalDutyRecord[]
+
+  @@index([organizationId])
 }
 
 model HistoricalDutyRecord {
@@ -381,4 +445,70 @@ model LoginAttempt {
   @@unique([bucketType, bucketKey])
   @@index([blockedUntil])
   @@index([windowStart])
+}
+
+enum PharmacyImportBatchStatus {
+  PREVIEWED
+  IMPORTED
+  EXPIRED
+}
+
+enum PharmacyImportRowStatus {
+  READY
+  INVALID
+  DUPLICATE_IN_FILE
+  ALREADY_EXISTS
+  UNKNOWN_REGION
+}
+
+// Generic (province-agnostic) Pharmacy Excel Import — the preview step
+// persists here (not in process memory, which is not multi-instance-safe
+// on Railway) rather than writing Pharmacy rows. No workbook binary, no
+// formulas, no unnecessary source-cell data is ever stored — only the
+// already-normalized/validated fields needed to render the preview and
+// perform the final import. See docs/features/PHARMACY_EXCEL_IMPORT.md.
+model PharmacyImportBatch {
+  id               String                    @id @default(cuid())
+  status           PharmacyImportBatchStatus @default(PREVIEWED)
+  sanitizedFileName String
+  fileSize         Int
+  totalRows        Int
+  readyRows        Int
+  invalidRows      Int
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  createdAt        DateTime                  @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  rows PharmacyImportRow[]
+
+  @@index([organizationId, status])
+  @@index([expiresAt])
+}
+
+model PharmacyImportRow {
+  id                    String                   @id @default(cuid())
+  rowNumber             Int
+  pharmacyName          String
+  normalizedPharmacyName String
+  pharmacistName        String?
+  phone                 String?
+  isActive              Boolean                  @default(true)
+  status                PharmacyImportRowStatus
+  safeErrorCode         String?
+  createdAt             DateTime                 @default(now())
+
+  batchId String
+  batch   PharmacyImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  regionId String?
+  region   Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
+
+  @@index([batchId])
+  @@index([regionId])
 }

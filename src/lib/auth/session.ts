@@ -62,12 +62,19 @@ export async function getCurrentUser() {
 
   const session = await prisma.session.findUnique({
     where: { token },
-    include: { user: true },
+    include: { user: { include: { organization: true } } },
   });
   if (!session || session.expiresAt.getTime() < Date.now()) {
     return null;
   }
   if (!session.user.isActive) {
+    return null;
+  }
+  // PLATFORM_ADMIN has no organization by design (see permissions.ts) —
+  // every other role must belong to an active organization. A
+  // deactivated organization blocks all of its users immediately, on
+  // every request, without needing to touch any Session row.
+  if (session.user.role !== "PLATFORM_ADMIN" && session.user.organization?.isActive !== true) {
     return null;
   }
 

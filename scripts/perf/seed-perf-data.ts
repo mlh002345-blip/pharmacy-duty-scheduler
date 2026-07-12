@@ -84,11 +84,16 @@ async function main(): Promise<void> {
     stdio: "inherit",
   });
 
+  const organization = await perfPrisma.organization.create({
+    data: { name: marker, province: "Perf", slug: `perf-${runId}`, isActive: true },
+  });
+
   const manifest: PerfManifest = {
     runId,
     marker,
     profile: profile.name,
     createdAt: new Date().toISOString(),
+    organizationId: organization.id,
     regionIds: [],
     pharmacyIds: [],
     userIds: [],
@@ -108,6 +113,7 @@ async function main(): Promise<void> {
       district: pick(rng, CITIES),
       dailyDutyCount: randomInt(rng, 1, 3),
       isActive: true,
+      organizationId: organization.id,
     };
   });
   await batchedCreateMany("Region", regions, (b) => perfPrisma.region.createMany({ data: b }));
@@ -142,6 +148,7 @@ async function main(): Promise<void> {
         requestToken: randomUUID(),
         isActive: rng() > 0.03,
         regionId: region.id,
+        normalizedName: `${marker.toLowerCase()}-pharmacy-${regionIdx}-${i}`,
       };
     })
   );
@@ -158,6 +165,7 @@ async function main(): Promise<void> {
     passwordHash: sharedPasswordHash,
     role: i === 0 ? UserRole.ADMIN : pick(rng, roles),
     isActive: true,
+    organizationId: organization.id,
   }));
   manifest.userIds = users.map((u) => u.id);
   await batchedCreateMany("User", users, (b) => perfPrisma.user.createMany({ data: b }));
@@ -186,6 +194,7 @@ async function main(): Promise<void> {
     note: `${marker} synthetic batch ${i}`,
     fingerprint: `${marker}-fingerprint-${i}`,
     importedById: pick(rng, users).id,
+    organizationId: organization.id,
   }));
   manifest.historicalBatchIds = historicalBatches.map((b) => b.id);
   await batchedCreateMany("HistoricalDutyImportBatch", historicalBatches, (b) =>
@@ -295,6 +304,7 @@ async function main(): Promise<void> {
       userId: pick(rng, users).id,
       dutyAssignmentId: assignment?.id ?? null,
       createdAt: daysBetween(historicalStart, randomInt(rng, 0, historicalSpanDays)),
+      organizationId: organization.id,
     };
   });
   await batchedCreateMany("AuditLog", auditLogs, (b) => perfPrisma.auditLog.createMany({ data: b }));
