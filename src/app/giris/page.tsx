@@ -22,7 +22,13 @@ const FEATURES = [
 
 export default async function GirisPage() {
   const user = await getCurrentUser();
-  if (user) redirect("/");
+  // Only redirect an already-logged-in organization member to the
+  // dashboard — "/" itself requires organization membership
+  // (requireOrganizationMember) and redirects back here for anyone
+  // without one, so redirecting PLATFORM_ADMIN (which has no
+  // organization by design, and no dashboard area of its own yet) would
+  // create an infinite /giris <-> / loop instead of showing anything.
+  if (user && user.organizationId) redirect("/");
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">

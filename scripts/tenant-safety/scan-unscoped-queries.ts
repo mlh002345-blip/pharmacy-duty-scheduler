@@ -49,38 +49,55 @@ const SCOPED_METHODS = [
 // model itself is scoped through a caller-supplied, already-validated
 // parent id). Never add an entry here to silence a real gap — fix the
 // query instead.
+//
+// Every reason is tagged with one of these safety categories:
+//   [parent-scoped query]   the id used at this call site was already
+//                            validated against organizationId earlier in
+//                            the same request (directly, or via a parent
+//                            relation chain the caller validated).
+//   [pre-auth login path]   runs before any session/organization context
+//                            exists — it IS the identity boundary, not a
+//                            tenant-scoped read.
+//   [platform-only operation]  reserved for PLATFORM_ADMIN-only code paths
+//                            that intentionally operate across all
+//                            organizations; unused today (no such Prisma
+//                            call exists yet) — kept here so a future
+//                            entry has a category to land under instead of
+//                            inventing a new one.
+// (Holiday is a shared/global model by design — see CLAUDE.md scheduling
+// principles — and is deliberately kept out of TENANT_MODELS below rather
+// than allowlisted per call site; do not add "holiday" there.
+// [cleanup-test infrastructure] doesn't apply here either, since this
+// scanner only walks src/, never tests/.)
 const ALLOWLIST: Record<string, string> = {
-  "src/lib/scheduling/generate-and-save-duty-schedule.ts:39": "region.findFirst is intentionally not used here — regionId is documented as pre-validated by every caller (see GenerateAndSaveDutyScheduleInput comment) before this function runs.",
-  "src/lib/scheduling/generate-and-save-duty-schedule.ts:52": "pharmacies scoped by regionId, which the caller has already validated belongs to organizationId.",
-  "src/lib/scheduling/generate-and-save-duty-schedule.ts:71": "unavailability scoped by pharmacyIds derived from the already-org-validated region's own pharmacies.",
-  "src/lib/scheduling/generate-and-save-duty-schedule.ts:78": "dutyAssignment scoped by pharmacyIds derived from the already-org-validated region's own pharmacies.",
-  "src/lib/scheduling/generate-and-save-duty-schedule.ts:89": "dutyRequest scoped by pharmacyIds derived from the already-org-validated region's own pharmacies.",
-  "src/lib/scheduling/schedule-precheck.ts:148": "unavailability scoped by activePharmacyIds, which the caller (cizelgeler/actions.ts) already validated belong to the authenticated user's organization.",
-  "src/lib/scheduling/schedule-precheck.ts:156": "dutyRequest scoped by activePharmacyIds, caller-validated.",
-  "src/lib/scheduling/schedule-precheck.ts:166": "dutyRequest count scoped by activePharmacyIds, caller-validated.",
-  "src/lib/scheduling/schedule-precheck.ts:171": "pharmacy count scoped by activePharmacyIds, caller-validated.",
-  "src/lib/scheduling/public-duty-lookup.ts:10": "dutySchedule scoped by regionId, which the only caller (/vatandas) resolves from an organization-scoped region list before calling this.",
-  "src/lib/scheduling/public-duty-lookup.ts:24": "dutyAssignment scoped by the schedule.id resolved from the org-scoped lookup immediately above.",
-  "src/app/eczane-talep/[token]/page.tsx:34": "pharmacy resolved by requestToken — a per-pharmacy unique, unguessable secret that is itself the authorization boundary for this public route; it can never resolve to another organization's pharmacy.",
-  "src/app/eczane-talep/[token]/actions.ts:40": "pharmacy resolved by requestToken, same reasoning as page.tsx above; pharmacyId/regionId used later in this function are derived from this lookup, never client-supplied.",
-  "src/app/(dashboard)/tatil-gunleri/actions.ts:89": "Holiday is a shared/global table by design (national/religious calendar facts, not chamber-owned data) — see CLAUDE.md scheduling principles.",
-  "src/app/(dashboard)/tatil-gunleri/actions.ts:127": "Holiday is shared/global, see above.",
-  "src/app/(dashboard)/tatil-gunleri/[id]/duzenle/page.tsx:16": "Holiday is shared/global, see above.",
-  "src/lib/auth/actions.ts:74": "User looked up by globally-unique email during login, before any organization/session context exists — this is the identity boundary itself, not a tenant-scoped read.",
-  "src/app/(dashboard)/cizelgeler/[id]/atama/assignment-actions.ts:115": "dutyRequest scoped by candidatePharmacyId, which was already verified against organizationId a few lines above (the cross-tenant relation validation on the client-supplied pharmacyId).",
-  "src/app/(dashboard)/cizelgeler/[id]/atama/assignment-actions.ts:148": "dutyAssignment scoped by candidatePharmacyId, same prior verification as above.",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:119": "dutyRequest groupBy scoped by pharmacy.regionId === schedule.regionId, where schedule was already loaded with an organizationId-scoped findFirst above.",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:144": "dutyRequest scoped by assignmentPharmacyIds, derived only from this org-validated schedule's own assignments.",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:205": "historicalDutyRecord groupBy scoped by pharmacyIds derived from this org-validated schedule's own assignments (fairnessRows).",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:210": "dutyBalanceAdjustment groupBy scoped by the same org-validated pharmacyIds.",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:215": "dutyAssignment groupBy scoped by the same org-validated pharmacyIds.",
-  "src/app/(dashboard)/cizelgeler/actions.ts:86": "dutySchedule.findUnique by the compound (year, month, regionId) key — regionId was already verified against organizationId a few lines above via the region findFirst.",
-  "src/app/eczane-talep/[token]/actions.ts:58": "dutyRequest.count scoped by pharmacy.id, resolved from the requestToken lookup above — never client-supplied.",
-  "src/app/eczane-talep/[token]/actions.ts:82": "dutyRequest.create's pharmacyId/regionId are taken from the token-resolved pharmacy, never client input.",
-  "src/lib/balance/duty-balance.ts:164": "getOpeningBalanceByPharmacy's historicalDutyRecord groupBy is scoped by the regionId parameter, which the sole caller (generate-and-save-duty-schedule.ts) has already validated against organizationId.",
-  "src/lib/balance/duty-balance.ts:173": "getOpeningBalanceByPharmacy's dutyBalanceAdjustment groupBy, same caller-validated regionId as above.",
-  "src/lib/scheduling/generate-and-save-duty-schedule.ts:114": "dutySchedule.create's regionId was already validated by the caller against organizationId; DutySchedule has no direct organizationId column (ownership derives through region).",
-  "src/lib/scheduling/schedule-precheck.ts:169": "historicalDutyRecord.count scoped by regionId, caller-validated (see other schedule-precheck.ts entries above).",
+  "src/lib/scheduling/generate-and-save-duty-schedule.ts:39": "[parent-scoped query] region.findFirst is intentionally not used here — regionId is documented as pre-validated by every caller (see GenerateAndSaveDutyScheduleInput comment) before this function runs.",
+  "src/lib/scheduling/generate-and-save-duty-schedule.ts:52": "[parent-scoped query] pharmacies scoped by regionId, which the caller has already validated belongs to organizationId.",
+  "src/lib/scheduling/generate-and-save-duty-schedule.ts:71": "[parent-scoped query] unavailability scoped by pharmacyIds derived from the already-org-validated region's own pharmacies.",
+  "src/lib/scheduling/generate-and-save-duty-schedule.ts:78": "[parent-scoped query] dutyAssignment scoped by pharmacyIds derived from the already-org-validated region's own pharmacies.",
+  "src/lib/scheduling/generate-and-save-duty-schedule.ts:89": "[parent-scoped query] dutyRequest scoped by pharmacyIds derived from the already-org-validated region's own pharmacies.",
+  "src/lib/scheduling/generate-and-save-duty-schedule.ts:114": "[parent-scoped query] dutySchedule.create's regionId was already validated by the caller against organizationId; DutySchedule has no direct organizationId column (ownership derives through region).",
+  "src/lib/scheduling/schedule-precheck.ts:148": "[parent-scoped query] unavailability scoped by activePharmacyIds, which the caller (cizelgeler/actions.ts) already validated belong to the authenticated user's organization.",
+  "src/lib/scheduling/schedule-precheck.ts:156": "[parent-scoped query] dutyRequest scoped by activePharmacyIds, caller-validated.",
+  "src/lib/scheduling/schedule-precheck.ts:166": "[parent-scoped query] dutyRequest count scoped by activePharmacyIds, caller-validated.",
+  "src/lib/scheduling/schedule-precheck.ts:169": "[parent-scoped query] historicalDutyRecord.count scoped by regionId, caller-validated (see other schedule-precheck.ts entries above).",
+  "src/lib/scheduling/schedule-precheck.ts:171": "[parent-scoped query] pharmacy count scoped by activePharmacyIds, caller-validated.",
+  "src/lib/scheduling/public-duty-lookup.ts:10": "[parent-scoped query] dutySchedule scoped by regionId, which the only caller (/vatandas) resolves from an organization-scoped region list before calling this.",
+  "src/lib/scheduling/public-duty-lookup.ts:24": "[parent-scoped query] dutyAssignment scoped by the schedule.id resolved from the org-scoped lookup immediately above.",
+  "src/app/eczane-talep/[token]/page.tsx:34": "[parent-scoped query] pharmacy resolved by requestToken — a per-pharmacy unique, unguessable secret that is itself the authorization boundary for this public route; it can never resolve to another organization's pharmacy.",
+  "src/app/eczane-talep/[token]/actions.ts:40": "[parent-scoped query] pharmacy resolved by requestToken, same reasoning as page.tsx above; pharmacyId/regionId used later in this function are derived from this lookup, never client-supplied.",
+  "src/app/eczane-talep/[token]/actions.ts:58": "[parent-scoped query] dutyRequest.count scoped by pharmacy.id, resolved from the requestToken lookup above — never client-supplied.",
+  "src/app/eczane-talep/[token]/actions.ts:82": "[parent-scoped query] dutyRequest.create's pharmacyId/regionId are taken from the token-resolved pharmacy, never client input.",
+  "src/lib/auth/actions.ts:74": "[pre-auth login path] User looked up by globally-unique email during login, before any organization/session context exists — this is the identity boundary itself, not a tenant-scoped read.",
+  "src/app/(dashboard)/cizelgeler/[id]/atama/assignment-actions.ts:115": "[parent-scoped query] dutyRequest scoped by candidatePharmacyId, which was already verified against organizationId a few lines above (the cross-tenant relation validation on the client-supplied pharmacyId).",
+  "src/app/(dashboard)/cizelgeler/[id]/atama/assignment-actions.ts:148": "[parent-scoped query] dutyAssignment scoped by candidatePharmacyId, same prior verification as above.",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:119": "[parent-scoped query] dutyRequest groupBy scoped by pharmacy.regionId === schedule.regionId, where schedule was already loaded with an organizationId-scoped findFirst above.",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:144": "[parent-scoped query] dutyRequest scoped by assignmentPharmacyIds, derived only from this org-validated schedule's own assignments.",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:205": "[parent-scoped query] historicalDutyRecord groupBy scoped by pharmacyIds derived from this org-validated schedule's own assignments (fairnessRows).",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:210": "[parent-scoped query] dutyBalanceAdjustment groupBy scoped by the same org-validated pharmacyIds.",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:215": "[parent-scoped query] dutyAssignment groupBy scoped by the same org-validated pharmacyIds.",
+  "src/app/(dashboard)/cizelgeler/actions.ts:86": "[parent-scoped query] dutySchedule.findUnique by the compound (year, month, regionId) key — regionId was already verified against organizationId a few lines above via the region findFirst.",
+  "src/lib/balance/duty-balance.ts:164": "[parent-scoped query] getOpeningBalanceByPharmacy's historicalDutyRecord groupBy is scoped by the regionId parameter, which the sole caller (generate-and-save-duty-schedule.ts) has already validated against organizationId.",
+  "src/lib/balance/duty-balance.ts:173": "[parent-scoped query] getOpeningBalanceByPharmacy's dutyBalanceAdjustment groupBy, same caller-validated regionId as above.",
 };
 
 type Finding = { file: string; line: number; snippet: string };

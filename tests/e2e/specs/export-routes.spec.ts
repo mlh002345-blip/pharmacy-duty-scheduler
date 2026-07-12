@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 import {
+  createE2EOrganization,
   createE2EUser,
   createE2ESession,
   createE2ERegion,
@@ -21,11 +22,12 @@ test.describe("export / route-handler authorization", () => {
     browser,
     baseURL,
   }) => {
-    const region = await createE2ERegion(tracked);
+    const organization = await createE2EOrganization(tracked);
+    const region = await createE2ERegion(tracked, { organizationId: organization.id });
     const schedule = await createE2EDutySchedule(tracked, region.id);
 
     for (const role of ["ADMIN", "STAFF", "VIEWER"] as const) {
-      const user = await createE2EUser(tracked, { role });
+      const user = await createE2EUser(tracked, { role, organizationId: organization.id });
       const token = await createE2ESession(tracked, user.id);
       const ctx = await browser.newContext();
       await addSessionCookie(ctx, token, baseURL!);
@@ -44,10 +46,11 @@ test.describe("export / route-handler authorization", () => {
   });
 
   test("PDF export follows the same authorization contract as Excel", async ({ browser, baseURL }) => {
-    const region = await createE2ERegion(tracked);
+    const organization = await createE2EOrganization(tracked);
+    const region = await createE2ERegion(tracked, { organizationId: organization.id });
     const schedule = await createE2EDutySchedule(tracked, region.id, { month: 2 });
 
-    const admin = await createE2EUser(tracked, { role: "ADMIN" });
+    const admin = await createE2EUser(tracked, { role: "ADMIN", organizationId: organization.id });
     const token = await createE2ESession(tracked, admin.id);
     const ctx = await browser.newContext();
     await addSessionCookie(ctx, token, baseURL!);
