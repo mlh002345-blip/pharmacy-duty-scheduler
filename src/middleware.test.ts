@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { middleware } from "./middleware";
@@ -55,5 +55,39 @@ describe("middleware — request correlation ID only", () => {
     // Next.js stashes rewritten request headers under this internal header
     // name when NextResponse.next({ request: { headers } }) is used.
     expect(forwardedRequestHeaders).toBe(response.headers.get(REQUEST_ID_HEADER));
+  });
+});
+
+describe("middleware — Content-Security-Policy (production only)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("does not set a CSP header outside production", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const response = middleware(makeRequest());
+    expect(response.headers.get("Content-Security-Policy")).toBeNull();
+  });
+
+  it("sets a CSP header with a nonce in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = middleware(makeRequest());
+    const csp = response.headers.get("Content-Security-Policy");
+    expect(csp).toBeTruthy();
+    expect(csp).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/);
+  });
+
+  it("forwards the same CSP (and nonce) to the downstream request headers, not just the response", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const response = middleware(makeRequest());
+    const forwarded = response.headers.get("x-middleware-request-content-security-policy");
+    expect(forwarded).toBe(response.headers.get("Content-Security-Policy"));
+  });
+
+  it("generates a different nonce on every request", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const cspA = middleware(makeRequest()).headers.get("Content-Security-Policy");
+    const cspB = middleware(makeRequest()).headers.get("Content-Security-Policy");
+    expect(cspA).not.toBe(cspB);
   });
 });
