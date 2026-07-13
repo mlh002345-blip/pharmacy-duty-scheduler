@@ -97,6 +97,7 @@ model Region {
   historicalDutyRecords HistoricalDutyRecord[]
   dutyRequests          DutyRequest[]
   pharmacyImportRows    PharmacyImportRow[]
+  pharmacyImportRegionCandidates PharmacyImportRegionCandidate[]
 
   // Region names may repeat across organizations, but not within one.
   @@unique([organizationId, name])
@@ -459,6 +460,34 @@ enum PharmacyImportRowStatus {
   DUPLICATE_IN_FILE
   ALREADY_EXISTS
   UNKNOWN_REGION
+  // Region discovery: the row's region candidate still needs an ADMIN
+  // decision (approval / inactive-region acknowledgment / suggestion
+  // confirmation / manual assignment)…
+  REGION_PENDING
+  // …or the ADMIN excluded the row's candidate: skipped, never imported,
+  // never blocking.
+  EXCLUDED
+}
+
+// Where a region candidate's text came from — an explicit Bölge cell, an
+// İlçe cell, a purely structural address-derived suggestion, or a manual
+// entry the ADMIN typed during preview. Never an external service and
+// never a hardcoded province/district list.
+enum PharmacyImportCandidateSource {
+  BOLGE_COLUMN
+  ILCE_COLUMN
+  ADDRESS_SUGGESTION
+  MANUAL
+}
+
+enum PharmacyImportCandidateStatus {
+  MATCHED_EXISTING_ACTIVE
+  MATCHED_EXISTING_INACTIVE
+  NEW_REGION_CANDIDATE
+  ADDRESS_SUGGESTION
+  AMBIGUOUS
+  UNRESOLVED
+  EXCLUDED_BY_ADMIN
 }
 
 // Generic (province-agnostic) Pharmacy Excel Import — the preview step
@@ -485,10 +514,56 @@ model PharmacyImportBatch {
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
-  rows PharmacyImportRow[]
+  rows             PharmacyImportRow[]
+  regionCandidates PharmacyImportRegionCandidate[]
 
   @@index([organizationId, status])
   @@index([expiresAt])
+}
+
+// One aggregated region candidate per unique (Turkish-normalized) region
+// value discovered in an uploaded workbook, plus manual candidates the
+// ADMIN defines during preview. Tenant ownership derives exclusively
+// through the parent batch's organizationId — this table never stores an
+// organizationId of its own, so there is nothing client-suppliable to
+// tamper with. No Region row is written from here before the final
+// all-or-nothing import transaction. See
+// docs/features/AUTOMATIC_REGION_DISCOVERY.md.
+model PharmacyImportRegionCandidate {
+  id                    String                        @id @default(cuid())
+  sourceValue           String
+  normalizedSourceValue String
+  sourceType            PharmacyImportCandidateSource
+  status                PharmacyImportCandidateStatus
+  proposedName          String
+  normalizedProposedName String
+  proposedCity          String
+  proposedDistrict      String
+  proposedIsActive      Boolean                       @default(true)
+  // Set when the ADMIN explicitly approved this candidate (new-region
+  // approval, address-suggestion acceptance, or the keep-inactive/
+  // reactivate decision for an inactive match). Never set automatically.
+  approvedAt            DateTime?
+  // Only meaningful for MATCHED_EXISTING_INACTIVE: reactivate the region
+  // inside the final import transaction (audited) instead of importing
+  // into it while it stays inactive. Never true without approvedAt.
+  reactivateOnImport    Boolean                       @default(false)
+  createdAt             DateTime                      @default(now())
+  updatedAt             DateTime                      @updatedAt
+
+  batchId String
+  batch   PharmacyImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  matchedRegionId String?
+  matchedRegion   Region? @relation(fields: [matchedRegionId], references: [id], onDelete: SetNull)
+
+  rows PharmacyImportRow[]
+
+  // One candidate per normalized source value within a batch — repeated
+  // workbook values aggregate instead of duplicating.
+  @@unique([batchId, normalizedSourceValue])
+  @@index([batchId])
+  @@index([matchedRegionId])
 }
 
 model PharmacyImportRow {
@@ -509,6 +584,17 @@ model PharmacyImportRow {
   regionId String?
   region   Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
 
+  // Region-discovery columns: the raw (trimmed) region/district source
+  // text as uploaded, the validated optional address, and the candidate
+  // this row resolved to. Deleting a candidate detaches its rows
+  // (SetNull) — they fall back to unresolved, never dangle.
+  sourceRegionText   String?
+  sourceDistrictText String?
+  address            String?
+  candidateId        String?
+  candidate          PharmacyImportRegionCandidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+
   @@index([batchId])
   @@index([regionId])
+  @@index([candidateId])
 }
