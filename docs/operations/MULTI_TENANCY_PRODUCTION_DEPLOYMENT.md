@@ -137,36 +137,57 @@ part of this migration itself, using the platform administration UI:
 No `PLATFORM_ADMIN` user is created automatically by the migration or
 seed script (`prisma/seed.ts`'s demo `PLATFORM_ADMIN`, if any, is
 development-only — confirm before relying on it in production; it is
-gated by the seed script's own production-safety guard). To create the
-first production `PLATFORM_ADMIN`:
+gated by the seed script's own production-safety guard). There is no UI
+to create the FIRST `PLATFORM_ADMIN` — `PLATFORM_ADMIN` is the role
+that manages Organizations themselves, and no chicken-and-egg
+self-service path exists by design.
 
-```sql
--- Run against the production database directly (psql or an equivalent
--- one-off script) — there is no UI to create the FIRST PLATFORM_ADMIN,
--- since PLATFORM_ADMIN is the role that manages Organizations
--- themselves and no chicken-and-egg self-service path exists by design.
-INSERT INTO "User" (id, name, email, "passwordHash", role, "isActive", "organizationId", "createdAt", "updatedAt")
-VALUES (
-  gen_random_uuid()::text,        -- or any cuid-shaped id generator consistent with the app's own ids
-  'Platform Yöneticisi',
-  'platform-admin@<your-domain>', -- a real, access-controlled inbox
-  '<scrypt-hashed password, see src/lib/auth/password.ts hashPassword()>',
-  'PLATFORM_ADMIN',
-  true,
-  NULL,                            -- PLATFORM_ADMIN always has organizationId = NULL
-  now(),
-  now()
-);
-```
+Use the dedicated bootstrap script `scripts/create-platform-admin.ts`
+(`npm run db:create-platform-admin`). It reads `PLATFORM_ADMIN_EMAIL`,
+`PLATFORM_ADMIN_PASSWORD`, and (optionally) `PLATFORM_ADMIN_NAME`
+(default "Platform Yöneticisi") from the environment, validates them
+with the app's own rules (valid email, minimum 8-character password),
+hashes the password with the app's real scrypt implementation
+(`src/lib/auth/password.ts`), and creates exactly one user with
+`role = PLATFORM_ADMIN`, `organizationId = NULL`, `isActive = true`. It
+is safe by construction:
 
-Generate the `passwordHash` value with the app's own hashing (never a
-plaintext password, never a different hashing scheme):
-`node -e "require('./src/lib/auth/password.ts')..."` is not directly
-runnable without a TS loader — instead, run a short one-off script (or
-add a temporary `scripts/platform-admin/bootstrap.ts`) that imports
-`hashPassword` from `src/lib/auth/password.ts` and prints the result,
-delete the script afterward, and never commit the plaintext password
-anywhere (shell history, ticket, chat).
+- If the same `PLATFORM_ADMIN` already exists, it exits successfully
+  **without changing anything** (including the password) — re-running
+  it is idempotent.
+- If the email belongs to an existing tenant user, or a *different*
+  `PLATFORM_ADMIN` already exists, it aborts with a non-zero exit code
+  and changes nothing. There is deliberately no overwrite flag.
+- It never prints the password, the hash, or `DATABASE_URL`.
+
+### Railway dashboard-only bootstrap (no SSH, no SQL)
+
+1. In the Railway dashboard, open the **application service** (not the
+   Postgres service) → **Variables**, and temporarily add:
+   - `PLATFORM_ADMIN_EMAIL` — a real, access-controlled inbox
+     (e.g. `platform-admin@<your-domain>`).
+   - `PLATFORM_ADMIN_PASSWORD` — a strong password (min 8 characters;
+     use far more for this role). Do not record it in tickets or chat.
+   - Optionally `PLATFORM_ADMIN_NAME`.
+2. In the service's **Settings → Deploy**, temporarily set the
+   pre-deploy command to:
+   `npm run db:migrate:deploy && npm run db:create-platform-admin`
+3. Trigger **one** deploy.
+4. In the deploy logs, confirm exactly one line:
+   `PLATFORM_ADMIN oluşturuldu: <email>` (or, on a re-run,
+   `PLATFORM_ADMIN zaten mevcut: <email>...`). Confirm no password,
+   hash, or connection string appears anywhere in the log output — the
+   script never emits them.
+5. **Immediately** delete `PLATFORM_ADMIN_EMAIL`,
+   `PLATFORM_ADMIN_PASSWORD`, and `PLATFORM_ADMIN_NAME` from the
+   service variables.
+6. Restore the pre-deploy command to `npm run db:migrate:deploy`.
+7. Redeploy (the variable deletion typically triggers this anyway) and
+   confirm the app starts cleanly.
+8. Verify: log in at `/giris` with the new account and confirm you are
+   redirected to `/platform` (the organization list at
+   `/platform/kurumlar`). Because the password briefly existed as a
+   dashboard variable, change it via the UI after first login.
 
 ## Post-migration validation SQL
 
