@@ -156,7 +156,7 @@ describe("pharmacy import batch lifecycle and concurrency (real Postgres)", () =
     expect(batch.status).toBe("PREVIEWED"); // untouched
   });
 
-  it("another ADMIN in the SAME organization can consume a batch they did not create (org-scoped, not creator-scoped — consistent with every other org-scoped mutation in this app)", async () => {
+  it("another ADMIN in the SAME organization canNOT consume a batch they did not create (creator-scoped since region discovery: the preview's region decisions belong to the uploader)", async () => {
     const organization = await createTestOrganization(tracked);
     const region = await createTestRegion(tracked, { organizationId: organization.id });
     const creator = await createTestUser(tracked, { role: "ADMIN", organizationId: organization.id });
@@ -172,8 +172,17 @@ describe("pharmacy import batch lifecycle and concurrency (real Postgres)", () =
     setIntegrationTestSessionToken(otherToken);
     await expect(importPharmacyBatchAction(batchId)).rejects.toBeInstanceOf(IntegrationRedirectSignal);
 
+    // Rejected: batch untouched, no pharmacies created.
     const batch = await prisma.pharmacyImportBatch.findUniqueOrThrow({ where: { id: batchId } });
-    expect(batch.status).toBe("IMPORTED");
+    expect(batch.status).toBe("PREVIEWED");
+    expect(batch.consumedAt).toBeNull();
+    expect(await prisma.pharmacy.count({ where: { regionId: region.id } })).toBe(0);
+
+    // The creator can still consume it normally.
+    setIntegrationTestSessionToken(creatorToken);
+    await expect(importPharmacyBatchAction(batchId)).rejects.toBeInstanceOf(IntegrationRedirectSignal);
+    const after = await prisma.pharmacyImportBatch.findUniqueOrThrow({ where: { id: batchId } });
+    expect(after.status).toBe("IMPORTED");
     await trackPharmaciesInRegion(region.id);
   });
 
@@ -206,15 +215,20 @@ describe("pharmacy import batch lifecycle and concurrency (real Postgres)", () =
 
     // Simulate a race: a pharmacy matching the SECOND row's
     // (regionId, normalizedName) is created manually between preview
-    // and import — the DB's own unique constraint is the only thing
-    // that can catch this (the batch's persisted rows were already
-    // validated as non-conflicting at preview time).
+    // and import. Since region discovery, the import transaction
+    // re-derives every row status from CURRENT database state before
+    // writing anything, so this collision is caught as ALREADY_EXISTS
+    // and blocked with a controlled redirect — the whole transaction
+    // (including the consume-first status flip) rolls back. The DB
+    // unique constraint remains the final authority underneath for the
+    // narrower window inside the transaction itself (covered by the
+    // region-discovery suite's pharmacy-stage-violation test).
     const raced = await createTestPharmacy(tracked, region.id, { name: "Sifa Eczanesi" });
     expect(normalizeText(raced.name)).toBe(normalizeText("Sifa Eczanesi"));
 
     setIntegrationTestSessionToken(token);
-    await expect(importPharmacyBatchAction(batchId)).rejects.toSatisfy(
-      (e) => !(e instanceof IntegrationRedirectSignal)
+    await expect(importPharmacyBatchAction(batchId)).rejects.toBeInstanceOf(
+      IntegrationRedirectSignal
     );
 
     // Row 1 ("Deva Eczanesi") would have succeeded on its own — proving

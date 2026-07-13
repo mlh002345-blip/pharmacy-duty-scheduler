@@ -38,7 +38,7 @@ export async function createRegionAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requireOrganizationRole("manageSetupData");
+  const guard = await requireOrganizationRole("manageRegions");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -87,7 +87,7 @@ export async function updateRegionAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requireOrganizationRole("manageSetupData");
+  const guard = await requireOrganizationRole("manageRegions");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -143,7 +143,7 @@ export async function updateRegionAction(
 // setPharmacyStatusAction yorumu) — çift gönderimde amaçlanan değişikliği
 // sessizce iptal eden bir "toggle" değildir.
 export async function setRegionStatusAction(id: string, isActive: boolean) {
-  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/bolgeler");
+  const user = await requireOrganizationRoleOrRedirect("manageRegions", "/bolgeler");
 
   const region = await prisma.region.findFirst({ where: { id, organizationId: user.organizationId } });
   if (!region) {

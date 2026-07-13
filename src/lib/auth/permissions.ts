@@ -9,6 +9,10 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 
 export type Permission =
   | "manageSetupData"
+  // Region mutation is deliberately narrower than general setup data:
+  // regions define scheduling boundaries and (since region discovery)
+  // can be created during pharmacy import — ADMIN only.
+  | "manageRegions"
   | "deleteSetupData"
   | "generateSchedule"
   | "editAssignment"
@@ -27,6 +31,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   PLATFORM_ADMIN: [],
   ADMIN: [
     "manageSetupData",
+    "manageRegions",
     "deleteSetupData",
     "generateSchedule",
     "editAssignment",

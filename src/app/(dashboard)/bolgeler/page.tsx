@@ -29,7 +29,7 @@ export default async function BolgelerPage({
   const { success, error } = await searchParams;
 
   const user = await requireOrganizationMember();
-  const canManage = hasPermission(user.role, "manageSetupData");
+  const canManage = hasPermission(user.role, "manageRegions");
   const canDelete = hasPermission(user.role, "deleteSetupData");
 
   const regions = await prisma.region.findMany({
@@ -49,7 +49,7 @@ export default async function BolgelerPage({
         </div>
         {canManage && (
           <Button asChild>
-            <Link href="/bolgeler/yeni">Yeni Ekle</Link>
+            <Link href="/bolgeler/yeni">Yeni Bölge Ekle</Link>
           </Button>
         )}
       </div>

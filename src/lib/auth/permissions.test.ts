@@ -7,6 +7,7 @@ const ALL_ROLES: UserRole[] = ["PLATFORM_ADMIN", "ADMIN", "STAFF", "VIEWER"];
 
 const ALL_PERMISSIONS: Permission[] = [
   "manageSetupData",
+  "manageRegions",
   "deleteSetupData",
   "generateSchedule",
   "editAssignment",
@@ -28,6 +29,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
   // any organization's data. See permissions.ts's own comment.
   PLATFORM_ADMIN: {
     manageSetupData: false,
+    manageRegions: false,
     deleteSetupData: false,
     generateSchedule: false,
     editAssignment: false,
@@ -39,6 +41,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
   },
   ADMIN: {
     manageSetupData: true,
+    manageRegions: true,
     deleteSetupData: true,
     generateSchedule: true,
     editAssignment: true,
@@ -50,6 +53,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
   },
   STAFF: {
     manageSetupData: true,
+    manageRegions: false,
     deleteSetupData: false,
     generateSchedule: true,
     editAssignment: true,
@@ -61,6 +65,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
   },
   VIEWER: {
     manageSetupData: false,
+    manageRegions: false,
     deleteSetupData: false,
     generateSchedule: false,
     editAssignment: false,
