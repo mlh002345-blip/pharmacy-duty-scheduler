@@ -107,9 +107,30 @@ Every pre-existing `Pharmacy` row gets a `normalizedName` computed via
 the same trim/collapse-whitespace/lowercase algorithm the application's
 own `normalizeText()` uses. This name is generic by design — see the
 migration's own header comment — and should be renamed to the real
-pilot chamber's actual name via `npm run org:rename` (see
-`scripts/organizations/rename-organization.ts`) as a follow-up
-**operator action**, not part of this migration itself.
+pilot chamber's actual name as a follow-up **operator action**, not
+part of this migration itself, using the platform administration UI:
+
+1. Log in as `PLATFORM_ADMIN` (created via the procedure below).
+2. Open `/platform/kurumlar` — the bootstrap organization appears as
+   "Varsayılan Oda".
+3. Select it, then open its edit page
+   (`/platform/kurumlar/[id]/duzenle`).
+4. Update the organization **name** to the real chamber's name, the
+   **province** ("İl / Bölge") to its real province, and the **slug**
+   to a matching short identifier (or clear it to auto-generate from
+   the new name).
+5. Save, and verify the updated name/province/slug on the
+   organization's summary page (`/platform/kurumlar/[id]`).
+
+> **Stale migration comment**: the migration file's own header comment
+> (`prisma/migrations/20260712010000_multi_tenancy_organization/migration.sql`)
+> still references an `npm run org:rename` script that was never
+> created — the UI workflow above is the actual supported rename path.
+> That comment is SQL comment text only: it is never executed, has no
+> effect on what the migration does at runtime, and is deliberately
+> left unedited because modifying an already-locally-applied migration
+> file changes its Prisma checksum and would force re-resolution on
+> every database that has applied it.
 
 ## `PLATFORM_ADMIN` creation procedure
 
@@ -224,37 +245,51 @@ Deploy failed / smoke test failed / post-migration validation SQL failed
   │             already guarantees the schema is untouched (see
   │             docs/architecture/MULTI_TENANCY.md's migration section —
   │             verified three ways in this branch's acceptance gate,
-  │             including a deliberate collision scenario). Redeploy the
-  │             previous commit (00a0979); no DB action needed.
+  │             including a deliberate collision scenario). Because the
+  │             migration never applied, the database is still in the
+  │             PRE-migration shape 00a0979 expects — redeploy 00a0979;
+  │             no DB action needed. (This is the ONLY branch where
+  │             redeploying 00a0979 without a DB restore is safe.)
   │
   └─ Did the migration apply successfully, but a LATER problem surfaced
      (application bug, unexpected data shape, smoke test failure AFTER
      the post-migration validation SQL already passed)?
        │
+       │  ** Once 20260712010000_multi_tenancy_organization has been
+       │  ** applied, NEVER redeploy 00a0979 against the migrated
+       │  ** database — its code expects the PRE-migration schema (no
+       │  ** organizationId columns, no normalizedName, old constraints)
+       │  ** and will break against the new one. Every branch below
+       │  ** follows from that rule.
+       │
        ├─ Is the problem a pure application-code defect (e.g. a page
        │  crashes, a permission check is wrong) with the underlying
-       │  data still correct per the validation SQL above?
-       │    └─ YES → Application rollback is sufficient. Redeploy
-       │             00a0979. Caution: 00a0979's code expects the
-       │             PRE-migration schema shape (no organizationId
-       │             columns) — rolling back application code while the
-       │             NEW schema is in place will break it. Do not mix:
-       │             either roll back both code AND schema (full DB
-       │             restore), or fix forward on the new schema. A
-       │             plain code-only rollback is NOT safe here, unlike
-       │             the general case in
-       │             docs/operations/PILOT_DEPLOYMENT_CHECKLIST.md.
+       │  data still correct per the validation SQL above — AND is
+       │  there a rollback target commit that still expects the
+       │  POST-migration schema?
+       │    └─ YES → Application-only rollback to that
+       │             schema-compatible commit. Example: rolling back
+       │             bac2b5c or e755a79 to f839245 is schema-compatible
+       │             (all three expect the migrated schema). Rolling
+       │             back to 00a0979 is NOT schema-compatible and is
+       │             not an option on this branch — if no
+       │             schema-compatible target exists, fix forward or
+       │             take the DB-restore branch below.
        │
        └─ Is the problem data corruption, a security issue (any
           observed cross-tenant leak, authentication bypass), or does
-          reverting require the pre-migration schema shape?
-            └─ YES → Full DB restore is required
+          the rollback require returning to 00a0979 (or any other
+          pre-migration commit)?
+            └─ YES → Restore the pre-migration database backup FIRST
                      (docs/testing/BACKUP_RESTORE_REHEARSAL.md), using
-                     the backup taken before this deploy started, PLUS
-                     application rollback to 00a0979. This is the only
-                     safe path once the schema itself must be reverted —
-                     row-shape assumptions (organizationId, normalizedName,
-                     new constraints) differ between the two commits.
+                     the backup taken before this deploy started, THEN
+                     redeploy 00a0979. This order is mandatory — the
+                     restore returns the database to the schema shape
+                     00a0979 expects; only then is running 00a0979
+                     safe. Row-shape assumptions (organizationId,
+                     normalizedName, new constraints) differ between
+                     the two commits, so neither step alone is
+                     sufficient.
 ```
 
 **Default to the DB-restore path** for anything you're not fully certain
