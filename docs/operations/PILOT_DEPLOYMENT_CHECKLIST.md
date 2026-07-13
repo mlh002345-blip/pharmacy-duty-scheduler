@@ -6,6 +6,17 @@ during its controlled pilot phase, per the **CONDITIONAL GO** decision in
 for the full risk register and pilot scope; this is the operational,
 step-by-step companion.
 
+> **Multi-tenancy note**: this checklist predates the multi-tenancy and
+> Pharmacy Excel Import work on `feature/multi-tenancy-pharmacy-import`.
+> It remains correct for the current single-tenant `deploy/postgresql-demo`
+> deployment. Before this branch's first production deploy, use
+> `docs/operations/MULTI_TENANCY_PRODUCTION_DEPLOYMENT.md` instead — it
+> supersedes the "Before deploy"/"Deploy"/rollback sections below for that
+> specific deploy (migration order, bootstrap-organization behavior,
+> `PLATFORM_ADMIN` creation, and multi-tenancy-aware smoke tests/rollback
+> decision tree), while the general Railway mechanics and demo-account
+> smoke-test pattern here still apply.
+
 ## Before deploy
 
 - [ ] Confirm the exact commit hash being deployed matches what was

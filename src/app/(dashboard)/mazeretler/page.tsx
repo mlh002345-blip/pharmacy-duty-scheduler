@@ -14,7 +14,7 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import { deleteUnavailabilityAction } from "./actions";
 
@@ -27,13 +27,15 @@ export default async function MazeretlerPage({
 }) {
   const { success, error, page: pageParam } = await searchParams;
 
-  const user = await getCurrentUser();
-  const canManage = !!user && hasPermission(user.role, "manageSetupData");
+  const user = await requireOrganizationMember();
+  const canManage = hasPermission(user.role, "manageSetupData");
 
   const page = parsePageParam(pageParam);
 
+  const where = { pharmacy: { region: { organizationId: user.organizationId } } };
   const [unavailabilities, totalCount] = await Promise.all([
     prisma.unavailability.findMany({
+      where,
       select: {
         id: true,
         startDate: true,
@@ -45,7 +47,7 @@ export default async function MazeretlerPage({
       skip: (page - 1) * DEFAULT_PAGE_SIZE,
       take: DEFAULT_PAGE_SIZE,
     }),
-    prisma.unavailability.count(),
+    prisma.unavailability.count({ where }),
   ]);
 
   return (

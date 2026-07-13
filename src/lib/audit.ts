@@ -12,6 +12,11 @@ type PrismaClientOrTx = PrismaClient | Prisma.TransactionClient;
 export async function writeAuditLog(
   client: PrismaClientOrTx,
   params: {
+    // Required, never optional/inferred — every audit entry must record
+    // which tenant the action happened in. Always the acting user's own
+    // session-derived organizationId (see src/lib/auth/tenant.ts), never
+    // a client-supplied value.
+    organizationId: string;
     userId: string;
     action: AuditAction;
     entity: string;
@@ -23,6 +28,7 @@ export async function writeAuditLog(
 ) {
   await client.auditLog.create({
     data: {
+      organizationId: params.organizationId,
       userId: params.userId,
       action: params.action,
       entity: params.entity,

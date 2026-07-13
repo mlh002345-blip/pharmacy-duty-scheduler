@@ -268,7 +268,7 @@ export function runDataHealthCheck(input: DataHealthCheckInput): DataHealthRepor
   return { critical, warnings, info };
 }
 
-async function fetchDataHealthReport(): Promise<DataHealthReport> {
+async function fetchDataHealthReport(organizationId: string): Promise<DataHealthReport> {
   const today = todayAtUtcMidnight();
   const currentMonth = today.getUTCMonth() + 1;
   const currentYear = today.getUTCFullYear();
@@ -291,6 +291,7 @@ async function fetchDataHealthReport(): Promise<DataHealthReport> {
     publishedScheduleCount,
   ] = await Promise.all([
     prisma.region.findMany({
+      where: { organizationId },
       select: {
         id: true,
         name: true,
@@ -301,6 +302,7 @@ async function fetchDataHealthReport(): Promise<DataHealthReport> {
       },
     }),
     prisma.pharmacy.findMany({
+      where: { region: { organizationId } },
       select: {
         id: true,
         name: true,
@@ -316,21 +318,28 @@ async function fetchDataHealthReport(): Promise<DataHealthReport> {
     // Node belleğine yüklenmez. Prisma'nın normal sorgu API'si aynı satır
     // içindeki iki kolonu (startDate/endDate) karşılaştıramadığı için
     // burada statik (kullanıcı girdisi içermeyen, ${} interpolasyonu
-    // olmayan) bir $queryRaw kullanılıyor.
+    // olmayan) bir $queryRaw kullanılıyor. organizationId parametreli
+    // olarak bağlanır (string interpolasyonu değil), bu yüzden SQL
+    // injection riski taşımaz.
     prisma.$queryRaw<UnavailabilityHealthInput[]>`
       SELECT p."name" AS "pharmacyName", u."startDate", u."endDate"
       FROM "Unavailability" u
       JOIN "Pharmacy" p ON p."id" = u."pharmacyId"
-      WHERE u."endDate" < u."startDate"
+      JOIN "Region" r ON r."id" = p."regionId"
+      WHERE u."endDate" < u."startDate" AND r."organizationId" = ${organizationId}
     `,
-    prisma.dutyRequest.count({ where: { status: "PENDING" } }),
-    prisma.historicalDutyRecord.count({ where: { matchStatus: "UNMATCHED" } }),
+    prisma.dutyRequest.count({
+      where: { status: "PENDING", pharmacy: { region: { organizationId } } },
+    }),
+    prisma.historicalDutyRecord.count({
+      where: { matchStatus: "UNMATCHED", batch: { organizationId } },
+    }),
     prisma.holiday.count(),
-    prisma.dutyRule.count(),
-    prisma.historicalDutyRecord.count(),
+    prisma.dutyRule.count({ where: { region: { organizationId } } }),
+    prisma.historicalDutyRecord.count({ where: { batch: { organizationId } } }),
     prisma.historicalDutyRecord.groupBy({
       by: ["regionId"],
-      where: { matchStatus: "MATCHED", regionId: { not: null } },
+      where: { matchStatus: "MATCHED", regionId: { not: null }, batch: { organizationId } },
       _count: { _all: true },
     }),
     prisma.dutySchedule.count({
@@ -338,19 +347,21 @@ async function fetchDataHealthReport(): Promise<DataHealthReport> {
         status: "PUBLISHED",
         month: prevMonthDate.getUTCMonth() + 1,
         year: prevMonthDate.getUTCFullYear(),
+        region: { organizationId },
       },
     }),
     prisma.dutySchedule.count({
-      where: { status: "PUBLISHED", month: currentMonth, year: currentYear },
+      where: { status: "PUBLISHED", month: currentMonth, year: currentYear, region: { organizationId } },
     }),
     prisma.dutySchedule.count({
       where: {
         status: "PUBLISHED",
         month: nextMonthDate.getUTCMonth() + 1,
         year: nextMonthDate.getUTCFullYear(),
+        region: { organizationId },
       },
     }),
-    prisma.dutySchedule.count({ where: { status: "PUBLISHED" } }),
+    prisma.dutySchedule.count({ where: { status: "PUBLISHED", region: { organizationId } } }),
   ]);
 
   const regionsWithHistorical = new Set(
@@ -417,14 +428,19 @@ async function fetchDataHealthReport(): Promise<DataHealthReport> {
 // never fed from this cache.
 const DATA_HEALTH_CACHE_TTL_MS = 60_000;
 
-let cachedReport: { value: DataHealthReport; expiresAt: number } | null = null;
+// Bir organizasyonun sağlık raporu asla başka bir organizasyonun önbellek
+// girdisini döndürmemeli — bu yüzden tek bir paylaşılan değer yerine
+// organizationId anahtarlı bir Map kullanılır.
+const cachedReports = new Map<string, { value: DataHealthReport; expiresAt: number }>();
 
-export async function getDataHealthReport(options?: {
-  now?: number;
-}): Promise<DataHealthReport> {
+export async function getDataHealthReport(
+  organizationId: string,
+  options?: { now?: number }
+): Promise<DataHealthReport> {
   const now = options?.now ?? Date.now();
-  if (cachedReport && cachedReport.expiresAt > now) {
-    return cachedReport.value;
+  const cached = cachedReports.get(organizationId);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
   }
   // Only a failed (cache-miss) refresh is logged — a cache hit above
   // never reaches here, so this cannot fire on every dashboard/veri-kontrol
@@ -432,7 +448,7 @@ export async function getDataHealthReport(options?: {
   // actually fails.
   let report: DataHealthReport;
   try {
-    report = await fetchDataHealthReport();
+    report = await fetchDataHealthReport(organizationId);
   } catch (error) {
     logger.error(
       "data_health_report_failed",
@@ -441,6 +457,6 @@ export async function getDataHealthReport(options?: {
     );
     throw error;
   }
-  cachedReport = { value: report, expiresAt: now + DATA_HEALTH_CACHE_TTL_MS };
+  cachedReports.set(organizationId, { value: report, expiresAt: now + DATA_HEALTH_CACHE_TTL_MS });
   return report;
 }

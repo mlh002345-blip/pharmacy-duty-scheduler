@@ -7,6 +7,7 @@ function baseManifest(overrides: Partial<FileTestManifest> = {}): FileTestManife
     runId: "abc123",
     marker: "FILETEST-abc123",
     createdAt: new Date().toISOString(),
+    organizationIds: ["org1"],
     regionIds: ["r1"],
     pharmacyIds: ["p1"],
     userIds: ["u1"],

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import {
   DUTY_REQUEST_SOURCE_LABELS,
@@ -26,11 +26,11 @@ export default async function NobetTalepDetayPage({
 }) {
   const { id } = await params;
 
-  const user = await getCurrentUser();
-  const canManage = !!user && hasPermission(user.role, "manageSetupData");
+  const user = await requireOrganizationMember();
+  const canManage = hasPermission(user.role, "manageSetupData");
 
-  const request = await prisma.dutyRequest.findUnique({
-    where: { id },
+  const request = await prisma.dutyRequest.findFirst({
+    where: { id, pharmacy: { region: { organizationId: user.organizationId } } },
     select: {
       id: true,
       requestType: true,

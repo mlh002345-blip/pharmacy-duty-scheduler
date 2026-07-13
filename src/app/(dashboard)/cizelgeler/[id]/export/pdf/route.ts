@@ -17,7 +17,7 @@ export async function GET(
 ) {
   const user = await getCurrentUser();
   if (!user) redirect("/giris");
-  if (!hasPermission(user.role, "exportSchedule")) {
+  if (!user.organizationId || !hasPermission(user.role, "exportSchedule")) {
     return NextResponse.json(
       { message: "Bu işlem için yetkiniz bulunmuyor." },
       { status: 403 }
@@ -25,7 +25,7 @@ export async function GET(
   }
 
   const { id } = await params;
-  const schedule = await loadDutyScheduleForExport(id);
+  const schedule = await loadDutyScheduleForExport(id, user.organizationId);
   if (!schedule) {
     return NextResponse.json({ message: "Nöbet çizelgesi bulunamadı." }, { status: 404 });
   }

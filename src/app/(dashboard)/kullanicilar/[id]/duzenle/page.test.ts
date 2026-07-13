@@ -12,7 +12,7 @@ class RedirectSignal extends Error {
 }
 
 const prismaMock = {
-  user: { findUnique: vi.fn() },
+  user: { findFirst: vi.fn() },
 };
 const getCurrentUser = vi.fn();
 const notFound = vi.fn(() => {
@@ -47,8 +47,8 @@ beforeEach(() => {
 
 describe("KullaniciDuzenlePage — passwordHash must never reach the client", () => {
   it("queries only the fields the edit form needs, excluding passwordHash", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    prismaMock.user.findUnique.mockResolvedValue({
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
+    prismaMock.user.findFirst.mockResolvedValue({
       id: "user-1",
       name: "Test Kullanıcı",
       email: "test@example.com",
@@ -58,8 +58,8 @@ describe("KullaniciDuzenlePage — passwordHash must never reach the client", ()
 
     await KullaniciDuzenlePage({ params: Promise.resolve({ id: "user-1" }) });
 
-    expect(prismaMock.user.findUnique).toHaveBeenCalledExactlyOnceWith({
-      where: { id: "user-1" },
+    expect(prismaMock.user.findFirst).toHaveBeenCalledExactlyOnceWith({
+      where: { id: "user-1", organizationId: "org-1" },
       select: {
         id: true,
         name: true,
@@ -71,7 +71,7 @@ describe("KullaniciDuzenlePage — passwordHash must never reach the client", ()
   });
 
   it("passes the fetched (select-scoped) user straight through to UserForm", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
     const scopedUser = {
       id: "user-1",
       name: "Test Kullanıcı",
@@ -79,7 +79,7 @@ describe("KullaniciDuzenlePage — passwordHash must never reach the client", ()
       role: "STAFF" as const,
       isActive: true,
     };
-    prismaMock.user.findUnique.mockResolvedValue(scopedUser);
+    prismaMock.user.findFirst.mockResolvedValue(scopedUser);
 
     const result = (await KullaniciDuzenlePage({
       params: Promise.resolve({ id: "user-1" }),
@@ -93,12 +93,12 @@ describe("KullaniciDuzenlePage — passwordHash must never reach the client", ()
   });
 
   it("STAFF cannot access the edit page", async () => {
-    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF" });
+    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF", organizationId: "org-1" });
 
     await expect(
       KullaniciDuzenlePage({ params: Promise.resolve({ id: "user-1" }) })
     ).rejects.toBeInstanceOf(RedirectSignal);
-    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.user.findFirst).not.toHaveBeenCalled();
   });
 });
 

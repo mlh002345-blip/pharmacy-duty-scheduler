@@ -9,6 +9,7 @@ export type FileTestManifest = {
   runId: string;
   marker: string;
   createdAt: string;
+  organizationIds: string[];
   regionIds: string[];
   pharmacyIds: string[];
   userIds: string[];

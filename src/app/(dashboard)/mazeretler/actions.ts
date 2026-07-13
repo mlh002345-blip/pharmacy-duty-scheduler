@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
+import { requireOrganizationRole, requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { unavailabilitySchema } from "@/lib/validations/unavailability";
@@ -22,13 +22,26 @@ export async function createUnavailabilityAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
   const parsed = parseUnavailabilityForm(formData);
   if (!parsed.success) {
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
+  }
+
+  // Cross-tenant relation validation: pharmacyId is client-supplied.
+  const pharmacy = await prisma.pharmacy.findFirst({
+    where: { id: parsed.data.pharmacyId, region: { organizationId: user.organizationId } },
+    select: { id: true },
+  });
+  if (!pharmacy) {
+    return {
+      success: false,
+      message: "Lütfen formdaki hataları düzeltin.",
+      errors: { pharmacyId: ["Seçilen eczane bulunamadı."] },
+    };
   }
 
   await prisma.$transaction(async (tx) => {
@@ -41,6 +54,7 @@ export async function createUnavailabilityAction(
       },
     });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "CREATE",
       entity: "Unavailability",
@@ -58,7 +72,7 @@ export async function updateUnavailabilityAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -67,9 +81,24 @@ export async function updateUnavailabilityAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  const before = await prisma.unavailability.findUnique({ where: { id } });
+  const before = await prisma.unavailability.findFirst({
+    where: { id, pharmacy: { region: { organizationId: user.organizationId } } },
+  });
   if (!before) {
     return { success: false, message: "Mazeret kaydı bulunamadı." };
+  }
+
+  // Cross-tenant relation validation: pharmacyId is client-supplied.
+  const pharmacy = await prisma.pharmacy.findFirst({
+    where: { id: parsed.data.pharmacyId, region: { organizationId: user.organizationId } },
+    select: { id: true },
+  });
+  if (!pharmacy) {
+    return {
+      success: false,
+      message: "Lütfen formdaki hataları düzeltin.",
+      errors: { pharmacyId: ["Seçilen eczane bulunamadı."] },
+    };
   }
 
   await prisma.$transaction(async (tx) => {
@@ -83,6 +112,7 @@ export async function updateUnavailabilityAction(
       },
     });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "UPDATE",
       entity: "Unavailability",
@@ -97,9 +127,11 @@ export async function updateUnavailabilityAction(
 }
 
 export async function deleteUnavailabilityAction(id: string) {
-  const user = await requirePermissionOrRedirect("manageSetupData", "/mazeretler");
+  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/mazeretler");
 
-  const unavailability = await prisma.unavailability.findUnique({ where: { id } });
+  const unavailability = await prisma.unavailability.findFirst({
+    where: { id, pharmacy: { region: { organizationId: user.organizationId } } },
+  });
   if (!unavailability) {
     redirectWithMessage("/mazeretler", "error", "Mazeret kaydı bulunamadı.");
   }
@@ -107,6 +139,7 @@ export async function deleteUnavailabilityAction(id: string) {
   await prisma.$transaction(async (tx) => {
     await tx.unavailability.delete({ where: { id } });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "DELETE",
       entity: "Unavailability",

@@ -5,6 +5,7 @@ import { faker } from "@faker-js/faker/locale/tr";
 
 import { hashPassword } from "../src/lib/auth/password";
 import { generateAndSaveDutySchedule } from "../src/lib/scheduling/generate-and-save-duty-schedule";
+import { normalizeText } from "../src/lib/historical/normalize";
 
 const prisma = new PrismaClient();
 
@@ -177,6 +178,17 @@ async function main() {
   await prisma.region.deleteMany();
   await prisma.user.deleteMany();
 
+  // Demo seed data belongs to one demo organization — never hardcoded to
+  // a real chamber's name (see docs/architecture/MULTI_TENANCY.md).
+  const organization = await prisma.organization.create({
+    data: {
+      name: "Demo Eczacı Odası",
+      province: "Demo",
+      slug: "demo-eczaci-odasi",
+      isActive: true,
+    },
+  });
+
   const createdUsers = await Promise.all(
     USERS.map(async (user) =>
       prisma.user.create({
@@ -185,6 +197,7 @@ async function main() {
           email: user.email,
           role: user.role,
           isActive: true,
+          organizationId: organization.id,
           passwordHash: await hashPassword(user.password),
         },
       })
@@ -195,7 +208,12 @@ async function main() {
   const regions = await Promise.all(
     REGIONS.map((region) =>
       prisma.region.create({
-        data: { name: region.name, district: region.district, dailyDutyCount: 1 },
+        data: {
+          name: region.name,
+          district: region.district,
+          dailyDutyCount: 1,
+          organizationId: organization.id,
+        },
       })
     )
   );
@@ -225,6 +243,7 @@ async function main() {
 
     return {
       name,
+      normalizedName: normalizeText(name),
       pharmacistName: `${firstName} ${lastName}`,
       address,
       phone: turkishLandlinePhone(regionConfig.areaCode),
@@ -308,6 +327,7 @@ async function main() {
   );
   const historicalBatch = await prisma.historicalDutyImportBatch.create({
     data: {
+      organizationId: organization.id,
       fileName: "ornek-gecmis-nobet-listesi.xlsx",
       note: "Demo verisi: bir önceki ayın nöbet listesi",
       rowCount: daysInPrevMonth + 1,
@@ -436,6 +456,7 @@ async function main() {
     month: currentMonth,
     year: currentYear,
     regionId: publishedRegion.id,
+    organizationId: organization.id,
     userId: adminUser.id,
   });
   await prisma.dutySchedule.update({
@@ -447,6 +468,7 @@ async function main() {
     month: currentMonth,
     year: currentYear,
     regionId: draftRegion.id,
+    organizationId: organization.id,
     userId: adminUser.id,
   });
 

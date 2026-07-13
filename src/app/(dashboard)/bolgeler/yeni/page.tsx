@@ -1,10 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { RegionForm } from "../region-form";
 import { createRegionAction } from "../actions";
 
 export default async function YeniBolgePage() {
-  await requirePermissionOrRedirect("manageSetupData", "/bolgeler");
+  await requireOrganizationRoleOrRedirect("manageSetupData", "/bolgeler");
 
   return (
     <div className="flex flex-col gap-6">

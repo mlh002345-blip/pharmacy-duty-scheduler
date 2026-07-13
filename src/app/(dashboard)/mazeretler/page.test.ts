@@ -62,7 +62,7 @@ function textContent(node: unknown): string {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF" });
+  getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF", organizationId: "org-1" });
   prismaMock.unavailability.findMany.mockResolvedValue([]);
   prismaMock.unavailability.count.mockResolvedValue(0);
 });
@@ -72,6 +72,7 @@ describe("MazeretlerPage — paginated, select-scoped query", () => {
     await MazeretlerPage({ searchParams: searchParams() });
 
     expect(prismaMock.unavailability.findMany).toHaveBeenCalledExactlyOnceWith({
+      where: { pharmacy: { region: { organizationId: "org-1" } } },
       select: {
         id: true,
         startDate: true,

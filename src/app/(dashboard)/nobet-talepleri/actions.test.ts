@@ -11,16 +11,16 @@ class RedirectSignal extends Error {
 }
 
 const prismaMock = {
-  dutyRequest: { findUnique: vi.fn(), updateMany: vi.fn() },
+  dutyRequest: { findFirst: vi.fn(), updateMany: vi.fn() },
   $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
 };
 
-const requirePermissionOrState = vi.fn();
+const requireOrganizationRole = vi.fn();
 const writeAuditLog = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/auth/guard", () => ({
-  requirePermissionOrState: (...args: unknown[]) => requirePermissionOrState(...args),
+vi.mock("@/lib/auth/tenant", () => ({
+  requireOrganizationRole: (...args: unknown[]) => requireOrganizationRole(...args),
 }));
 vi.mock("@/lib/audit", () => ({
   writeAuditLog: (...args: unknown[]) => writeAuditLog(...args),
@@ -52,14 +52,16 @@ function reviewFormData(decision: string, reviewNote = "") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requirePermissionOrState.mockResolvedValue({ user: { id: "admin-1", role: "ADMIN" } });
+  requireOrganizationRole.mockResolvedValue({
+    user: { id: "admin-1", role: "ADMIN", organizationId: "org-1" },
+  });
 });
 
 describe("reviewDutyRequestAction — conditional update prevents double review", () => {
   it("second review attempt does not overwrite the final status and returns a friendly message", async () => {
     // Simulates: reviewer 1's update already flipped status away from
     // PENDING before reviewer 2's updateMany runs (0 rows matched).
-    prismaMock.dutyRequest.findUnique.mockResolvedValue(request());
+    prismaMock.dutyRequest.findFirst.mockResolvedValue(request());
     prismaMock.dutyRequest.updateMany.mockResolvedValue({ count: 0 });
 
     const result = await reviewDutyRequestAction(
@@ -74,7 +76,7 @@ describe("reviewDutyRequestAction — conditional update prevents double review"
   });
 
   it("successful review updates the status conditionally and writes the audit log in the same transaction", async () => {
-    prismaMock.dutyRequest.findUnique.mockResolvedValue(request());
+    prismaMock.dutyRequest.findFirst.mockResolvedValue(request());
     prismaMock.dutyRequest.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(
@@ -86,14 +88,18 @@ describe("reviewDutyRequestAction — conditional update prevents double review"
     ).rejects.toBeInstanceOf(RedirectSignal);
 
     expect(prismaMock.dutyRequest.updateMany).toHaveBeenCalledExactlyOnceWith({
-      where: { id: "request-1", status: { in: ["PENDING", "LATE"] } },
+      where: {
+        id: "request-1",
+        status: { in: ["PENDING", "LATE"] },
+        pharmacy: { region: { organizationId: "org-1" } },
+      },
       data: expect.objectContaining({ status: "APPROVED" }),
     });
     expect(writeAuditLog).toHaveBeenCalledOnce();
   });
 
   it("rejects with a review note when the request is still pending", async () => {
-    prismaMock.dutyRequest.findUnique.mockResolvedValue(request());
+    prismaMock.dutyRequest.findFirst.mockResolvedValue(request());
     prismaMock.dutyRequest.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(
@@ -108,7 +114,7 @@ describe("reviewDutyRequestAction — conditional update prevents double review"
   });
 
   it("blocks review of a request that is already APPROVED/REJECTED at the initial read (sequential case)", async () => {
-    prismaMock.dutyRequest.findUnique.mockResolvedValue(request({ status: "APPROVED" }));
+    prismaMock.dutyRequest.findFirst.mockResolvedValue(request({ status: "APPROVED" }));
 
     const result = await reviewDutyRequestAction(
       "request-1",
@@ -122,7 +128,7 @@ describe("reviewDutyRequestAction — conditional update prevents double review"
   });
 
   it("clears dedupKey to null when a request leaves PENDING/LATE, so an identical future public submission is not blocked", async () => {
-    prismaMock.dutyRequest.findUnique.mockResolvedValue(request());
+    prismaMock.dutyRequest.findFirst.mockResolvedValue(request());
     prismaMock.dutyRequest.updateMany.mockResolvedValue({ count: 1 });
 
     await expect(
@@ -134,7 +140,11 @@ describe("reviewDutyRequestAction — conditional update prevents double review"
     ).rejects.toBeInstanceOf(RedirectSignal);
 
     expect(prismaMock.dutyRequest.updateMany).toHaveBeenCalledExactlyOnceWith({
-      where: { id: "request-1", status: { in: ["PENDING", "LATE"] } },
+      where: {
+        id: "request-1",
+        status: { in: ["PENDING", "LATE"] },
+        pharmacy: { region: { organizationId: "org-1" } },
+      },
       data: expect.objectContaining({ dedupKey: null }),
     });
   });
@@ -153,6 +163,6 @@ describe("reviewDutyRequestAction — conditional update prevents double review"
     // `errors` key at all.
     expect(result.errors).toBeDefined();
     expect(result.errors?.decision).toBeDefined();
-    expect(prismaMock.dutyRequest.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.dutyRequest.findFirst).not.toHaveBeenCalled();
   });
 });

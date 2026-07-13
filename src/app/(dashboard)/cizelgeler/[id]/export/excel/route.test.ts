@@ -29,7 +29,7 @@ const { GET } = await import("./route");
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+  getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
   loadDutyScheduleForExport.mockResolvedValue({ id: "schedule-1", assignments: [] });
 });
 

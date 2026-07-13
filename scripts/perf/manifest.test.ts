@@ -8,6 +8,7 @@ function baseManifest(overrides: Partial<PerfManifest> = {}): PerfManifest {
     marker: "PERF-abc123",
     profile: "quick",
     createdAt: new Date().toISOString(),
+    organizationId: "org1",
     regionIds: ["r1"],
     pharmacyIds: ["p1"],
     userIds: ["u1"],

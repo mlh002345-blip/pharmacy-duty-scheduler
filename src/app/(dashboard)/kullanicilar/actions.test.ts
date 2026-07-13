@@ -12,7 +12,6 @@ class RedirectSignal extends Error {
 
 const prismaMock = {
   user: {
-    findUnique: vi.fn(),
     findFirst: vi.fn(),
     update: vi.fn(),
     count: vi.fn(),
@@ -27,13 +26,13 @@ const invalidateUserSessions = vi.fn();
 const clearSessionCookie = vi.fn();
 const writeAuditLog = vi.fn();
 const revalidatePath = vi.fn();
-const requirePermissionOrState = vi.fn();
-const requirePermissionOrRedirect = vi.fn();
+const requireOrganizationRole = vi.fn();
+const requireOrganizationRoleOrRedirect = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/auth/guard", () => ({
-  requirePermissionOrState: (...args: unknown[]) => requirePermissionOrState(...args),
-  requirePermissionOrRedirect: (...args: unknown[]) => requirePermissionOrRedirect(...args),
+vi.mock("@/lib/auth/tenant", () => ({
+  requireOrganizationRole: (...args: unknown[]) => requireOrganizationRole(...args),
+  requireOrganizationRoleOrRedirect: (...args: unknown[]) => requireOrganizationRoleOrRedirect(...args),
 }));
 vi.mock("@/lib/auth/password", () => ({
   hashPassword: vi.fn(async (password: string) => `hashed:${password}`),
@@ -56,7 +55,11 @@ vi.mock("@/lib/flash-redirect", () => ({
 
 const { updateUserAction, setUserStatusAction } = await import("./actions");
 
-const ADMIN = { id: "admin-1", role: "ADMIN" as const };
+// Set before calling updateUserAction/setUserStatusAction in each test —
+// see the findFirst mockImplementation in beforeEach below.
+let currentTargetUser: unknown = null;
+
+const ADMIN = { id: "admin-1", role: "ADMIN" as const, organizationId: "org-1" };
 const OTHER_ADMIN_FOR_QUORUM = { id: "admin-quorum" };
 
 function makeFormData(fields: Record<string, string>): FormData {
@@ -79,9 +82,17 @@ function baseUserRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requirePermissionOrState.mockResolvedValue({ user: ADMIN });
-  requirePermissionOrRedirect.mockResolvedValue(ADMIN);
-  prismaMock.user.findFirst.mockResolvedValue(null); // no email duplicate
+  requireOrganizationRole.mockResolvedValue({ user: ADMIN });
+  requireOrganizationRoleOrRedirect.mockResolvedValue(ADMIN);
+  currentTargetUser = null;
+  prismaMock.user.findFirst.mockImplementation(async ({ where }: { where: { id?: string; email?: string } }) => {
+    // Real code issues two distinct findFirst calls: one by id
+    // (organization-scoped "before" lookup) and one by email (duplicate
+    // check). Both share this mock function, so dispatch on the shape
+    // of `where` rather than call order.
+    if (where.email) return null; // no email duplicate in these tests
+    return currentTargetUser;
+  });
   prismaMock.user.count.mockResolvedValue(2); // enough active admins for quorum checks
   void OTHER_ADMIN_FOR_QUORUM;
 });
@@ -89,7 +100,7 @@ beforeEach(() => {
 describe("updateUserAction — session invalidation on password change", () => {
   it("deletes the target user's sessions when an admin changes another user's password", async () => {
     const before = baseUserRow();
-    prismaMock.user.findUnique.mockResolvedValue(before);
+    currentTargetUser = before;
     prismaMock.user.update.mockResolvedValue({ ...before, passwordHash: "hashed:NewPass123" });
 
     const formData = makeFormData({
@@ -112,7 +123,7 @@ describe("updateUserAction — session invalidation on password change", () => {
 
   it("does not delete sessions when updating a user without changing the password", async () => {
     const before = baseUserRow();
-    prismaMock.user.findUnique.mockResolvedValue(before);
+    currentTargetUser = before;
     prismaMock.user.update.mockResolvedValue(before);
 
     const formData = makeFormData({
@@ -134,7 +145,7 @@ describe("updateUserAction — session invalidation on password change", () => {
 
   it("clears the acting admin's own cookie and redirects to /giris when they change their own password", async () => {
     const before = baseUserRow({ id: ADMIN.id, role: "ADMIN" });
-    prismaMock.user.findUnique.mockResolvedValue(before);
+    currentTargetUser = before;
     prismaMock.user.update.mockResolvedValue({ ...before, passwordHash: "hashed:NewPass123" });
 
     const formData = makeFormData({
@@ -161,7 +172,7 @@ describe("updateUserAction — session invalidation on password change", () => {
 
   it("deactivation-related behavior is unaffected by the session-invalidation change (still blocks deactivating the last active admin)", async () => {
     const before = baseUserRow({ id: "sole-admin", role: "ADMIN", isActive: true });
-    prismaMock.user.findUnique.mockResolvedValue(before);
+    currentTargetUser = before;
     prismaMock.user.count.mockResolvedValue(1); // this is the only active admin
 
     const formData = makeFormData({
@@ -183,7 +194,7 @@ describe("updateUserAction — session invalidation on password change", () => {
 
   it("propagates a session-invalidation failure instead of reporting success (password update and session deletion are one transaction)", async () => {
     const before = baseUserRow();
-    prismaMock.user.findUnique.mockResolvedValue(before);
+    currentTargetUser = before;
     prismaMock.user.update.mockResolvedValue({ ...before, passwordHash: "hashed:NewPass123" });
     invalidateUserSessions.mockRejectedValueOnce(new Error("db connection dropped"));
 
@@ -223,7 +234,7 @@ describe("updateUserAction — session invalidation on password change", () => {
       return { ...admin1, ...data };
     });
 
-    prismaMock.user.findUnique.mockResolvedValue(admin1);
+    currentTargetUser = admin1;
     const formData1 = makeFormData({
       name: admin1.name,
       email: admin1.email,
@@ -238,7 +249,7 @@ describe("updateUserAction — session invalidation on password change", () => {
     ).rejects.toBeInstanceOf(RedirectSignal);
     expect(committedActiveAdmins).toBe(1);
 
-    prismaMock.user.findUnique.mockResolvedValue(admin2);
+    currentTargetUser = admin2;
     const formData2 = makeFormData({
       name: admin2.name,
       email: admin2.email,
@@ -262,8 +273,8 @@ describe("setUserStatusAction — last-active-admin guard runs inside the transa
 
   it("cannot deactivate the last active admin", async () => {
     const target = activeAdmin();
-    requirePermissionOrRedirect.mockResolvedValue({ id: "other-admin", role: "ADMIN" });
-    prismaMock.user.findUnique.mockResolvedValue(target);
+    requireOrganizationRoleOrRedirect.mockResolvedValue({ id: "other-admin", role: "ADMIN", organizationId: "org-1" });
+    currentTargetUser = target;
     prismaMock.user.count.mockResolvedValue(1);
 
     await expect(setUserStatusAction(target.id, false)).rejects.toBeInstanceOf(RedirectSignal);
@@ -272,8 +283,8 @@ describe("setUserStatusAction — last-active-admin guard runs inside the transa
 
   it("STAFF/VIEWER toggles still work unaffected (no admin-guard overhead)", async () => {
     const staff = baseUserRow({ id: "staff-1", role: "STAFF", isActive: true });
-    requirePermissionOrRedirect.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    prismaMock.user.findUnique.mockResolvedValue(staff);
+    requireOrganizationRoleOrRedirect.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
+    currentTargetUser = staff;
     prismaMock.user.update.mockResolvedValue({ ...staff, isActive: false });
 
     await expect(setUserStatusAction(staff.id, false)).rejects.toBeInstanceOf(RedirectSignal);
@@ -288,8 +299,8 @@ describe("setUserStatusAction — last-active-admin guard runs inside the transa
 
   it("activating an admin still works (guard only applies to deactivation)", async () => {
     const inactiveAdmin = activeAdmin({ isActive: false });
-    requirePermissionOrRedirect.mockResolvedValue({ id: "other-admin", role: "ADMIN" });
-    prismaMock.user.findUnique.mockResolvedValue(inactiveAdmin);
+    requireOrganizationRoleOrRedirect.mockResolvedValue({ id: "other-admin", role: "ADMIN", organizationId: "org-1" });
+    currentTargetUser = inactiveAdmin;
     prismaMock.user.update.mockResolvedValue({ ...inactiveAdmin, isActive: true });
 
     await expect(setUserStatusAction(inactiveAdmin.id, true)).rejects.toBeInstanceOf(RedirectSignal);
@@ -303,12 +314,12 @@ describe("setUserStatusAction — last-active-admin guard runs inside the transa
 
   it("double-submitting a deactivate call leaves a STAFF user inactive (not flipped back)", async () => {
     const staff = baseUserRow({ id: "staff-2", role: "STAFF", isActive: true });
-    requirePermissionOrRedirect.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    prismaMock.user.findUnique.mockResolvedValue(staff);
+    requireOrganizationRoleOrRedirect.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
+    currentTargetUser = staff;
     prismaMock.user.update.mockResolvedValue({ ...staff, isActive: false });
 
     await expect(setUserStatusAction(staff.id, false)).rejects.toBeInstanceOf(RedirectSignal);
-    prismaMock.user.findUnique.mockResolvedValue({ ...staff, isActive: false });
+    currentTargetUser = { ...staff, isActive: false };
     await expect(setUserStatusAction(staff.id, false)).rejects.toBeInstanceOf(RedirectSignal);
 
     expect(prismaMock.user.update).toHaveBeenCalledTimes(2);
@@ -319,8 +330,8 @@ describe("setUserStatusAction — last-active-admin guard runs inside the transa
 
   it("last-active-admin protection still applies on every retried deactivate submission", async () => {
     const target = activeAdmin();
-    requirePermissionOrRedirect.mockResolvedValue({ id: "other-admin", role: "ADMIN" });
-    prismaMock.user.findUnique.mockResolvedValue(target);
+    requireOrganizationRoleOrRedirect.mockResolvedValue({ id: "other-admin", role: "ADMIN", organizationId: "org-1" });
+    currentTargetUser = target;
     prismaMock.user.count.mockResolvedValue(1);
 
     await expect(setUserStatusAction(target.id, false)).rejects.toBeInstanceOf(RedirectSignal);

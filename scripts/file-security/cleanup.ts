@@ -28,7 +28,7 @@ async function cleanupOneManifest(manifest: FileTestManifest): Promise<void> {
   }
 
   log(`Cleaning up run ${manifest.runId} (marker ${manifest.marker})`);
-  const { regionIds, pharmacyIds, userIds, historicalBatchIds } = manifest;
+  const { organizationIds, regionIds, pharmacyIds, userIds, historicalBatchIds } = manifest;
 
   await fileTestPrisma.auditLog.deleteMany({ where: { userId: { in: userIds } } });
   await fileTestPrisma.historicalDutyRecord.deleteMany({ where: { batchId: { in: historicalBatchIds } } });
@@ -44,6 +44,10 @@ async function cleanupOneManifest(manifest: FileTestManifest): Promise<void> {
   await fileTestPrisma.pharmacy.deleteMany({ where: { id: { in: pharmacyIds } } });
   await fileTestPrisma.user.deleteMany({ where: { id: { in: userIds } } });
   await fileTestPrisma.region.deleteMany({ where: { id: { in: regionIds } } });
+  // Organization.onDelete is Restrict for Region/User/AuditLog/
+  // HistoricalDutyImportBatch — deleting it last, after every dependent
+  // row above, is required for this to succeed.
+  await fileTestPrisma.organization.deleteMany({ where: { id: { in: organizationIds } } });
 
   rmSync(manifestPath(manifest.runId), { force: true });
   log(`Run ${manifest.runId} cleaned up.`);

@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth/password";
+import { normalizeText } from "@/lib/historical/normalize";
 
 // Every row created by an integration test is tagged with a short,
 // per-test-run unique id (via name/email prefixes) so that even if
@@ -12,6 +13,7 @@ export function testRunId(): string {
 }
 
 export type TrackedIds = {
+  organizationIds: string[];
   userIds: string[];
   regionIds: string[];
   pharmacyIds: string[];
@@ -21,6 +23,7 @@ export type TrackedIds = {
 
 export function newTrackedIds(): TrackedIds {
   return {
+    organizationIds: [],
     userIds: [],
     regionIds: [],
     pharmacyIds: [],
@@ -29,16 +32,41 @@ export function newTrackedIds(): TrackedIds {
   };
 }
 
+// Most integration tests only need one organization (single-tenant
+// scenarios); multi-tenant-isolation tests call this twice and pass each
+// distinct organization's id explicitly into createTestRegion/
+// createTestUser below.
+export async function createTestOrganization(tracked: TrackedIds) {
+  const id = testRunId();
+  const organization = await prisma.organization.create({
+    data: {
+      name: `Test Oda ${id}`,
+      province: "Test",
+      slug: `test-oda-${id}`,
+      isActive: true,
+    },
+  });
+  tracked.organizationIds.push(organization.id);
+  return organization;
+}
+
 export async function createTestRegion(
   tracked: TrackedIds,
-  overrides: Partial<{ name: string; dailyDutyCount: number }> = {}
+  overrides: Partial<{ name: string; dailyDutyCount: number; organizationId: string }> = {}
 ) {
+  // Existing (pre-multi-tenancy) single-org call sites never pass
+  // organizationId — a fresh organization is created for them
+  // automatically, preserving their tests' semantics unchanged.
+  // Multi-tenant-isolation tests pass organizationId explicitly to place
+  // two regions in two distinct, previously-created organizations.
+  const organizationId = overrides.organizationId ?? (await createTestOrganization(tracked)).id;
   const region = await prisma.region.create({
     data: {
       name: overrides.name ?? `Test Bölge ${testRunId()}`,
       district: "Test İlçe",
       dailyDutyCount: overrides.dailyDutyCount ?? 1,
       isActive: true,
+      organizationId,
     },
   });
   tracked.regionIds.push(region.id);
@@ -64,9 +92,11 @@ export async function createTestPharmacy(
   regionId: string,
   overrides: Partial<{ name: string; requestToken: string; isActive: boolean }> = {}
 ) {
+  const name = overrides.name ?? `Test Eczane ${testRunId()}`;
   const pharmacy = await prisma.pharmacy.create({
     data: {
-      name: overrides.name ?? `Test Eczane ${testRunId()}`,
+      name,
+      normalizedName: normalizeText(name),
       pharmacistName: "Test Eczacı",
       phone: "0000000000",
       address: "Test Adres",
@@ -83,9 +113,15 @@ export async function createTestPharmacy(
 
 export async function createTestUser(
   tracked: TrackedIds,
-  overrides: Partial<{ role: "ADMIN" | "STAFF" | "VIEWER"; isActive: boolean; email: string }> = {}
+  overrides: Partial<{
+    role: "ADMIN" | "STAFF" | "VIEWER";
+    isActive: boolean;
+    email: string;
+    organizationId: string;
+  }> = {}
 ) {
   const id = testRunId();
+  const organizationId = overrides.organizationId ?? (await createTestOrganization(tracked)).id;
   const user = await prisma.user.create({
     data: {
       name: `Test Kullanıcı ${id}`,
@@ -93,6 +129,7 @@ export async function createTestUser(
       passwordHash: await hashPassword("Test1234!"),
       role: overrides.role ?? "ADMIN",
       isActive: overrides.isActive ?? true,
+      organizationId,
     },
   });
   tracked.userIds.push(user.id);
@@ -169,7 +206,30 @@ export async function cleanupTrackedIds(tracked: TrackedIds): Promise<void> {
     await prisma.auditLog.deleteMany({
       where: { OR: [{ entity: "User", entityId: { in: tracked.userIds } }, { userId: { in: tracked.userIds } }] },
     });
+    // PharmacyImportBatch.createdById -> User has no cascade (only
+    // PharmacyImportBatch.organizationId does, and that only fires when
+    // the Organization row itself is deleted, further below) — a batch
+    // created by a tracked user must be deleted here or user.deleteMany
+    // hits a FK violation. PharmacyImportRow cascades from its batch.
+    await prisma.pharmacyImportBatch.deleteMany({
+      where: { createdById: { in: tracked.userIds } },
+    });
     await prisma.session.deleteMany({ where: { userId: { in: tracked.userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: tracked.userIds } } });
+  }
+
+  // Organization.onDelete is Restrict for Region/User/AuditLog — deleting
+  // it last, after every dependent row above, is required for this to
+  // succeed. AuditLog.organizationId is also Restrict, and platform-level
+  // actions (Organization create/update/status-toggle) write AuditLog
+  // rows with entity: "Organization" that none of the entity-specific
+  // cleanup above covers — delete every remaining AuditLog row still
+  // pointing at a tracked organization before deleting the organizations
+  // themselves.
+  if (tracked.organizationIds.length > 0) {
+    await prisma.auditLog.deleteMany({
+      where: { organizationId: { in: tracked.organizationIds } },
+    });
+    await prisma.organization.deleteMany({ where: { id: { in: tracked.organizationIds } } });
   }
 }

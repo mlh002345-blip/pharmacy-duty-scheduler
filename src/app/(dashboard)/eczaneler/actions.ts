@@ -5,11 +5,19 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
+import { requireOrganizationRole, requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
+import { normalizeText } from "@/lib/historical/normalize";
 import { pharmacySchema } from "@/lib/validations/pharmacy";
 import { type ActionState, zodErrorState } from "@/lib/action-state";
+
+const PHARMACY_NOT_FOUND_STATE: ActionState = { success: false, message: "Eczane bulunamadı." };
+const REGION_NOT_FOUND_STATE: ActionState = {
+  success: false,
+  message: "Seçilen bölge bulunamadı.",
+  errors: { regionId: ["Seçilen bölge bulunamadı."] },
+};
 
 function parsePharmacyForm(formData: FormData) {
   return pharmacySchema.safeParse({
@@ -25,11 +33,19 @@ function parsePharmacyForm(formData: FormData) {
   });
 }
 
+// Cross-tenant relation validation: a client-supplied regionId is only
+// ever trusted after confirming it belongs to the authenticated user's
+// own organization — never a bare existence check. Prevents Organization
+// A from submitting Organization B's real regionId.
+async function findOwnedRegion(regionId: string, organizationId: string) {
+  return prisma.region.findFirst({ where: { id: regionId, organizationId } });
+}
+
 export async function createPharmacyAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -38,17 +54,24 @@ export async function createPharmacyAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
+  const region = await findOwnedRegion(parsed.data.regionId, user.organizationId);
+  if (!region) {
+    return REGION_NOT_FOUND_STATE;
+  }
+
   const { mapUrl, ...rest } = parsed.data;
   await prisma.$transaction(async (tx) => {
     const created = await tx.pharmacy.create({
       data: {
         ...rest,
+        normalizedName: normalizeText(rest.name),
         mapUrl: mapUrl || null,
         // Herkese açık nöbet talep formu bağlantısı için eczaneye özel token.
         requestToken: randomBytes(16).toString("hex"),
       },
     });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "CREATE",
       entity: "Pharmacy",
@@ -66,7 +89,7 @@ export async function updatePharmacyAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -75,18 +98,30 @@ export async function updatePharmacyAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  const before = await prisma.pharmacy.findUnique({ where: { id } });
+  // Pharmacy has no direct organizationId column — ownership is derived
+  // through region.organizationId. Verified here, before the mutating
+  // call, in the same request/transaction — never fetched globally and
+  // compared only in the UI.
+  const before = await prisma.pharmacy.findFirst({
+    where: { id, region: { organizationId: user.organizationId } },
+  });
   if (!before) {
-    return { success: false, message: "Eczane bulunamadı." };
+    return PHARMACY_NOT_FOUND_STATE;
+  }
+
+  const region = await findOwnedRegion(parsed.data.regionId, user.organizationId);
+  if (!region) {
+    return REGION_NOT_FOUND_STATE;
   }
 
   const { mapUrl, ...rest } = parsed.data;
   await prisma.$transaction(async (tx) => {
     const updated = await tx.pharmacy.update({
       where: { id },
-      data: { ...rest, mapUrl: mapUrl || null },
+      data: { ...rest, normalizedName: normalizeText(rest.name), mapUrl: mapUrl || null },
     });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "UPDATE",
       entity: "Pharmacy",
@@ -107,9 +142,11 @@ export async function updatePharmacyAction(
 // mevcut durumun tersini sabit bir değer olarak gönderir), böylece aynı
 // isteğin tekrarı her zaman aynı sonuca yakınsar.
 export async function setPharmacyStatusAction(id: string, isActive: boolean) {
-  const user = await requirePermissionOrRedirect("manageSetupData", "/eczaneler");
+  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/eczaneler");
 
-  const pharmacy = await prisma.pharmacy.findUnique({ where: { id } });
+  const pharmacy = await prisma.pharmacy.findFirst({
+    where: { id, region: { organizationId: user.organizationId } },
+  });
   if (!pharmacy) {
     redirectWithMessage("/eczaneler", "error", "Eczane bulunamadı.");
   }
@@ -120,6 +157,7 @@ export async function setPharmacyStatusAction(id: string, isActive: boolean) {
       data: { isActive },
     });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "UPDATE",
       entity: "Pharmacy",
@@ -139,7 +177,14 @@ export async function setPharmacyStatusAction(id: string, isActive: boolean) {
 }
 
 export async function deletePharmacyAction(id: string) {
-  const user = await requirePermissionOrRedirect("deleteSetupData", "/eczaneler");
+  const user = await requireOrganizationRoleOrRedirect("deleteSetupData", "/eczaneler");
+
+  const pharmacy = await prisma.pharmacy.findFirst({
+    where: { id, region: { organizationId: user.organizationId } },
+  });
+  if (!pharmacy) {
+    redirectWithMessage("/eczaneler", "error", "Eczane bulunamadı.");
+  }
 
   const assignmentCount = await prisma.dutyAssignment.count({
     where: { pharmacyId: id },
@@ -152,14 +197,10 @@ export async function deletePharmacyAction(id: string) {
     );
   }
 
-  const pharmacy = await prisma.pharmacy.findUnique({ where: { id } });
-  if (!pharmacy) {
-    redirectWithMessage("/eczaneler", "error", "Eczane bulunamadı.");
-  }
-
   await prisma.$transaction(async (tx) => {
     await tx.pharmacy.delete({ where: { id } });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "DELETE",
       entity: "Pharmacy",

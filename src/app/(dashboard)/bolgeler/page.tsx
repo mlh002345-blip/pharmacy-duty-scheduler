@@ -15,7 +15,7 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { DeleteButton } from "@/components/layout/delete-button";
 import { StatusToggleButton } from "@/components/layout/status-toggle-button";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 import { deleteRegionAction, setRegionStatusAction } from "./actions";
 
@@ -28,11 +28,12 @@ export default async function BolgelerPage({
 }) {
   const { success, error } = await searchParams;
 
-  const user = await getCurrentUser();
-  const canManage = !!user && hasPermission(user.role, "manageSetupData");
-  const canDelete = !!user && hasPermission(user.role, "deleteSetupData");
+  const user = await requireOrganizationMember();
+  const canManage = hasPermission(user.role, "manageSetupData");
+  const canDelete = hasPermission(user.role, "deleteSetupData");
 
   const regions = await prisma.region.findMany({
+    where: { organizationId: user.organizationId },
     include: { _count: { select: { pharmacies: true } } },
     orderBy: { name: "asc" },
   });

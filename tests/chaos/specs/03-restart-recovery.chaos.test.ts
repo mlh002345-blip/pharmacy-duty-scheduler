@@ -169,6 +169,7 @@ describe("scenario C: PostgreSQL restart and recovery", () => {
           month: 6,
           year: 2033,
           regionId: region.id,
+          organizationId: region.organizationId,
           userId: user.id,
         });
       } catch (error) {

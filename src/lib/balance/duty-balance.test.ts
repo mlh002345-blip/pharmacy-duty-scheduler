@@ -46,7 +46,7 @@ describe("getDutyBalanceRows — zero fallback correctness", () => {
   it("a pharmacy with no historical records, no adjustments, and no generated assignments is zero everywhere, never NaN or undefined", async () => {
     prismaMock.pharmacy.findMany.mockResolvedValue([pharmacy("p1", "Deva Eczanesi")]);
 
-    const rows = await getDutyBalanceRows();
+    const rows = await getDutyBalanceRows({ organizationId: "org-1" });
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
@@ -83,7 +83,7 @@ describe("getDutyBalanceRows — historical + adjustment + generated combine cor
       { pharmacyId: "p1", _sum: { weight: 0.5 }, _count: { _all: 1 } },
     ]);
 
-    const rows = await getDutyBalanceRows();
+    const rows = await getDutyBalanceRows({ organizationId: "org-1" });
 
     expect(rows[0].historicalCount).toBe(2);
     expect(rows[0].historicalPoints).toBe(2.5);
@@ -100,7 +100,7 @@ describe("getDutyBalanceRows — historical + adjustment + generated combine cor
       { pharmacyId: "p1", _sum: { points: -8 } },
     ]);
 
-    const rows = await getDutyBalanceRows();
+    const rows = await getDutyBalanceRows({ organizationId: "org-1" });
 
     expect(rows[0].adjustmentPoints).toBe(-8);
     expect(rows[0].totalBalance).toBe(-8);
@@ -116,7 +116,7 @@ describe("getDutyBalanceRows — historical + adjustment + generated combine cor
       // p2 has no group at all — the ?? 0 fallback path.
     ]);
 
-    const rows = await getDutyBalanceRows();
+    const rows = await getDutyBalanceRows({ organizationId: "org-1" });
 
     const p1 = rows.find((r) => r.pharmacyId === "p1")!;
     const p2 = rows.find((r) => r.pharmacyId === "p2")!;
@@ -141,7 +141,7 @@ describe("getDutyBalanceRows — pharmacies missing from a grouped query still a
       { pharmacyId: "p1", _sum: { weight: 1 }, _count: { _all: 1 } },
     ]);
 
-    const rows = await getDutyBalanceRows();
+    const rows = await getDutyBalanceRows({ organizationId: "org-1" });
 
     expect(rows).toHaveLength(2);
     const p2 = rows.find((r) => r.pharmacyId === "p2")!;
@@ -166,7 +166,7 @@ describe("getDutyBalanceRows — output order follows the DB-provided pharmacy o
       pharmacy("p2", "Beta Eczanesi"),
     ]);
 
-    const rows = await getDutyBalanceRows();
+    const rows = await getDutyBalanceRows({ organizationId: "org-1" });
 
     expect(rows.map((r) => r.pharmacyId)).toEqual(["p3", "p1", "p2"]);
   });
@@ -176,31 +176,38 @@ describe("getDutyBalanceRows — region scoping reaches every underlying query",
   it("passes regionId through to the pharmacy, historical, adjustment, and generated-assignment queries", async () => {
     prismaMock.pharmacy.findMany.mockResolvedValue([]);
 
-    await getDutyBalanceRows({ regionId: "region-1" });
+    await getDutyBalanceRows({ organizationId: "org-1", regionId: "region-1" });
 
     expect(prismaMock.pharmacy.findMany).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ where: { regionId: "region-1" } })
+      expect.objectContaining({
+        where: { regionId: "region-1", region: { organizationId: "org-1" } },
+      })
     );
     // $queryRaw is invoked as a tagged template, so the mock receives
-    // (stringsArray, ...substitutions) — the regionId is one of the
+    // (stringsArray, ...substitutions) — the regionId/organizationId are
     // interpolated values rather than a structured `where` object.
     expect(prismaMock.$queryRaw).toHaveBeenCalledOnce();
     expect(prismaMock.$queryRaw.mock.calls[0]).toContain("region-1");
+    expect(prismaMock.$queryRaw.mock.calls[0]).toContain("org-1");
     expect(prismaMock.dutyBalanceAdjustment.groupBy).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ where: { pharmacy: { regionId: "region-1" } } })
+      expect.objectContaining({
+        where: { pharmacy: { regionId: "region-1", region: { organizationId: "org-1" } } },
+      })
     );
     expect(prismaMock.dutyAssignment.groupBy).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ where: { pharmacy: { regionId: "region-1" } } })
+      expect.objectContaining({
+        where: { pharmacy: { regionId: "region-1", region: { organizationId: "org-1" } } },
+      })
     );
   });
 
-  it("without a regionId, queries are unscoped (system-wide report)", async () => {
+  it("without a regionId, queries are scoped to the whole organization", async () => {
     prismaMock.pharmacy.findMany.mockResolvedValue([]);
 
-    await getDutyBalanceRows();
+    await getDutyBalanceRows({ organizationId: "org-1" });
 
     expect(prismaMock.pharmacy.findMany).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ where: {} })
+      expect.objectContaining({ where: { region: { organizationId: "org-1" } } })
     );
   });
 });

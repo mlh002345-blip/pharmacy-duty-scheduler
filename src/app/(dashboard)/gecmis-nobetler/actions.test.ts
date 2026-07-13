@@ -20,7 +20,7 @@ function p2002(target: string[]) {
 }
 
 const prismaMock = {
-  pharmacy: { findUnique: vi.fn(), findMany: vi.fn() },
+  pharmacy: { findFirst: vi.fn(), findMany: vi.fn() },
   region: { findMany: vi.fn() },
   holiday: { findMany: vi.fn() },
   historicalDutyImportBatch: { create: vi.fn() },
@@ -29,12 +29,12 @@ const prismaMock = {
   $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
 };
 
-const requirePermissionOrState = vi.fn();
+const requireOrganizationRole = vi.fn();
 const writeAuditLog = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/auth/guard", () => ({
-  requirePermissionOrState: (...args: unknown[]) => requirePermissionOrState(...args),
+vi.mock("@/lib/auth/tenant", () => ({
+  requireOrganizationRole: (...args: unknown[]) => requireOrganizationRole(...args),
 }));
 vi.mock("@/lib/audit", () => ({
   writeAuditLog: (...args: unknown[]) => writeAuditLog(...args),
@@ -50,7 +50,7 @@ const { createBalanceAdjustmentAction, deleteBalanceAdjustmentAction, historical
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requirePermissionOrState.mockResolvedValue({ user: { id: "admin-1" } });
+  requireOrganizationRole.mockResolvedValue({ user: { id: "admin-1", organizationId: "org-1" } });
   prismaMock.region.findMany.mockResolvedValue([{ id: "region-1", name: "Kadıköy" }]);
   prismaMock.holiday.findMany.mockResolvedValue([]);
   prismaMock.pharmacy.findMany.mockResolvedValue([
@@ -69,7 +69,7 @@ function adjustmentFormData(overrides: Record<string, string> = {}) {
 
 describe("createBalanceAdjustmentAction — duplicate submit protection", () => {
   beforeEach(() => {
-    prismaMock.pharmacy.findUnique.mockResolvedValue({ id: "pharmacy-1", name: "Deva Eczanesi" });
+    prismaMock.pharmacy.findFirst.mockResolvedValue({ id: "pharmacy-1", name: "Deva Eczanesi" });
     prismaMock.dutyBalanceAdjustment.create.mockResolvedValue({ id: "adj-1" });
   });
 
@@ -123,7 +123,7 @@ describe("createBalanceAdjustmentAction — duplicate submit protection", () => 
 
 describe("deleteBalanceAdjustmentAction — shared unauthorized-message convention", () => {
   it("uses the standard UNAUTHORIZED_MESSAGE wording, not a locally hardcoded string", async () => {
-    requirePermissionOrState.mockResolvedValue({
+    requireOrganizationRole.mockResolvedValue({
       user: null,
       state: { success: false, message: "Bu işlem için yetkiniz bulunmuyor." },
     });

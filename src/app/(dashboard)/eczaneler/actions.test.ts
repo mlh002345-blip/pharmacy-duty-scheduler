@@ -11,7 +11,7 @@ class RedirectSignal extends Error {
 }
 
 const prismaMock = {
-  pharmacy: { findUnique: vi.fn(), delete: vi.fn(), update: vi.fn() },
+  pharmacy: { findFirst: vi.fn(), delete: vi.fn(), update: vi.fn() },
   dutyAssignment: { count: vi.fn() },
   $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
 };
@@ -50,8 +50,8 @@ beforeEach(() => {
 
 describe("deletePharmacyAction — deleteSetupData is ADMIN-only", () => {
   it("STAFF cannot delete a pharmacy", async () => {
-    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF" });
-    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy());
+    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF", organizationId: "org-1" });
+    prismaMock.pharmacy.findFirst.mockResolvedValue(pharmacy());
 
     await expect(deletePharmacyAction("pharmacy-1")).rejects.toBeInstanceOf(RedirectSignal);
 
@@ -59,8 +59,8 @@ describe("deletePharmacyAction — deleteSetupData is ADMIN-only", () => {
   });
 
   it("VIEWER cannot delete a pharmacy", async () => {
-    getCurrentUser.mockResolvedValue({ id: "viewer-1", role: "VIEWER" });
-    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy());
+    getCurrentUser.mockResolvedValue({ id: "viewer-1", role: "VIEWER", organizationId: "org-1" });
+    prismaMock.pharmacy.findFirst.mockResolvedValue(pharmacy());
 
     await expect(deletePharmacyAction("pharmacy-1")).rejects.toBeInstanceOf(RedirectSignal);
 
@@ -68,8 +68,8 @@ describe("deletePharmacyAction — deleteSetupData is ADMIN-only", () => {
   });
 
   it("ADMIN can delete a pharmacy when safety guards allow (no assignments attached)", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy());
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
+    prismaMock.pharmacy.findFirst.mockResolvedValue(pharmacy());
     prismaMock.pharmacy.delete.mockResolvedValue(pharmacy());
 
     await expect(deletePharmacyAction("pharmacy-1")).rejects.toBeInstanceOf(RedirectSignal);
@@ -80,7 +80,7 @@ describe("deletePharmacyAction — deleteSetupData is ADMIN-only", () => {
   });
 
   it("ADMIN is still blocked by the safety guard when duty assignments exist", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
     prismaMock.dutyAssignment.count.mockResolvedValue(5);
 
     let caught: unknown;
@@ -98,8 +98,8 @@ describe("deletePharmacyAction — deleteSetupData is ADMIN-only", () => {
   });
 
   it("propagates an audit-log failure instead of reporting success (transaction, not a swallowed error)", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy());
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
+    prismaMock.pharmacy.findFirst.mockResolvedValue(pharmacy());
     prismaMock.pharmacy.delete.mockResolvedValue(pharmacy());
     writeAuditLog.mockRejectedValueOnce(new Error("db connection dropped"));
 
@@ -109,8 +109,8 @@ describe("deletePharmacyAction — deleteSetupData is ADMIN-only", () => {
 
 describe("setPharmacyStatusAction — explicit desired state, retry-safe", () => {
   it("double-submitting a deactivate call leaves the pharmacy inactive (not flipped back)", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy({ isActive: true }));
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
+    prismaMock.pharmacy.findFirst.mockResolvedValue(pharmacy({ isActive: true }));
     prismaMock.pharmacy.update.mockResolvedValue(pharmacy({ isActive: false }));
 
     await expect(setPharmacyStatusAction("pharmacy-1", false)).rejects.toBeInstanceOf(
@@ -118,7 +118,7 @@ describe("setPharmacyStatusAction — explicit desired state, retry-safe", () =>
     );
     // Second, retried submission of the exact same form (same bound target
     // state) — simulates a double click / browser resubmit.
-    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy({ isActive: false }));
+    prismaMock.pharmacy.findFirst.mockResolvedValue(pharmacy({ isActive: false }));
     await expect(setPharmacyStatusAction("pharmacy-1", false)).rejects.toBeInstanceOf(
       RedirectSignal
     );
@@ -134,8 +134,8 @@ describe("setPharmacyStatusAction — explicit desired state, retry-safe", () =>
   });
 
   it("double-submitting an activate call leaves the pharmacy active", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    prismaMock.pharmacy.findUnique.mockResolvedValue(pharmacy({ isActive: false }));
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
+    prismaMock.pharmacy.findFirst.mockResolvedValue(pharmacy({ isActive: false }));
     prismaMock.pharmacy.update.mockResolvedValue(pharmacy({ isActive: true }));
 
     await expect(setPharmacyStatusAction("pharmacy-1", true)).rejects.toBeInstanceOf(

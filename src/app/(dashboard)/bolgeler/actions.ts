@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
+import { requireOrganizationRole, requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { regionSchema } from "@/lib/validations/region";
@@ -16,9 +16,11 @@ const DUPLICATE_REGION_NAME_STATE: ActionState = {
   errors: { name: ["Bu isimde bir bölge zaten mevcut."] },
 };
 
-// Region tablosunda değiştirilebilir tek benzersiz alan name olduğundan, bu
-// işlemlerin yazdığı transaction'larda oluşabilecek herhangi bir P2002 bu
-// alandan kaynaklanır.
+const REGION_NOT_FOUND_STATE: ActionState = { success: false, message: "Bölge bulunamadı." };
+
+// Region tablosunda değiştirilebilir tek benzersiz alan (organizationId,
+// name) olduğundan, bu işlemlerin yazdığı transaction'larda oluşabilecek
+// herhangi bir P2002 bu alandan kaynaklanır.
 function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
@@ -36,7 +38,7 @@ export async function createRegionAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -46,7 +48,7 @@ export async function createRegionAction(
   }
 
   const existing = await prisma.region.findUnique({
-    where: { name: parsed.data.name },
+    where: { organizationId_name: { organizationId: user.organizationId, name: parsed.data.name } },
   });
   if (existing) {
     return DUPLICATE_REGION_NAME_STATE;
@@ -54,8 +56,11 @@ export async function createRegionAction(
 
   try {
     await prisma.$transaction(async (tx) => {
-      const created = await tx.region.create({ data: parsed.data });
+      const created = await tx.region.create({
+        data: { ...parsed.data, organizationId: user.organizationId },
+      });
       await writeAuditLog(tx, {
+        organizationId: user.organizationId,
         userId: user.id,
         action: "CREATE",
         entity: "Region",
@@ -82,7 +87,7 @@ export async function updateRegionAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -91,13 +96,17 @@ export async function updateRegionAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  const before = await prisma.region.findUnique({ where: { id } });
+  // Query by id AND organizationId together — never fetch globally and
+  // compare in application code. A record belonging to another
+  // organization returns the same "not found" state a truly-missing id
+  // would, never revealing that a different tenant's row exists.
+  const before = await prisma.region.findFirst({ where: { id, organizationId: user.organizationId } });
   if (!before) {
-    return { success: false, message: "Bölge bulunamadı." };
+    return REGION_NOT_FOUND_STATE;
   }
 
   const duplicate = await prisma.region.findFirst({
-    where: { name: parsed.data.name, NOT: { id } },
+    where: { organizationId: user.organizationId, name: parsed.data.name, NOT: { id } },
   });
   if (duplicate) {
     return DUPLICATE_REGION_NAME_STATE;
@@ -106,10 +115,11 @@ export async function updateRegionAction(
   try {
     await prisma.$transaction(async (tx) => {
       const updated = await tx.region.update({
-        where: { id },
+        where: { id, organizationId: user.organizationId },
         data: parsed.data,
       });
       await writeAuditLog(tx, {
+        organizationId: user.organizationId,
         userId: user.id,
         action: "UPDATE",
         entity: "Region",
@@ -133,19 +143,20 @@ export async function updateRegionAction(
 // setPharmacyStatusAction yorumu) — çift gönderimde amaçlanan değişikliği
 // sessizce iptal eden bir "toggle" değildir.
 export async function setRegionStatusAction(id: string, isActive: boolean) {
-  const user = await requirePermissionOrRedirect("manageSetupData", "/bolgeler");
+  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/bolgeler");
 
-  const region = await prisma.region.findUnique({ where: { id } });
+  const region = await prisma.region.findFirst({ where: { id, organizationId: user.organizationId } });
   if (!region) {
     redirectWithMessage("/bolgeler", "error", "Bölge bulunamadı.");
   }
 
   const updated = await prisma.$transaction(async (tx) => {
     const next = await tx.region.update({
-      where: { id },
+      where: { id, organizationId: user.organizationId },
       data: { isActive },
     });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "UPDATE",
       entity: "Region",
@@ -165,9 +176,11 @@ export async function setRegionStatusAction(id: string, isActive: boolean) {
 }
 
 export async function deleteRegionAction(id: string) {
-  const user = await requirePermissionOrRedirect("deleteSetupData", "/bolgeler");
+  const user = await requireOrganizationRoleOrRedirect("deleteSetupData", "/bolgeler");
 
-  const pharmacyCount = await prisma.pharmacy.count({ where: { regionId: id } });
+  const pharmacyCount = await prisma.pharmacy.count({
+    where: { regionId: id, region: { organizationId: user.organizationId } },
+  });
   if (pharmacyCount > 0) {
     redirectWithMessage(
       "/bolgeler",
@@ -176,14 +189,15 @@ export async function deleteRegionAction(id: string) {
     );
   }
 
-  const region = await prisma.region.findUnique({ where: { id } });
+  const region = await prisma.region.findFirst({ where: { id, organizationId: user.organizationId } });
   if (!region) {
     redirectWithMessage("/bolgeler", "error", "Bölge bulunamadı.");
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.region.delete({ where: { id } });
+    await tx.region.delete({ where: { id, organizationId: user.organizationId } });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "DELETE",
       entity: "Region",

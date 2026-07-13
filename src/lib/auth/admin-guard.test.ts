@@ -14,14 +14,14 @@ describe("assertLastActiveAdminNotRemoved", () => {
     const tx = makeTx(1);
 
     await expect(
-      assertLastActiveAdminNotRemoved(tx as never)
+      assertLastActiveAdminNotRemoved(tx as never, "org-1")
     ).rejects.toBeInstanceOf(LastActiveAdminError);
   });
 
   it("throws when there are zero active admins (already inconsistent state)", async () => {
     const tx = makeTx(0);
 
-    await expect(assertLastActiveAdminNotRemoved(tx as never)).rejects.toBeInstanceOf(
+    await expect(assertLastActiveAdminNotRemoved(tx as never, "org-1")).rejects.toBeInstanceOf(
       LastActiveAdminError
     );
   });
@@ -29,7 +29,7 @@ describe("assertLastActiveAdminNotRemoved", () => {
   it("resolves without throwing when more than one active admin remains", async () => {
     const tx = makeTx(2);
 
-    await expect(assertLastActiveAdminNotRemoved(tx as never)).resolves.toBeUndefined();
+    await expect(assertLastActiveAdminNotRemoved(tx as never, "org-1")).resolves.toBeUndefined();
   });
 
   it("acquires the advisory lock before counting (serializes concurrent callers)", async () => {
@@ -44,7 +44,7 @@ describe("assertLastActiveAdminNotRemoved", () => {
       return 2;
     });
 
-    await assertLastActiveAdminNotRemoved(tx as never);
+    await assertLastActiveAdminNotRemoved(tx as never, "org-1");
 
     expect(callOrder).toEqual(["lock", "count"]);
   });

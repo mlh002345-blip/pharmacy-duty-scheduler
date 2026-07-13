@@ -3,7 +3,7 @@ import type { UserRole } from "@prisma/client";
 
 import { hasPermission, type Permission } from "./permissions";
 
-const ALL_ROLES: UserRole[] = ["ADMIN", "STAFF", "VIEWER"];
+const ALL_ROLES: UserRole[] = ["PLATFORM_ADMIN", "ADMIN", "STAFF", "VIEWER"];
 
 const ALL_PERMISSIONS: Permission[] = [
   "manageSetupData",
@@ -14,6 +14,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "deleteSchedule",
   "exportSchedule",
   "manageUsers",
+  "importPharmacies",
 ];
 
 // The full role × permission matrix, as an explicit, reviewable table
@@ -22,6 +23,20 @@ const ALL_PERMISSIONS: Permission[] = [
 // permission (privilege escalation) or silently drops one (a broken
 // feature) shows up as a failing cell here, not just an existence check.
 const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
+  // PLATFORM_ADMIN holds none of these organization-scoped permissions —
+  // it manages Organizations themselves (src/lib/auth/platform.ts), not
+  // any organization's data. See permissions.ts's own comment.
+  PLATFORM_ADMIN: {
+    manageSetupData: false,
+    deleteSetupData: false,
+    generateSchedule: false,
+    editAssignment: false,
+    publishSchedule: false,
+    deleteSchedule: false,
+    exportSchedule: false,
+    manageUsers: false,
+    importPharmacies: false,
+  },
   ADMIN: {
     manageSetupData: true,
     deleteSetupData: true,
@@ -31,6 +46,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     deleteSchedule: true,
     exportSchedule: true,
     manageUsers: true,
+    importPharmacies: true,
   },
   STAFF: {
     manageSetupData: true,
@@ -41,6 +57,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     deleteSchedule: false,
     exportSchedule: true,
     manageUsers: false,
+    importPharmacies: false,
   },
   VIEWER: {
     manageSetupData: false,
@@ -51,6 +68,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     deleteSchedule: false,
     exportSchedule: true,
     manageUsers: false,
+    importPharmacies: false,
   },
 };
 
@@ -90,6 +108,12 @@ describe("hasPermission — key security invariants stated explicitly", () => {
       expect(hasPermission("VIEWER", permission)).toBe(false);
     }
     expect(hasPermission("VIEWER", "exportSchedule")).toBe(true);
+  });
+
+  it("PLATFORM_ADMIN holds none of the organization-scoped permissions (it manages Organizations, never their data)", () => {
+    for (const permission of ALL_PERMISSIONS) {
+      expect(hasPermission("PLATFORM_ADMIN", permission)).toBe(false);
+    }
   });
 
   it("a permission not explicitly granted to a role is denied by default (fail-closed, not fail-open)", () => {

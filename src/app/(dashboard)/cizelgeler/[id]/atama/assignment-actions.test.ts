@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 
 const prismaMock = {
-  dutyAssignment: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-  pharmacy: { findUnique: vi.fn() },
+  dutyAssignment: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+  pharmacy: { findFirst: vi.fn() },
   unavailability: { findMany: vi.fn() },
   dutyRequest: { findMany: vi.fn() },
   // Test double for an interactive transaction: runs the callback with the
@@ -11,7 +11,7 @@ const prismaMock = {
   $transaction: vi.fn((fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock)),
 };
 
-const requirePermissionOrState = vi.fn();
+const requireOrganizationRole = vi.fn();
 const writeAuditLog = vi.fn();
 const revalidatePath = vi.fn();
 const redirect = vi.fn((path: string) => {
@@ -19,8 +19,8 @@ const redirect = vi.fn((path: string) => {
 });
 
 vi.mock("@/lib/prisma", () => ({ prisma: prismaMock }));
-vi.mock("@/lib/auth/guard", () => ({
-  requirePermissionOrState: (...args: unknown[]) => requirePermissionOrState(...args),
+vi.mock("@/lib/auth/tenant", () => ({
+  requireOrganizationRole: (...args: unknown[]) => requireOrganizationRole(...args),
 }));
 vi.mock("@/lib/audit", () => ({
   writeAuditLog: (...args: unknown[]) => writeAuditLog(...args),
@@ -73,9 +73,11 @@ function makeFormData(fields: Record<string, string>): FormData {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  requirePermissionOrState.mockResolvedValue({ user: { id: "staff-1", role: "STAFF" } });
-  prismaMock.dutyAssignment.findUnique.mockResolvedValue(baseAssignment());
-  prismaMock.pharmacy.findUnique.mockResolvedValue(candidatePharmacy());
+  requireOrganizationRole.mockResolvedValue({
+    user: { id: "staff-1", role: "STAFF", organizationId: "org-1" },
+  });
+  prismaMock.dutyAssignment.findFirst.mockResolvedValue(baseAssignment());
+  prismaMock.pharmacy.findFirst.mockResolvedValue(candidatePharmacy());
   prismaMock.unavailability.findMany.mockResolvedValue([]);
   prismaMock.dutyRequest.findMany.mockResolvedValue([]);
   prismaMock.dutyAssignment.update.mockResolvedValue({

@@ -1,10 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requirePermissionOrRedirectWithMessage } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { UserForm } from "../user-form";
 import { createUserAction } from "../actions";
 
 export default async function YeniKullaniciPage() {
-  await requirePermissionOrRedirectWithMessage(
+  await requireOrganizationRoleOrRedirect(
     "manageUsers",
     "/",
     "Bu sayfaya erişim yetkiniz bulunmuyor."

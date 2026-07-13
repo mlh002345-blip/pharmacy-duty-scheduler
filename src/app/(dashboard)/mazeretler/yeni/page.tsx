@@ -1,12 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { UnavailabilityForm } from "../unavailability-form";
 import { createUnavailabilityAction } from "../actions";
 
 export default async function YeniMazeretPage() {
-  await requirePermissionOrRedirect("manageSetupData", "/mazeretler");
+  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/mazeretler");
   const pharmacies = await prisma.pharmacy.findMany({
+    where: { region: { organizationId: user.organizationId } },
     include: { region: true },
     orderBy: { name: "asc" },
   });

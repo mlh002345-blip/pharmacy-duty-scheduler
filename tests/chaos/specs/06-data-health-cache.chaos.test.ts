@@ -34,7 +34,7 @@ describe("scenario F: data-health cache failure and recovery", () => {
     const T0 = Date.now();
 
     // 1. A normal, successful refresh populates the cache.
-    const firstReport = await getDataHealthReport({ now: T0 });
+    const firstReport = await getDataHealthReport("chaos-test-org", { now: T0 });
     expect(firstReport).toBeDefined();
     expect(errorSpy).not.toHaveBeenCalled();
 
@@ -48,7 +48,7 @@ describe("scenario F: data-health cache failure and recovery", () => {
     const T1 = T0 + 61_000;
     let refreshError: unknown;
     try {
-      await getDataHealthReport({ now: T1 });
+      await getDataHealthReport("chaos-test-org", { now: T1 });
     } catch (error) {
       refreshError = error;
     }
@@ -72,7 +72,7 @@ describe("scenario F: data-health cache failure and recovery", () => {
     // failure, not a corrupted report.
     let secondRefreshError: unknown;
     try {
-      await getDataHealthReport({ now: T1 + 1_000 });
+      await getDataHealthReport("chaos-test-org", { now: T1 + 1_000 });
     } catch (error) {
       secondRefreshError = error;
     }
@@ -94,7 +94,7 @@ describe("scenario F: data-health cache failure and recovery", () => {
     let recoveredReport: Awaited<ReturnType<typeof getDataHealthReport>> | undefined;
     for (let attempt = 0; attempt < 10 && !recoveredReport; attempt++) {
       try {
-        recoveredReport = await getDataHealthReport({ now: T2 + attempt * 300 });
+        recoveredReport = await getDataHealthReport("chaos-test-org", { now: T2 + attempt * 300 });
       } catch {
         await new Promise((resolve) => setTimeout(resolve, 300));
       }

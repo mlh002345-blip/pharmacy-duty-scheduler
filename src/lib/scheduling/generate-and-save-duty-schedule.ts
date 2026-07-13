@@ -10,6 +10,10 @@ export type GenerateAndSaveDutyScheduleInput = {
   month: number;
   year: number;
   regionId: string;
+  // Her zaman çağıranın (session'dan türetilmiş) organizationId'si —
+  // regionId'nin bu organizasyona ait olduğu, bu fonksiyon çağrılmadan
+  // önce çağıran tarafında zaten doğrulanmış olmalıdır.
+  organizationId: string;
   // Oluşturma işlemini başlatan kullanıcı: denetim kaydı, çizelge/atama/uyarı
   // yazımlarıyla aynı veritabanı işlemi (transaction) içinde yazılır ki
   // denetim kaydı başarısız olursa taslak çizelge de geri alınsın.
@@ -28,6 +32,7 @@ export async function generateAndSaveDutySchedule({
   month,
   year,
   regionId,
+  organizationId,
   userId,
   writeAuditLogFn = writeAuditLog,
 }: GenerateAndSaveDutyScheduleInput) {
@@ -133,6 +138,7 @@ export async function generateAndSaveDutySchedule({
     }
 
     await writeAuditLogFn(tx as Prisma.TransactionClient, {
+      organizationId,
       userId,
       action: "CREATE",
       entity: "DutySchedule",

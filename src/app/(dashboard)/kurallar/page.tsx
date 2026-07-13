@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +25,11 @@ export default async function KurallarPage({
 }) {
   const { success, error } = await searchParams;
 
-  const user = await getCurrentUser();
-  const canManage = !!user && hasPermission(user.role, "manageSetupData");
+  const user = await requireOrganizationMember();
+  const canManage = hasPermission(user.role, "manageSetupData");
 
   const regions = await prisma.region.findMany({
+    where: { organizationId: user.organizationId },
     include: { dutyRule: true },
     orderBy: { name: "asc" },
   });

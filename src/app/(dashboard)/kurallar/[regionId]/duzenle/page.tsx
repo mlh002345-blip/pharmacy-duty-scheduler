@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { DutyRuleForm } from "../../duty-rule-form";
 import { upsertDutyRuleAction } from "../../actions";
 
@@ -11,10 +11,10 @@ export default async function KuralDuzenlePage({
 }: {
   params: Promise<{ regionId: string }>;
 }) {
-  await requirePermissionOrRedirect("manageSetupData", "/kurallar");
+  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/kurallar");
   const { regionId } = await params;
-  const region = await prisma.region.findUnique({
-    where: { id: regionId },
+  const region = await prisma.region.findFirst({
+    where: { id: regionId, organizationId: user.organizationId },
     include: { dutyRule: true },
   });
   if (!region) notFound();

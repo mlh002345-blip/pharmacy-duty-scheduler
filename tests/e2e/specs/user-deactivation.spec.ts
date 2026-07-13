@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 import {
+  createE2EOrganization,
   createE2EUser,
   createE2ESession,
   cleanupTrackedIds,
@@ -21,10 +22,11 @@ test.describe("user deactivation session behavior", () => {
     browser,
     baseURL,
   }) => {
-    const target = await createE2EUser(tracked, { role: "STAFF" });
+    const organization = await createE2EOrganization(tracked);
+    const target = await createE2EUser(tracked, { role: "STAFF", organizationId: organization.id });
     const targetToken = await createE2ESession(tracked, target.id);
 
-    const admin = await createE2EUser(tracked, { role: "ADMIN" });
+    const admin = await createE2EUser(tracked, { role: "ADMIN", organizationId: organization.id });
     const adminToken = await createE2ESession(tracked, admin.id);
 
     const targetContext = await browser.newContext();

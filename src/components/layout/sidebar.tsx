@@ -14,10 +14,12 @@ export function Sidebar({
   userName,
   roleLabel,
   role,
+  organizationSlug,
 }: {
   userName: string;
   roleLabel: string;
   role: UserRole;
+  organizationSlug?: string;
 }) {
   const pathname = usePathname();
   const visibleNavItems = navItems.filter(
@@ -50,11 +52,15 @@ export function Sidebar({
               ? pathname === "/"
               : pathname.startsWith(item.href);
           const Icon = item.icon;
+          const href =
+            item.href === "/vatandas" && organizationSlug
+              ? `/vatandas?org=${encodeURIComponent(organizationSlug)}`
+              : item.href;
 
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={href}
               className={cn(
                 "relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive

@@ -1,12 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { PharmacyForm } from "../pharmacy-form";
 import { createPharmacyAction } from "../actions";
 
 export default async function YeniEczanePage() {
-  await requirePermissionOrRedirect("manageSetupData", "/eczaneler");
-  const regions = await prisma.region.findMany({ orderBy: { name: "asc" } });
+  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/eczaneler");
+  const regions = await prisma.region.findMany({
+    where: { organizationId: user.organizationId },
+    orderBy: { name: "asc" },
+  });
 
   return (
     <div className="flex flex-col gap-6">

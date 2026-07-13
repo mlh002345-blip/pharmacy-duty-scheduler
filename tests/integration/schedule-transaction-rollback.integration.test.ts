@@ -31,6 +31,7 @@ describe("schedule generation transaction rollback (real Postgres)", () => {
         month: 8,
         year: 2027,
         regionId: region.id,
+        organizationId: region.organizationId,
         userId: admin.id,
         // Test-only seam (see generate-and-save-duty-schedule.ts): runs
         // inside the real transaction, using the real tx client, but
@@ -73,6 +74,7 @@ describe("schedule generation transaction rollback (real Postgres)", () => {
       month: 9,
       year: 2027,
       regionId: region.id,
+      organizationId: region.organizationId,
       userId: admin.id,
     });
     tracked.dutyScheduleIds.push(schedule.id);

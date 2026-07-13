@@ -1,12 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { DutyScheduleForm } from "../duty-schedule-form";
 
 export default async function YeniCizelgePage() {
-  await requirePermissionOrRedirect("generateSchedule", "/cizelgeler");
+  const user = await requireOrganizationRoleOrRedirect("generateSchedule", "/cizelgeler");
   const regions = await prisma.region.findMany({
-    where: { isActive: true },
+    where: { isActive: true, organizationId: user.organizationId },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

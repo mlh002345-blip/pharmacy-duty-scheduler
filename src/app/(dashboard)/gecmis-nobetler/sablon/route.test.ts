@@ -25,7 +25,7 @@ beforeEach(() => {
 
 describe("GET /gecmis-nobetler/sablon — manageSetupData required", () => {
   it("VIEWER cannot download the template (403)", async () => {
-    getCurrentUser.mockResolvedValue({ id: "viewer-1", role: "VIEWER" });
+    getCurrentUser.mockResolvedValue({ id: "viewer-1", role: "VIEWER", organizationId: "org-1" });
 
     const response = await GET();
 
@@ -34,7 +34,7 @@ describe("GET /gecmis-nobetler/sablon — manageSetupData required", () => {
   });
 
   it("STAFF can download the template", async () => {
-    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF" });
+    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF", organizationId: "org-1" });
 
     const response = await GET();
 
@@ -43,7 +43,7 @@ describe("GET /gecmis-nobetler/sablon — manageSetupData required", () => {
   });
 
   it("ADMIN can download the template", async () => {
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
 
     const response = await GET();
 
@@ -62,7 +62,7 @@ describe("GET /gecmis-nobetler/sablon — controlled error contract (same shape 
 
   beforeEach(() => {
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
   });
 
   afterEach(() => {
@@ -113,7 +113,7 @@ describe("GET /gecmis-nobetler/sablon — controlled error contract (same shape 
   });
 
   it("does not log on a 403 (permission check happens before the try/catch)", async () => {
-    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "VIEWER" });
+    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "VIEWER", organizationId: "org-1" });
 
     const response = await GET();
 

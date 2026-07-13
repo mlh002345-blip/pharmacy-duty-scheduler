@@ -8,7 +8,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
-import { requirePermissionOrState } from "@/lib/auth/guard";
+import { requireOrganizationRole } from "@/lib/auth/tenant";
 import { zodErrorState, type ActionState } from "@/lib/action-state";
 import { logger } from "@/lib/observability/logger";
 import { getRequestId } from "@/lib/observability/request-id";
@@ -56,10 +56,18 @@ function computeImportFingerprint(rows: ImportAnalysis["rows"]): string {
   return createHash("sha256").update(JSON.stringify(canonicalRows)).digest("hex");
 }
 
-async function analyzeRows(inputRows: ImportRowInput[]): Promise<ImportAnalysis> {
+async function analyzeRows(
+  inputRows: ImportRowInput[],
+  organizationId: string
+): Promise<ImportAnalysis> {
   const [pharmacies, regions, holidays] = await Promise.all([
-    prisma.pharmacy.findMany({ select: { id: true, name: true, regionId: true } }),
-    prisma.region.findMany({ select: { id: true, name: true } }),
+    prisma.pharmacy.findMany({
+      where: { region: { organizationId } },
+      select: { id: true, name: true, regionId: true },
+    }),
+    prisma.region.findMany({ where: { organizationId }, select: { id: true, name: true } }),
+    // Holiday is a shared/global table (national/religious calendar facts,
+    // not chamber-owned data) — intentionally not organization-scoped.
     prisma.holiday.findMany({ select: { date: true, type: true } }),
   ]);
 
@@ -126,7 +134,7 @@ export async function historicalImportAction(
   _state: ImportActionState,
   formData: FormData
 ): Promise<ImportActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return { success: false, message: guard.state.message };
 
   const mode = formData.get("mode");
@@ -214,7 +222,7 @@ export async function historicalImportAction(
 
   // Analiz her iki modda da sunucuda yeniden çalışır (eşleştirme, tekrar ve
   // tarih kontrolleri dahil); istemciden gelen veriye güvenilmez.
-  const analysis = await analyzeRows(inputRows);
+  const analysis = await analyzeRows(inputRows, guard.user.organizationId);
 
   if (mode !== "import") {
     // Önizleme modu: hiçbir şey kaydedilmez.
@@ -246,6 +254,7 @@ export async function historicalImportAction(
       const created = await tx.historicalDutyImportBatch.create({
         data: {
           fileName,
+          organizationId: guard.user.organizationId,
           importedById: guard.user.id,
           rowCount: analysis.totalCount,
           matchedCount: analysis.matchedCount,
@@ -276,6 +285,7 @@ export async function historicalImportAction(
       });
 
       await writeAuditLog(tx, {
+        organizationId: guard.user.organizationId,
         userId: guard.user.id,
         action: "CREATE",
         entity: "HistoricalDutyImportBatch",
@@ -351,7 +361,7 @@ export async function createBalanceAdjustmentAction(
   _state: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("manageSetupData");
+  const guard = await requireOrganizationRole("manageSetupData");
   if (!guard.user) return { success: false, message: guard.state.message };
 
   const parsed = adjustmentSchema.safeParse({
@@ -363,8 +373,9 @@ export async function createBalanceAdjustmentAction(
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
   }
 
-  const pharmacy = await prisma.pharmacy.findUnique({
-    where: { id: parsed.data.pharmacyId },
+  // Cross-tenant relation validation: pharmacyId is client-supplied.
+  const pharmacy = await prisma.pharmacy.findFirst({
+    where: { id: parsed.data.pharmacyId, region: { organizationId: guard.user.organizationId } },
     select: { id: true, name: true },
   });
   if (!pharmacy) {
@@ -398,6 +409,7 @@ export async function createBalanceAdjustmentAction(
       },
     });
     await writeAuditLog(tx, {
+      organizationId: guard.user.organizationId,
       userId: guard.user.id,
       action: "CREATE",
       entity: "DutyBalanceAdjustment",
@@ -422,13 +434,13 @@ export async function deleteBalanceAdjustmentAction(adjustmentId: string) {
   // requirePermissionOrState kullanımlarıyla tutarlı olsun diye, ortak
   // UNAUTHORIZED_MESSAGE (guard.state.message) kullanılır — bu eylemin
   // kendine özgü bir yetkisizlik metni yoktur.
-  const guard = await requirePermissionOrState("manageUsers");
+  const guard = await requireOrganizationRole("manageUsers");
   if (!guard.user) {
     redirectWithMessage("/gecmis-nobetler", "error", guard.state.message);
   }
 
-  const adjustment = await prisma.dutyBalanceAdjustment.findUnique({
-    where: { id: adjustmentId },
+  const adjustment = await prisma.dutyBalanceAdjustment.findFirst({
+    where: { id: adjustmentId, pharmacy: { region: { organizationId: guard.user.organizationId } } },
     select: {
       id: true,
       points: true,
@@ -443,6 +455,7 @@ export async function deleteBalanceAdjustmentAction(adjustmentId: string) {
   await prisma.$transaction(async (tx) => {
     await tx.dutyBalanceAdjustment.delete({ where: { id: adjustmentId } });
     await writeAuditLog(tx, {
+      organizationId: guard.user.organizationId,
       userId: guard.user.id,
       action: "DELETE",
       entity: "DutyBalanceAdjustment",

@@ -70,6 +70,7 @@ describe("scenario B: DB disconnect mid multi-write transaction", () => {
         month: MONTH,
         year: YEAR,
         regionId: region.id,
+        organizationId: region.organizationId,
         userId: user.id,
         writeAuditLogFn: killMidTransaction,
       });

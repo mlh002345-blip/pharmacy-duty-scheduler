@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect, requirePermissionOrState } from "@/lib/auth/guard";
+import { requireOrganizationRole, requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { writeAuditLog } from "@/lib/audit";
 import { redirectWithMessage } from "@/lib/flash-redirect";
 import { createDutyScheduleSchema } from "@/lib/validations/duty-schedule";
@@ -22,7 +22,7 @@ export async function createDutyScheduleAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const guard = await requirePermissionOrState("generateSchedule");
+  const guard = await requireOrganizationRole("generateSchedule");
   if (!guard.user) return guard.state;
   const { user } = guard;
 
@@ -38,8 +38,11 @@ export async function createDutyScheduleAction(
 
   const { month, year, regionId } = parsed.data;
 
-  const region = await prisma.region.findUnique({
-    where: { id: regionId },
+  // Cross-tenant relation validation: regionId is client-supplied, only
+  // trusted after confirming it belongs to the authenticated user's own
+  // organization.
+  const region = await prisma.region.findFirst({
+    where: { id: regionId, organizationId: user.organizationId },
     include: {
       dutyRule: true,
       pharmacies: { where: { isActive: true }, select: { id: true } },
@@ -105,7 +108,13 @@ export async function createDutyScheduleAction(
   let scheduleId: string;
   let infoMessages: string[];
   try {
-    const result = await generateAndSaveDutySchedule({ month, year, regionId, userId: user.id });
+    const result = await generateAndSaveDutySchedule({
+      month,
+      year,
+      regionId,
+      userId: user.id,
+      organizationId: user.organizationId,
+    });
     scheduleId = result.schedule.id;
     infoMessages = [...preCheck.warnings, ...result.info];
   } catch (error) {
@@ -162,9 +171,11 @@ export async function createDutyScheduleAction(
 }
 
 export async function deleteDutyScheduleAction(id: string) {
-  const user = await requirePermissionOrRedirect("deleteSchedule", "/cizelgeler");
+  const user = await requireOrganizationRoleOrRedirect("deleteSchedule", "/cizelgeler");
 
-  const schedule = await prisma.dutySchedule.findUnique({ where: { id } });
+  const schedule = await prisma.dutySchedule.findFirst({
+    where: { id, region: { organizationId: user.organizationId } },
+  });
   if (!schedule) {
     redirectWithMessage("/cizelgeler", "error", "Nöbet çizelgesi bulunamadı.");
   }
@@ -181,6 +192,7 @@ export async function deleteDutyScheduleAction(id: string) {
     await tx.dutyAssignment.deleteMany({ where: { dutyScheduleId: id } });
     await tx.dutySchedule.delete({ where: { id } });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "DELETE",
       entity: "DutySchedule",
@@ -194,10 +206,10 @@ export async function deleteDutyScheduleAction(id: string) {
 }
 
 export async function publishDutyScheduleAction(id: string) {
-  const user = await requirePermissionOrRedirect("publishSchedule", `/cizelgeler/${id}`);
+  const user = await requireOrganizationRoleOrRedirect("publishSchedule", `/cizelgeler/${id}`);
 
-  const schedule = await prisma.dutySchedule.findUnique({
-    where: { id },
+  const schedule = await prisma.dutySchedule.findFirst({
+    where: { id, region: { organizationId: user.organizationId } },
     include: { assignments: { select: { id: true, pharmacyId: true, date: true } } },
   });
   if (!schedule) {
@@ -230,6 +242,7 @@ export async function publishDutyScheduleAction(id: string) {
       data: { status: "PUBLISHED" },
     });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "UPDATE",
       entity: "DutySchedule",
@@ -246,9 +259,11 @@ export async function publishDutyScheduleAction(id: string) {
 }
 
 export async function unpublishDutyScheduleAction(id: string) {
-  const user = await requirePermissionOrRedirect("publishSchedule", `/cizelgeler/${id}`);
+  const user = await requireOrganizationRoleOrRedirect("publishSchedule", `/cizelgeler/${id}`);
 
-  const schedule = await prisma.dutySchedule.findUnique({ where: { id } });
+  const schedule = await prisma.dutySchedule.findFirst({
+    where: { id, region: { organizationId: user.organizationId } },
+  });
   if (!schedule) {
     redirectWithMessage("/cizelgeler", "error", "Nöbet çizelgesi bulunamadı.");
   }
@@ -262,6 +277,7 @@ export async function unpublishDutyScheduleAction(id: string) {
       data: { status: "DRAFT" },
     });
     await writeAuditLog(tx, {
+      organizationId: user.organizationId,
       userId: user.id,
       action: "UPDATE",
       entity: "DutySchedule",

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { PharmacyForm } from "../../pharmacy-form";
 import { updatePharmacyAction } from "../../actions";
 
@@ -11,11 +11,14 @@ export default async function EczaneDuzenlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requirePermissionOrRedirect("manageSetupData", "/eczaneler");
+  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/eczaneler");
   const { id } = await params;
+  // Pharmacy has no direct organizationId column — ownership is derived
+  // through region.organizationId. A cross-organization id must produce
+  // the same notFound() as a truly-missing id, never another tenant's data.
   const [pharmacy, regions] = await Promise.all([
-    prisma.pharmacy.findUnique({ where: { id } }),
-    prisma.region.findMany({ orderBy: { name: "asc" } }),
+    prisma.pharmacy.findFirst({ where: { id, region: { organizationId: user.organizationId } } }),
+    prisma.region.findMany({ where: { organizationId: user.organizationId }, orderBy: { name: "asc" } }),
   ]);
   if (!pharmacy) notFound();
 

@@ -32,7 +32,7 @@ async function cleanupOneManifest(manifest: ChaosManifest): Promise<void> {
   }
 
   log(`Cleaning up run ${manifest.runId} (marker ${manifest.marker})`);
-  const { regionIds, pharmacyIds, userIds, historicalBatchIds, sessionTokenPrefix } = manifest;
+  const { organizationIds, regionIds, pharmacyIds, userIds, historicalBatchIds, sessionTokenPrefix } = manifest;
 
   await chaosPrisma.auditLog.deleteMany({ where: { userId: { in: userIds } } });
   await chaosPrisma.dutyBalanceAdjustment.deleteMany({ where: { pharmacyId: { in: pharmacyIds } } });
@@ -48,6 +48,10 @@ async function cleanupOneManifest(manifest: ChaosManifest): Promise<void> {
   await chaosPrisma.session.deleteMany({ where: { token: { startsWith: sessionTokenPrefix } } });
   await chaosPrisma.user.deleteMany({ where: { id: { in: userIds } } });
   await chaosPrisma.region.deleteMany({ where: { id: { in: regionIds } } });
+  // Organization.onDelete is Restrict for Region/User/AuditLog — deleting
+  // it last, after every dependent row above, is required for this to
+  // succeed.
+  await chaosPrisma.organization.deleteMany({ where: { id: { in: organizationIds } } });
 
   rmSync(manifestPath(manifest.runId), { force: true });
   log(`Run ${manifest.runId} cleaned up.`);

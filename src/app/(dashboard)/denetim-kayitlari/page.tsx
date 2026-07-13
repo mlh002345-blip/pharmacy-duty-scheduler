@@ -14,7 +14,7 @@ import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layo
 import { prisma } from "@/lib/prisma";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
-import { requirePermissionOrRedirectWithMessage } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +125,7 @@ export default async function DenetimKayitlariPage({
 }: {
   searchParams: Promise<{ page?: string }>;
 }) {
-  await requirePermissionOrRedirectWithMessage(
+  const user = await requireOrganizationRoleOrRedirect(
     "manageUsers",
     "/",
     "Bu sayfaya erişim yetkiniz bulunmuyor."
@@ -133,8 +133,10 @@ export default async function DenetimKayitlariPage({
   const { page: pageParam } = await searchParams;
   const page = parsePageParam(pageParam);
 
+  const where = { organizationId: user.organizationId };
   const [auditLogs, totalCount] = await Promise.all([
     prisma.auditLog.findMany({
+      where,
       select: {
         id: true,
         createdAt: true,
@@ -148,7 +150,7 @@ export default async function DenetimKayitlariPage({
       skip: (page - 1) * DEFAULT_PAGE_SIZE,
       take: DEFAULT_PAGE_SIZE,
     }),
-    prisma.auditLog.count(),
+    prisma.auditLog.count({ where }),
   ]);
 
   return (

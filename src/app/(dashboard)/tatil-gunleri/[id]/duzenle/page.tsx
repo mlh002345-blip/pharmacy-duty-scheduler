@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
-import { requirePermissionOrRedirect } from "@/lib/auth/guard";
+import { requireOrganizationRoleOrRedirect } from "@/lib/auth/tenant";
 import { HolidayForm } from "../../holiday-form";
 import { updateHolidayAction } from "../../actions";
 
@@ -11,7 +11,7 @@ export default async function TatilGunuDuzenlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requirePermissionOrRedirect("manageSetupData", "/tatil-gunleri");
+  await requireOrganizationRoleOrRedirect("manageSetupData", "/tatil-gunleri");
   const { id } = await params;
   const holiday = await prisma.holiday.findUnique({ where: { id } });
   if (!holiday) notFound();

@@ -68,7 +68,7 @@ function textContent(node: unknown): string {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+  getCurrentUser.mockResolvedValue({ id: "admin-1", role: "ADMIN", organizationId: "org-1" });
   prismaMock.auditLog.findMany.mockResolvedValue([]);
   prismaMock.auditLog.count.mockResolvedValue(0);
 });
@@ -92,7 +92,7 @@ function auditRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 describe("DenetimKayitlariPage — manageUsers required", () => {
   it("VIEWER cannot access the audit log page", async () => {
-    getCurrentUser.mockResolvedValue({ id: "viewer-1", role: "VIEWER" });
+    getCurrentUser.mockResolvedValue({ id: "viewer-1", role: "VIEWER", organizationId: "org-1" });
 
     await expect(DenetimKayitlariPage({ searchParams: searchParams() })).rejects.toBeInstanceOf(
       RedirectSignal
@@ -101,7 +101,7 @@ describe("DenetimKayitlariPage — manageUsers required", () => {
   });
 
   it("STAFF cannot access the audit log page", async () => {
-    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF" });
+    getCurrentUser.mockResolvedValue({ id: "staff-1", role: "STAFF", organizationId: "org-1" });
 
     await expect(DenetimKayitlariPage({ searchParams: searchParams() })).rejects.toBeInstanceOf(
       RedirectSignal
@@ -123,6 +123,7 @@ describe("DenetimKayitlariPage — query contract (pagination, select scoping)",
     await DenetimKayitlariPage({ searchParams: searchParams() });
 
     expect(prismaMock.auditLog.findMany).toHaveBeenCalledExactlyOnceWith({
+      where: { organizationId: "org-1" },
       select: {
         id: true,
         createdAt: true,
