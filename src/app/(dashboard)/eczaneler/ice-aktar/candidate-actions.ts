@@ -302,7 +302,7 @@ export async function matchRegionCandidateAction(candidateId: string, formData: 
 
 // --- Reset / reject (undo decision, reject suggestion, undo exclusion) ---
 
-export async function resetRegionCandidateAction(candidateId: string, _formData: FormData) {
+export async function resetRegionCandidateAction(candidateId: string, formData: FormData) {
   const user = await guardedUser();
   const loaded = await loadEditableCandidate(candidateId, user);
   if (!loaded) {
@@ -310,6 +310,29 @@ export async function resetRegionCandidateAction(candidateId: string, _formData:
   }
   if (!loaded.editable) candidateNotEditableRedirect(loaded.candidate.batchId);
   const { candidate } = loaded;
+
+  // Rejecting an address-derived suggestion leaves its rows UNRESOLVED —
+  // the ADMIN then assigns or defines a region explicitly. The plain
+  // reset re-classifies from the source value instead.
+  if (formData.get("mode") === "reject-suggestion") {
+    await prisma.$transaction(async (tx) => {
+      await tx.pharmacyImportRegionCandidate.update({
+        where: { id: candidate.id },
+        data: {
+          status: "UNRESOLVED",
+          matchedRegionId: null,
+          approvedAt: null,
+          reactivateOnImport: false,
+        },
+      });
+      await recomputeAndPersistBatch(tx, candidate.batchId, user.organizationId);
+    });
+    await logCandidateEvent("pharmacy_import_region_candidate_rejected", user, candidate.batchId, {
+      action: "suggestion_rejected",
+    });
+    revalidatePath(previewPath(candidate.batchId));
+    redirectWithMessage(previewPath(candidate.batchId), "success", "Adres önerisi reddedildi.");
+  }
 
   await prisma.$transaction(async (tx) => {
     // Re-classify from scratch: does the source value match a current
@@ -350,7 +373,7 @@ export async function resetRegionCandidateAction(candidateId: string, _formData:
 
 // --- Exclude from this import --------------------------------------------
 
-export async function excludeRegionCandidateAction(candidateId: string, _formData: FormData) {
+export async function excludeRegionCandidateAction(candidateId: string) {
   const user = await guardedUser();
   const loaded = await loadEditableCandidate(candidateId, user);
   if (!loaded) {

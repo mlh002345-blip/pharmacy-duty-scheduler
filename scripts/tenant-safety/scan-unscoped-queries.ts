@@ -96,7 +96,7 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/(dashboard)/cizelgeler/[id]/page.tsx:205": "[parent-scoped query] historicalDutyRecord groupBy scoped by pharmacyIds derived from this org-validated schedule's own assignments (fairnessRows).",
   "src/app/(dashboard)/cizelgeler/[id]/page.tsx:210": "[parent-scoped query] dutyBalanceAdjustment groupBy scoped by the same org-validated pharmacyIds.",
   "src/app/(dashboard)/cizelgeler/[id]/page.tsx:215": "[parent-scoped query] dutyAssignment groupBy scoped by the same org-validated pharmacyIds.",
-  "src/app/(dashboard)/cizelgeler/actions.ts:86": "[parent-scoped query] dutySchedule.findUnique by the compound (year, month, regionId) key — regionId was already verified against organizationId a few lines above via the region findFirst.",
+  "src/app/(dashboard)/cizelgeler/actions.ts:98": "[parent-scoped query] dutySchedule.findUnique by the compound (year, month, regionId) key — regionId was already verified against organizationId a few lines above via the region findFirst.",
   "src/lib/balance/duty-balance.ts:164": "[parent-scoped query] getOpeningBalanceByPharmacy's historicalDutyRecord groupBy is scoped by the regionId parameter, which the sole caller (generate-and-save-duty-schedule.ts) has already validated against organizationId.",
   "src/lib/balance/duty-balance.ts:173": "[parent-scoped query] getOpeningBalanceByPharmacy's dutyBalanceAdjustment groupBy, same caller-validated regionId as above.",
 };

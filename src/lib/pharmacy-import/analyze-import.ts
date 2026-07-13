@@ -327,6 +327,10 @@ export type PersistedRowForRecompute = {
   status: PharmacyImportRowStatus;
   safeErrorCode: string | null;
   candidateId: string | null;
+  // The server-resolved region, when one was already assigned. Rows
+  // carrying a regionId but no candidate (batches persisted before
+  // region discovery existed) stay resolved to that region.
+  regionId: string | null;
 };
 
 export type PersistedCandidateForRecompute = {
@@ -445,7 +449,7 @@ export function recomputePharmacyImportRows(
     }
 
     const candidate = row.candidateId ? (candidateById.get(row.candidateId) ?? null) : null;
-    if (!candidate) {
+    if (!candidate && !row.regionId) {
       const preserved =
         row.safeErrorCode === "REGION_AMBIGUOUS" ? "REGION_AMBIGUOUS" : "REGION_UNRESOLVED";
       result.push({ id: row.id, status: "REGION_PENDING", errorCode: preserved, regionId: null });
@@ -453,7 +457,11 @@ export function recomputePharmacyImportRows(
       continue;
     }
 
-    const resolution = resolveCandidateForImport(candidate);
+    // A candidate decision drives resolution when present; otherwise the
+    // row's server-assigned regionId (legacy batches) stands.
+    const resolution: CandidateResolution = candidate
+      ? resolveCandidateForImport(candidate)
+      : { kind: "region", regionId: row.regionId! };
     if (resolution.kind === "excluded") {
       result.push({ id: row.id, status: "EXCLUDED", errorCode: "REGION_EXCLUDED", regionId: null });
       excludedCount += 1;

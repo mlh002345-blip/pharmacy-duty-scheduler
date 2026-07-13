@@ -281,6 +281,7 @@ describe("recomputePharmacyImportRows", () => {
       status: "REGION_PENDING",
       safeErrorCode: "REGION_PENDING_APPROVAL",
       candidateId: null,
+      regionId: null,
       ...overrides,
     };
   }
@@ -420,5 +421,15 @@ describe("recomputePharmacyImportRows", () => {
     const result = recomputePharmacyImportRows(rows, [], []);
     expect(result.rows[0].status).toBe("REGION_PENDING");
     expect(result.rows[0].errorCode).toBe("REGION_AMBIGUOUS");
+  });
+
+  it("a legacy row with a server-assigned regionId and no candidate stays resolved to that region", () => {
+    const rows = [
+      persistedRow({ id: "r1", rowNumber: 2, status: "READY", safeErrorCode: null, regionId: "region-a" }),
+    ];
+    const result = recomputePharmacyImportRows(rows, [], []);
+    expect(result.rows[0].status).toBe("READY");
+    expect(result.rows[0].regionId).toBe("region-a");
+    expect(result.canImport).toBe(true);
   });
 });
