@@ -100,3 +100,13 @@ EXCEPTION` block) that no backfilled row would violate the new
 constraints before committing. See
 `docs/operations/MULTI_TENANCY_PRODUCTION_DEPLOYMENT.md` for the
 rehearsed rollout procedure.
+
+## Update: Automatic Region Discovery (feature/automatic-region-discovery)
+
+`PharmacyImportRegionCandidate` is tenant-owned **through its parent
+batch** (`PharmacyImportBatch.organizationId`) — it carries no
+organizationId column of its own, so there is nothing client-suppliable
+to tamper with; every query path goes through the batch's org+creator
+scope. Region mutation moved from `manageSetupData` to the dedicated
+ADMIN-only `manageRegions` permission. The static tenant-safety scanner
+covers the new call sites (all candidate queries are batch-scoped).

@@ -4,6 +4,18 @@ Multi-Tenancy Chunk 3, branch `feature/multi-tenancy-pharmacy-import`
 (commit `e755a79`). Generic, province-agnostic bulk pharmacy import for
 every organization's own `ADMIN`.
 
+> **Extended by Automatic Region Discovery**
+> (`docs/features/AUTOMATIC_REGION_DISCOVERY.md`,
+> `feature/automatic-region-discovery`): regions no longer have to
+> exist before upload — unique region values become reviewable
+> candidates in the preview, İlçe and Adres joined the template, and
+> the final transaction can create approved regions together with the
+> pharmacies. Batch consumption became organization- AND
+> creator-scoped (only the uploading ADMIN can edit candidates or
+> confirm the import). Sections below describe the base feature;
+> where the two documents differ, the region-discovery document is
+> authoritative.
+
 ## Workflow
 
 ```
