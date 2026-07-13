@@ -40,6 +40,8 @@ const STATUS_LABELS: Record<PharmacyImportRowStatus, string> = {
   DUPLICATE_IN_FILE: "Dosyada Yinelenen",
   ALREADY_EXISTS: "Zaten Kayıtlı",
   UNKNOWN_REGION: "Bölge Bulunamadı",
+  REGION_PENDING: "Bölge Kararı Bekliyor",
+  EXCLUDED: "Kapsam Dışı",
 };
 
 export default async function IceAktarOnizlemePage({

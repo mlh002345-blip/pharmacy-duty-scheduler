@@ -56,6 +56,18 @@ export async function createDutyScheduleAction(
       errors: { regionId: ["Seçilen bölge bulunamadı."] },
     };
   }
+  // An inactive region must never receive a NEW schedule — the region
+  // picker only lists active regions, but the id is client-supplied, so
+  // the action enforces it independently of the UI.
+  if (!region.isActive) {
+    return {
+      success: false,
+      message: "Lütfen formdaki hataları düzeltin.",
+      errors: {
+        regionId: ["Pasif bir bölge için yeni çizelge oluşturulamaz. Önce bölgeyi aktifleştirin."],
+      },
+    };
+  }
   if (!region.dutyRule) {
     return {
       success: false,
