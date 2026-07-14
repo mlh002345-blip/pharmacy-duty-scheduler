@@ -37,12 +37,43 @@ describe("parsePharmacyImportExcel", () => {
     expect(result.ignoredColumnWarnings).toEqual([]);
   });
 
+  it("parses the extended template with İlçe and Adres columns", async () => {
+    const buffer = await buildWorkbookBuffer(
+      ["Bölge", "İlçe", "Eczane Adı", "Eczacı Adı Soyadı", "Telefon", "Adres", "Aktif"],
+      [["Merkez", "Merkez", "Deva Eczanesi", "Ada Yılmaz", "0212 212 19 18", "Gül Sok. 3", "Evet"]]
+    );
+    const result = await parsePharmacyImportExcel(buffer);
+    expect(result.rows[0]).toMatchObject({
+      bolge: "Merkez",
+      ilce: "Merkez",
+      adres: "Gül Sok. 3",
+      eczaneAdi: "Deva Eczanesi",
+    });
+    expect(result.ignoredColumnWarnings).toEqual([]);
+  });
+
+  it("keeps supporting an old-style template whose only region column is an İlçe header", async () => {
+    const buffer = await buildWorkbookBuffer(
+      ["İlçe", "Eczane Adı", "Eczacı Adı Soyadı", "Telefon", "Aktif"],
+      [["Kadıköy", "Deva Eczanesi", "Ada Yılmaz", "0212 212 19 18", "Evet"]]
+    );
+    const result = await parsePharmacyImportExcel(buffer);
+    expect(result.rows[0].bolge).toBe("");
+    expect(result.rows[0].ilce).toBe("Kadıköy");
+  });
+
+  it("rejects a file with no region source column at all (no Bölge, İlçe, or Adres)", async () => {
+    const buffer = await buildWorkbookBuffer(
+      ["Eczane Adı", "Eczacı Adı Soyadı", "Telefon", "Aktif"],
+      [["Deva Eczanesi", "Ada Yılmaz", "0212 212 19 18", "Evet"]]
+    );
+    await expect(parsePharmacyImportExcel(buffer)).rejects.toThrow(/Bölge kaynağı eksik/);
+  });
+
   it.each([
     ["Bolge", "Bölge"],
-    ["İlçe", "Bölge"],
-    ["Ilce", "Bölge"],
-    ["İlçe/İl", "Bölge"],
-    ["İlçe / İl", "Bölge"],
+    ["Nöbet Bölgesi", "Bölge"],
+    ["Nobet Bolgesi", "Bölge"],
     ["Eczane", "Eczane Adı"],
     ["Eczane Adi", "Eczane Adı"],
     ["Eczaci", "Eczacı Adı Soyadı"],
@@ -78,11 +109,39 @@ describe("parsePharmacyImportExcel", () => {
 
   it("rejects a file where two different header variants map to the same field (ambiguous)", async () => {
     const buffer = await buildWorkbookBuffer(
-      ["Bölge", "İlçe", "Eczane Adı", "Eczacı Adı Soyadı", "Telefon"],
-      [["Kadıköy", "Beşiktaş", "Deva Eczanesi", "Ada Yılmaz", "0212 212 19 18"]]
+      ["Bölge", "Nöbet Bölgesi", "Eczane Adı", "Eczacı Adı Soyadı", "Telefon"],
+      [["Kadıköy", "Kadıköy", "Deva Eczanesi", "Ada Yılmaz", "0212 212 19 18"]]
     );
     await expect(parsePharmacyImportExcel(buffer)).rejects.toBeInstanceOf(PharmacyExcelParseError);
   });
+
+  it.each([
+    ["İlçe", "İlçe"],
+    ["Ilce", "İlçe"],
+    ["İlçe/İl", "İlçe"],
+    ["İlçe / İl", "İlçe"],
+    ["İlçe Adı", "İlçe"],
+    ["Ilce Adi", "İlçe"],
+  ])("accepts the district header variant %s", async (variant) => {
+    const buffer = await buildWorkbookBuffer(
+      [variant, "Eczane Adı", "Eczacı Adı Soyadı", "Telefon"],
+      [["Bozüyük", "Deva Eczanesi", "Ada Yılmaz", "0212 212 19 18"]]
+    );
+    const result = await parsePharmacyImportExcel(buffer);
+    expect(result.rows[0].ilce).toBe("Bozüyük");
+  });
+
+  it.each([["Adres"], ["Eczane Adresi"], ["Açık Adres"], ["Acik Adres"]])(
+    "accepts the address header variant %s",
+    async (variant) => {
+      const buffer = await buildWorkbookBuffer(
+        ["Bölge", variant, "Eczane Adı", "Eczacı Adı Soyadı", "Telefon"],
+        [["Merkez", "Gül Sok. 3", "Deva Eczanesi", "Ada Yılmaz", "0212 212 19 18"]]
+      );
+      const result = await parsePharmacyImportExcel(buffer);
+      expect(result.rows[0].adres).toBe("Gül Sok. 3");
+    }
+  );
 
   it("surfaces an unrecognized extra column as a non-blocking warning", async () => {
     const buffer = await buildWorkbookBuffer(

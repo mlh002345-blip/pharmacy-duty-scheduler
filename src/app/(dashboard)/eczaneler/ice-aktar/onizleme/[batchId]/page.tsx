@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -21,6 +22,8 @@ import {
   type PharmacyRowErrorCode,
 } from "@/lib/pharmacy-import/analyze-import";
 import { importPharmacyBatchAction } from "../../actions";
+import { assignRowToCandidateAction } from "../../candidate-actions";
+import { CandidateReviewSection } from "./candidate-review";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +43,15 @@ const STATUS_LABELS: Record<PharmacyImportRowStatus, string> = {
   DUPLICATE_IN_FILE: "Dosyada Yinelenen",
   ALREADY_EXISTS: "Zaten Kayıtlı",
   UNKNOWN_REGION: "Bölge Bulunamadı",
+  REGION_PENDING: "Bölge Kararı Bekliyor",
+  EXCLUDED: "Kapsam Dışı",
 };
+
+function rowStatusVariant(status: PharmacyImportRowStatus): "success" | "destructive" | "secondary" {
+  if (status === "READY") return "success";
+  if (status === "EXCLUDED") return "secondary";
+  return "destructive";
+}
 
 export default async function IceAktarOnizlemePage({
   params,
@@ -62,15 +73,39 @@ export default async function IceAktarOnizlemePage({
   const batch = await prisma.pharmacyImportBatch.findFirst({
     where: { id: batchId, organizationId: user.organizationId },
     include: {
-      rows: { orderBy: { rowNumber: "asc" }, take: PREVIEW_DISPLAY_LIMIT },
+      rows: {
+        orderBy: { rowNumber: "asc" },
+        take: PREVIEW_DISPLAY_LIMIT,
+        include: {
+          region: { select: { name: true } },
+          candidate: { select: { proposedName: true, status: true, sourceValue: true } },
+        },
+      },
+      regionCandidates: {
+        orderBy: { sourceValue: "asc" },
+        include: {
+          matchedRegion: { select: { id: true, name: true, isActive: true } },
+          _count: { select: { rows: true } },
+        },
+      },
       _count: { select: { rows: true } },
     },
   });
   if (!batch) notFound();
 
+  const regions = await prisma.region.findMany({
+    where: { organizationId: user.organizationId },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, isActive: true },
+  });
+
   const isExpired = isBatchExpired(batch);
-  const canImport =
-    batch.status === "PREVIEWED" && !isExpired && batch.readyRows === batch.totalRows && batch.totalRows > 0;
+  const editable = batch.status === "PREVIEWED" && !isExpired;
+  const canImport = editable && batch.invalidRows === 0 && batch.readyRows > 0;
+  const excludedCount = batch.rows.filter((row) => row.status === "EXCLUDED").length;
+  const assignableCandidates = batch.regionCandidates.filter(
+    (candidate) => candidate.status !== "EXCLUDED_BY_ADMIN"
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -87,20 +122,54 @@ export default async function IceAktarOnizlemePage({
         <Badge variant={batch.invalidRows > 0 ? "destructive" : "secondary"}>
           {batch.invalidRows} aktarıma hazır değil
         </Badge>
+        {excludedCount > 0 && <Badge variant="secondary">{excludedCount} kapsam dışı</Badge>}
+        <Badge variant="secondary">{batch.regionCandidates.length} bölge adayı</Badge>
         {batch.status === "IMPORTED" && <Badge variant="info">Aktarıldı</Badge>}
         {isExpired && <Badge variant="secondary">Süresi Doldu</Badge>}
       </div>
 
-      {!canImport && batch.status === "PREVIEWED" && !isExpired && (
+      {!canImport && editable && (
         <p className="text-destructive text-sm">
-          Bu dosyadaki tüm satırlar aktarıma hazır olmadan içe aktarım yapılamaz. Lütfen
-          hataları düzeltip dosyayı yeniden yükleyin.
+          İçe aktarım, tüm bölge kararları tamamlanıp kalan satırlar aktarıma hazır olmadan
+          yapılamaz. Bölge Eşleştirme ve Onay bölümündeki adayları sonuçlandırın.
         </p>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>Satır Önizlemesi</CardTitle>
+          <CardTitle>Bölge Eşleştirme ve Onay</CardTitle>
+          <CardDescription>
+            Dosyadaki benzersiz bölge değerleri. Her aday için: mevcut bir bölgeyle eşleştirin,
+            yeni bölge olarak onaylayın, düzenleyin veya içe aktarım dışında bırakın. Hiçbir bölge
+            onaysız oluşturulmaz.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CandidateReviewSection
+            batchId={batch.id}
+            editable={editable}
+            regions={regions}
+            candidates={batch.regionCandidates.map((candidate) => ({
+              id: candidate.id,
+              sourceValue: candidate.sourceValue,
+              sourceType: candidate.sourceType,
+              status: candidate.status,
+              proposedName: candidate.proposedName,
+              proposedCity: candidate.proposedCity,
+              proposedDistrict: candidate.proposedDistrict,
+              proposedIsActive: candidate.proposedIsActive,
+              approvedAt: candidate.approvedAt,
+              reactivateOnImport: candidate.reactivateOnImport,
+              matchedRegion: candidate.matchedRegion,
+              rowCount: candidate._count.rows,
+            }))}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Eczane Ön İzleme</CardTitle>
           <CardDescription>
             {batch._count.rows > PREVIEW_DISPLAY_LIMIT
               ? `İlk ${PREVIEW_DISPLAY_LIMIT} satır gösteriliyor; aktarım tüm satırları kapsar.`
@@ -108,14 +177,16 @@ export default async function IceAktarOnizlemePage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="max-h-96 overflow-y-auto rounded-lg border">
+          <div className="max-h-[32rem] overflow-y-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Satır</TableHead>
+                  <TableHead>Bölge Çözümü</TableHead>
                   <TableHead>Eczane Adı</TableHead>
                   <TableHead>Eczacı</TableHead>
                   <TableHead>Telefon</TableHead>
+                  <TableHead>Adres</TableHead>
                   <TableHead>Aktif</TableHead>
                   <TableHead>Durum</TableHead>
                   <TableHead>Açıklama</TableHead>
@@ -125,12 +196,45 @@ export default async function IceAktarOnizlemePage({
                 {batch.rows.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>{row.rowNumber}</TableCell>
+                    <TableCell className="min-w-[180px]">
+                      {row.region?.name ? (
+                        <span>{row.region.name}</span>
+                      ) : row.candidate ? (
+                        <span className="text-muted-foreground">
+                          Aday: {row.candidate.proposedName}
+                        </span>
+                      ) : editable && assignableCandidates.length > 0 ? (
+                        <form
+                          action={assignRowToCandidateAction.bind(null, row.id)}
+                          className="flex items-center gap-1"
+                        >
+                          <Select name="candidateId" defaultValue="" className="h-8 w-40 text-xs">
+                            <option value="" disabled>
+                              Bölge adayı seçin…
+                            </option>
+                            {assignableCandidates.map((candidate) => (
+                              <option key={candidate.id} value={candidate.id}>
+                                {candidate.proposedName}
+                              </option>
+                            ))}
+                          </Select>
+                          <SubmitButton variant="outline" size="sm" pendingText="...">
+                            Ata
+                          </SubmitButton>
+                        </form>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-medium">{row.pharmacyName || "-"}</TableCell>
                     <TableCell>{row.pharmacistName ?? "-"}</TableCell>
                     <TableCell>{row.phone ?? "-"}</TableCell>
+                    <TableCell className="max-w-[200px]">
+                      <span className="block truncate text-xs">{row.address ?? "-"}</span>
+                    </TableCell>
                     <TableCell>{row.isActive ? "Evet" : "Hayır"}</TableCell>
                     <TableCell>
-                      <Badge variant={row.status === "READY" ? "success" : "destructive"}>
+                      <Badge variant={rowStatusVariant(row.status)}>
                         {STATUS_LABELS[row.status]}
                       </Badge>
                     </TableCell>
@@ -146,7 +250,7 @@ export default async function IceAktarOnizlemePage({
                 ))}
                 {batch.rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
+                    <TableCell colSpan={9} className="text-muted-foreground py-8 text-center">
                       Bu dosyada veri satırı bulunamadı.
                     </TableCell>
                   </TableRow>

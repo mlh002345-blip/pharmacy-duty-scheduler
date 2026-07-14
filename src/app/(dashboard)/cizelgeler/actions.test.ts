@@ -39,6 +39,7 @@ function region(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "region-1",
     dailyDutyCount: 1,
+    isActive: true,
     dutyRule: { minDaysBetweenDuties: 3 },
     pharmacies: [{ id: "pharmacy-1" }],
     ...overrides,
@@ -127,5 +128,15 @@ describe("createDutyScheduleAction — concurrent duplicate submissions", () => 
     expect(thrown?.message).toBe(
       `REDIRECT:/cizelgeler/schedule-1?success=${encodeURIComponent("Taslak olarak oluşturuldu.")}`
     );
+  });
+
+  it("refuses to generate a NEW schedule for an inactive region, independently of the UI filter", async () => {
+    prismaMock.region.findFirst.mockResolvedValueOnce(region({ isActive: false }));
+
+    const state = await createDutyScheduleAction({ success: false, message: "" }, makeFormData());
+
+    expect(state.success).toBe(false);
+    expect(state.errors?.regionId?.[0]).toContain("Pasif bir bölge");
+    expect(generateAndSaveDutySchedule).not.toHaveBeenCalled();
   });
 });

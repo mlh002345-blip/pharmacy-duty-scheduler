@@ -10,6 +10,8 @@ export class PharmacyExcelParseError extends Error {}
 export type PharmacyImportRawRow = {
   rowNumber: number;
   bolge: string;
+  ilce: string;
+  adres: string;
   eczaneAdi: string;
   eczaciAdi: string;
   telefon: string;
@@ -36,18 +38,38 @@ type CanonicalField = keyof Omit<PharmacyImportRawRow, "rowNumber">;
 const HEADER_ALIASES: Record<string, CanonicalField> = {
   "bölge": "bolge",
   "bolge": "bolge",
-  "ilçe": "bolge",
-  "ilce": "bolge",
+  "nöbet bölgesi": "bolge",
+  "nobet bolgesi": "bolge",
+  "nöbet bolgesi": "bolge",
+  "nobet bölgesi": "bolge",
+  // İlçe is its OWN canonical field now (region discovery uses it as a
+  // fallback region source when Bölge is blank). Old files that used an
+  // "İlçe" header as their region column keep working: their values flow
+  // through the İlçe field and resolve to the same region candidates.
+  "ilçe": "ilce",
+  "ilce": "ilce",
   // Turkish-locale-lowercasing an ASCII "I" (no dot) yields "ı" (dotless
   // lowercase i), not "i" — "Ilce" therefore normalizes differently from
   // "İlçe" (dotted capital İ, which lowercases to plain "i").
-  "ılce": "bolge",
-  "ilçe/il": "bolge",
-  "ilce/il": "bolge",
-  "ılce/ıl": "bolge",
-  "ilçe / il": "bolge",
-  "ilce / il": "bolge",
-  "ılce / ıl": "bolge",
+  "ılce": "ilce",
+  "ilçe/il": "ilce",
+  "ilce/il": "ilce",
+  "ılce/ıl": "ilce",
+  "ilçe / il": "ilce",
+  "ilce / il": "ilce",
+  "ılce / ıl": "ilce",
+  "ilçe adı": "ilce",
+  "ilçe adi": "ilce",
+  "ilce adı": "ilce",
+  "ilce adi": "ilce",
+  "ılce adı": "ilce",
+  "ılce adi": "ilce",
+  "adres": "adres",
+  "eczane adresi": "adres",
+  "açık adres": "adres",
+  "acik adres": "adres",
+  "açik adres": "adres",
+  "acık adres": "adres",
   "eczane": "eczaneAdi",
   "eczane adı": "eczaneAdi",
   "eczane adi": "eczaneAdi",
@@ -146,11 +168,21 @@ export async function parsePharmacyImportExcel(buffer: Buffer): Promise<ParsedPh
   }
 
   const mappedFields = new Set(headerMap.values());
-  const requiredFields: CanonicalField[] = ["bolge", "eczaneAdi", "eczaciAdi", "telefon"];
+  const requiredFields: CanonicalField[] = ["eczaneAdi", "eczaciAdi", "telefon"];
   const missingFields = requiredFields.filter((field) => !mappedFields.has(field));
   if (missingFields.length > 0) {
     throw new PharmacyExcelParseError(
-      'Zorunlu sütunlar eksik: dosyada "Bölge", "Eczane Adı", "Eczacı Adı Soyadı" ve "Telefon" sütunları bulunmalıdır.'
+      'Zorunlu sütunlar eksik: dosyada "Eczane Adı", "Eczacı Adı Soyadı" ve "Telefon" sütunları bulunmalıdır.'
+    );
+  }
+  // Region discovery needs at least ONE region source column: Bölge,
+  // İlçe, or Adres. A file with none of them can never resolve any row
+  // to a region — blocked at parse time with a clear message. (Old
+  // templates always carried a Bölge or İlçe header, so they keep
+  // working unchanged.)
+  if (!mappedFields.has("bolge") && !mappedFields.has("ilce") && !mappedFields.has("adres")) {
+    throw new PharmacyExcelParseError(
+      'Bölge kaynağı eksik: dosyada "Bölge", "İlçe" veya "Adres" sütunlarından en az biri bulunmalıdır.'
     );
   }
 
@@ -161,6 +193,8 @@ export async function parsePharmacyImportExcel(buffer: Buffer): Promise<ParsedPh
     const parsedRow: PharmacyImportRawRow = {
       rowNumber,
       bolge: "",
+      ilce: "",
+      adres: "",
       eczaneAdi: "",
       eczaciAdi: "",
       telefon: "",

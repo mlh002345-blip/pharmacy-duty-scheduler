@@ -153,10 +153,53 @@ else — navigation, login, template download, preview rendering, **the
 actual transactional import**, and the cross-org isolation check —
 through a real browser.
 
-## Full test count summary (this branch, final acceptance gate)
+## Full test count summary (feature/multi-tenancy-pharmacy-import, final acceptance gate)
 
 - Unit: 687 tests / 58 files.
 - Integration: 13 files / 56 tests, run twice, both green.
 - File security: 7 files / 67 tests, run twice, both green.
 - E2E: 64 tests, run twice, both green (includes 3 additional
   standalone runs of the onboarding-to-import flow).
+
+## Automatic Region Discovery (feature/automatic-region-discovery)
+
+Unit (pure modules, `npm test`):
+
+- `src/lib/pharmacy-import/region-discovery.test.ts` — 20 tests:
+  address-hint extraction (slash/comma endings, ambiguity, plain-street
+  none, no inference without structural evidence), source priority
+  (Bölge > İlçe > address > none), Turkish-aware aggregation with row
+  counts (İ/i, I/ı variants collapse), active/inactive matching,
+  ADDRESS_SUGGESTION even on an existing-region match, strongest-source
+  wins, district proposal rules, unresolved reasons.
+- `analyze-import.test.ts` — grown to 28 tests: pending-candidate
+  statuses, inactive-match pending decision, İlçe fallback (old
+  templates), address validation (control chars/length), duplicate
+  detection across not-yet-created candidate regions, plus the whole
+  recompute engine (approval unblocks, exclusion skips without
+  blocking, inactive decision gating, same-normalized-name candidates
+  share dedupe, ALREADY_EXISTS on recompute, INVALID immutability,
+  legacy regionId-resolved rows).
+- `parse-excel.test.ts` — grown to 33 tests: İlçe/Adres canonical
+  columns and all requested header variants, old-İlçe-template
+  compatibility, no-region-source-column rejection.
+
+Integration (`npm run test:integration`, real Postgres) —
+`tests/integration/region-discovery-import.integration.test.ts`, 12
+tests, described in `docs/features/AUTOMATIC_REGION_DISCOVERY.md`
+(transaction rollback including created regions and audits,
+keep-inactive vs. audited reactivation, gate-synchronized concurrent
+region creation, cross-tenant candidate isolation, manual candidate
+multi-row mapping, suggestion confirm/reject, racing manual region
+reuse, manual CRUD preservation). The lifecycle suite was updated for
+creator-scoped consumption and the earlier, controlled in-transaction
+collision detection.
+
+E2E (`npm run test:e2e`, real browser) —
+`tests/e2e/specs/region-discovery.spec.ts`, 5 tests (same
+unbound-action scope note as above; every candidate decision, status
+toggle, and the final import are REAL browser clicks on bound actions).
+
+Totals on this branch: unit 741 / 60 files; integration 15 files / 75
+tests (run twice); file security 67 (unchanged — the import route
+inherits every control); E2E 69 (run twice).

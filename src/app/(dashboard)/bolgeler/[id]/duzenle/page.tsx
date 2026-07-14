@@ -11,7 +11,7 @@ export default async function BolgeDuzenlePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/bolgeler");
+  const user = await requireOrganizationRoleOrRedirect("manageRegions", "/bolgeler");
   const { id } = await params;
   const region = await prisma.region.findFirst({ where: { id, organizationId: user.organizationId } });
   if (!region) notFound();

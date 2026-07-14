@@ -4,7 +4,7 @@ import { RegionForm } from "../region-form";
 import { createRegionAction } from "../actions";
 
 export default async function YeniBolgePage() {
-  await requireOrganizationRoleOrRedirect("manageSetupData", "/bolgeler");
+  await requireOrganizationRoleOrRedirect("manageRegions", "/bolgeler");
 
   return (
     <div className="flex flex-col gap-6">

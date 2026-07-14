@@ -16,6 +16,15 @@ step-by-step companion.
 > `PLATFORM_ADMIN` creation, and multi-tenancy-aware smoke tests/rollback
 > decision tree), while the general Railway mechanics and demo-account
 > smoke-test pattern here still apply.
+>
+> **Region-discovery note**: `feature/automatic-region-discovery` adds
+> one further additive migration
+> (`20260713121118_pharmacy_import_region_discovery` — new candidate
+> table/enums and nullable import-row columns, no backfill, rehearsed
+> against a database containing pre-existing batches). It deploys with
+> the ordinary `npm run db:migrate:deploy` step and needs no special
+> procedure; smoke-test the import preview's "Bölge Eşleştirme ve Onay"
+> section after deploying it.
 
 ## Before deploy
 

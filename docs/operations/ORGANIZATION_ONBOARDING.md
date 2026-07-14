@@ -51,8 +51,15 @@ for the underlying feature.
 The organization's own `ADMIN` (not `PLATFORM_ADMIN`) takes over from
 here, entirely inside their own tenant boundary:
 
-1. Create regions (`/bolgeler`).
-2. Create duty rules per region (`/kurallar`).
+1. Create regions (`/bolgeler`) — optional before a bulk import: the
+   Excel import discovers unseen region values as candidates the ADMIN
+   approves in the preview, so a chamber's full list can be onboarded
+   from one workbook (see
+   `docs/features/AUTOMATIC_REGION_DISCOVERY.md`). Manual creation
+   remains fully available and is still the natural path for a handful
+   of regions.
+2. Create duty rules per region (`/kurallar`) — required before
+   schedule generation, including for regions created by an import.
 3. Either create pharmacies manually (`/eczaneler/yeni`) or, for a
    chamber with an existing pharmacy list, use the bulk import — see
    `docs/features/PHARMACY_EXCEL_IMPORT.md`.
