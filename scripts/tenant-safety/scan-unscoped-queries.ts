@@ -20,6 +20,19 @@ const TENANT_MODELS = [
   "auditLog",
   "pharmacyImportBatch",
   "pharmacyImportRow",
+  // Duty Rules V2 (Phase 1 schema): all owned by the organization either
+  // directly (dutyPlan, rotationPool) or through a parent chain
+  // (version -> plan, dayTypeRule/shiftDefinition -> version, slot ->
+  // dayTypeRule, membership/state -> pool). Every read must be scoped
+  // from the root — see src/lib/duty-rules-v2/plan-version-repository.ts.
+  "dutyPlan",
+  "dutyPlanVersion",
+  "dayTypeRule",
+  "shiftDefinition",
+  "slotRequirement",
+  "rotationPool",
+  "rotationPoolMembership",
+  "rotationState",
 ];
 
 // Every Prisma method that can read/write rows and therefore needs a tenant
