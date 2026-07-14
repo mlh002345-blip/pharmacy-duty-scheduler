@@ -180,6 +180,15 @@ string (custom rotation scopes), `slotKey` (engine explanations),
 gain `serviceAreaId`/min–max in the ServiceArea phase, and
 `DutySchedule` ready to gain `generationRunId` in the simulation phase.
 
+## Later phases building on this schema
+
+- Phase 2: the V1 compatibility adapter
+  (`docs/architecture/DUTY_RULES_V2_V1_ADAPTER.md`).
+- Phase 3: the tenant-safe read-only loader
+  (`docs/architecture/DUTY_RULES_V2_LOADER_SERVICE.md`) — it closes the
+  cross-tenant references this schema permits in the READ path; the
+  future write service must enforce the same checks on every mutation.
+
 ## Architectural backlog — known unrelated defects (recorded, NOT fixed here)
 
 1. Schedule XLSX export writes "22" into blank Address and Note cells.
