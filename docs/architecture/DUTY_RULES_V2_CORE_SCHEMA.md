@@ -188,6 +188,10 @@ gain `serviceAreaId`/min–max in the ServiceArea phase, and
   (`docs/architecture/DUTY_RULES_V2_LOADER_SERVICE.md`) — it closes the
   cross-tenant references this schema permits in the READ path; the
   future write service must enforce the same checks on every mutation.
+- Phase 4: the pure scheduling-engine domain pipeline
+  (`docs/architecture/DUTY_RULES_V2_ENGINE_DOMAIN.md`) — calendar → day
+  type → shifts → slots → pools → candidates → eligibility → fairness/
+  rotation facts → selection input; no selection, no writes.
 
 ## Architectural backlog — known unrelated defects (recorded, NOT fixed here)
 
