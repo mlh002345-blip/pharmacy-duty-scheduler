@@ -16,6 +16,16 @@ import type { ConfiguredRuleDefinition } from "../rules/domain/rule-definition";
 import type { RuleConflict } from "../rules/domain/rule-conflict";
 import type { RuleEvaluationResult } from "../rules/domain/rule-evaluation";
 import type { ConstraintResult } from "./domain/constraint";
+import { analyzeStrategyConflicts } from "../selection/analyze-strategy-conflicts";
+import { strategySetFingerprint } from "../selection/canonicalize-strategy-set";
+import { getStrategyCatalogueEntry } from "../selection/catalogue";
+import { buildSelectionExplanations, type SelectionExplanation } from "../selection/build-selection-explanations";
+import { selectProvisionalWinners } from "../selection/select-provisional-winners";
+import { SelectionEngineError } from "../selection/strategy-errors";
+import type { ConfiguredSelectionStrategy } from "../selection/domain/strategy-definition";
+import type { StrategyConflict } from "../selection/domain/strategy-conflict";
+import type { ProvisionalSlotSelection } from "../selection/domain/selection-result";
+import type { StrategyMatchContext } from "../selection/domain/strategy-context";
 import { applyEligibilityRelaxation, DEFAULT_RELAXABLE_REASONS } from "./apply-eligibility-relaxation";
 import { buildDraftResult, type DutyEngineDraftResult, type EngineDayResult } from "./build-draft-result";
 import { buildSelectionInput, sha256Canonical, type SelectionInput } from "./build-selection-input";
@@ -33,6 +43,7 @@ import { validateEngineInput, type DutyEngineInput } from "./domain/engine-input
 import type { EngineDiagnostic } from "./domain/diagnostics";
 
 export const ENGINE_DOMAIN_VERSION = 1;
+export const SELECTION_ENGINE_VERSION = 1;
 
 /** Canonical hash of everything runtime-supplied (the loaded plan is
  *  covered separately by its configuration fingerprint). */
@@ -99,6 +110,34 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
   }
   const rulesFingerprint = ruleSetFingerprint(configuredRules);
   const allRuleResults: RuleEvaluationResult[] = [];
+
+  // Phase 6: validate and conflict-gate the configured selection-strategy
+  // set BEFORE any ranking — same ERROR-abort / WARNING-report split as
+  // rules above. An empty strategy set produces no provisional selections
+  // (Phase 4/5 behavior otherwise unchanged, aside from the constant
+  // empty-set fingerprint in provenance).
+  const configuredStrategies: ConfiguredSelectionStrategy[] = input.configuredSelectionStrategies ?? [];
+  const strategyDefinitionsById = new Map(configuredStrategies.map((s) => [s.id, s]));
+  let strategyConflicts: StrategyConflict[] = [];
+  if (configuredStrategies.length > 0) {
+    strategyConflicts = analyzeStrategyConflicts(configuredStrategies, {
+      organizationId: plan.organizationId,
+      regionId: plan.regionId,
+    });
+    const strategyErrors = strategyConflicts.filter((conflict) => conflict.level === "ERROR");
+    if (strategyErrors.length > 0) {
+      throw new SelectionEngineError(
+        "STRATEGY_SET_CONFLICTS",
+        "Seçim stratejisi kümesi çelişkiler içeriyor.",
+        strategyErrors.map((conflict) => `${conflict.code}:${conflict.strategyIds.join(",")}`)
+      );
+    }
+  }
+  const strategiesFingerprint = strategySetFingerprint(configuredStrategies, (strategyType) => {
+    return getStrategyCatalogueEntry(strategyType)?.comparatorVersion ?? 0;
+  });
+  const provisionalSelections: ProvisionalSlotSelection[] = [];
+  const selectionExplanations: SelectionExplanation[] = [];
 
   const calendar = resolveCalendarContext(input);
 
@@ -228,29 +267,63 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
       });
       diagnostics.push(...relaxation.diagnostics);
 
-      selectionInputs.push(
-        buildSelectionInput({
-          slot,
-          pool,
-          candidates,
-          eligibility,
-          relaxation,
-          fairnessFacts,
-          rotationFacts,
-          ruleEvaluations: ruleResults,
-          diagnostics: [...pool.diagnostics, ...relaxation.diagnostics],
-          configurationFingerprint: plan.configurationFingerprint,
-          runtimeInputHash: inputHash,
-          ruleSetFingerprint: rulesFingerprint,
-          loaderVersion: plan.loaderVersion,
-          engineVersion: ENGINE_DOMAIN_VERSION,
-        })
-      );
+      const selectionInput = buildSelectionInput({
+        slot,
+        pool,
+        candidates,
+        eligibility,
+        relaxation,
+        fairnessFacts,
+        rotationFacts,
+        ruleEvaluations: ruleResults,
+        diagnostics: [...pool.diagnostics, ...relaxation.diagnostics],
+        configurationFingerprint: plan.configurationFingerprint,
+        runtimeInputHash: inputHash,
+        ruleSetFingerprint: rulesFingerprint,
+        strategySetFingerprint: strategiesFingerprint,
+        loaderVersion: plan.loaderVersion,
+        engineVersion: ENGINE_DOMAIN_VERSION,
+      });
+      selectionInputs.push(selectionInput);
+
+      // Phase 6: provisional (in-memory only) winner selection — never
+      // writes a schedule, never advances RotationState. Skipped
+      // entirely (empty result never produced) when no strategies are
+      // configured, matching Phase 4/5 byte-identical behavior.
+      if (configuredStrategies.length > 0) {
+        const holidayTypesForDay: StrategyMatchContext["holidayTypes"] =
+          dayContext.holidays.length === 0
+            ? ["NONE"]
+            : [...new Set(dayContext.holidays.map((h) => h.type))].sort();
+        const slotSelection = selectProvisionalWinners({
+          selectionInput,
+          matchContextBase: {
+            organizationId: plan.organizationId,
+            regionId: plan.regionId,
+            planId: plan.planId,
+            planVersionId: plan.planVersionId,
+            generationMode: input.generationMode,
+            date: slot.date,
+            weekday: dayContext.weekdayName,
+            holidayTypes: holidayTypesForDay,
+            dayType: dayType.dayType ?? "",
+            customDayCategory: dayType.customDayCategory,
+          },
+          definitions: configuredStrategies,
+          definitionsById: strategyDefinitionsById,
+        });
+        provisionalSelections.push(slotSelection);
+        selectionExplanations.push(...buildSelectionExplanations(slotSelection));
+      }
     }
   }
 
   selectionInputs.sort((a, b) =>
     a.slot.slotKey < b.slot.slotKey ? -1 : a.slot.slotKey > b.slot.slotKey ? 1 : 0
+  );
+  provisionalSelections.sort((a, b) => (a.slotKey < b.slotKey ? -1 : a.slotKey > b.slotKey ? 1 : 0));
+  selectionExplanations.sort((a, b) =>
+    a.candidateKey < b.candidateKey ? -1 : a.candidateKey > b.candidateKey ? 1 : 0
   );
 
   const ruleExplanations: RuleExplanation[] =
@@ -265,6 +338,8 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
       configurationFingerprint: plan.configurationFingerprint,
       runtimeInputHash: inputHash,
       ruleSetFingerprint: rulesFingerprint,
+      strategySetFingerprint: strategiesFingerprint,
+      selectionEngineVersion: SELECTION_ENGINE_VERSION,
       loaderVersion: plan.loaderVersion,
       engineVersion: ENGINE_DOMAIN_VERSION,
       planVersionId: plan.planVersionId,
@@ -276,5 +351,8 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
     diagnostics,
     ruleConflicts,
     ruleExplanations,
+    provisionalSelections,
+    strategyConflicts,
+    selectionExplanations,
   });
 }

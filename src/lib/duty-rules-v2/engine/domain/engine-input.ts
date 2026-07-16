@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import type { LoadedDutyPlanVersion } from "../../domain/loaded-plan";
 import type { ConfiguredRuleDefinition } from "../../rules/domain/rule-definition";
+import type { ConfiguredSelectionStrategy } from "../../selection/domain/strategy-definition";
 import { isIsoDateString } from "../domain/dates";
 
 export type EngineGenerationMode = "PREVIEW" | "SIMULATION";
@@ -101,6 +102,12 @@ export type DutyEngineInput = {
    *  Omitted or empty = Phase 4 behavior, byte-identical. Validated and
    *  conflict-gated before any evaluation. */
   configuredRules?: ConfiguredRuleDefinition[];
+  /** Phase 6: explicit in-memory configured selection strategies (no
+   *  persistence yet). Omitted or empty = no provisional selections;
+   *  Phase 4/5 evaluation (rules, eligibility, fairness/rotation facts)
+   *  is otherwise byte-identical. Validated and conflict-gated before
+   *  any ranking. */
+  configuredSelectionStrategies?: ConfiguredSelectionStrategy[];
 };
 
 // ---------------------------------------------------------------------------

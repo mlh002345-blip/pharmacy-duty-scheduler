@@ -54,6 +54,12 @@ export type SelectionProvenance = {
    *  values: configuration, membership snapshot, runtime input, rule
    *  set, and the draft result fingerprint. */
   ruleSetFingerprint: string;
+  /** Phase 6: canonical hash of the configured selection-strategy set
+   *  (empty-set hash when no strategies are supplied). Covers strategy
+   *  CONFIGURATION only — see canonicalize-strategy-set.ts for why
+   *  pharmacy-name tie-break effects are deliberately excluded here and
+   *  captured in provisionalSelectionFingerprint instead. */
+  strategySetFingerprint: string;
   loaderVersion: number;
   engineVersion: number;
 };
@@ -88,6 +94,7 @@ export function buildSelectionInput(input: {
   configurationFingerprint: string;
   runtimeInputHash: string;
   ruleSetFingerprint: string;
+  strategySetFingerprint: string;
   loaderVersion: number;
   engineVersion: number;
 }): SelectionInput {
@@ -111,6 +118,7 @@ export function buildSelectionInput(input: {
       effectiveDate: input.slot.date,
       runtimeInputHash: input.runtimeInputHash,
       ruleSetFingerprint: input.ruleSetFingerprint,
+      strategySetFingerprint: input.strategySetFingerprint,
       loaderVersion: input.loaderVersion,
       engineVersion: input.engineVersion,
     },

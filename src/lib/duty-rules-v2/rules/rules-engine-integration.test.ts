@@ -300,8 +300,19 @@ describe("Phase 4 integration", () => {
 
   it("no winner selection exists anywhere in the draft result", () => {
     const result = buildDutyEngineContext(withRules([]));
-    const serialized = canonicalSerialize(result);
-    expect(serialized).not.toMatch(/"selected|"winner/i);
+    // Phase 6 additively extends the draft result with (empty) selection
+    // fields when no strategies are configured — the invariant this test
+    // protects is that no ACTUAL selection ever happens without an
+    // explicit, validated selection-strategy configuration, not that the
+    // word "selected" is absent from the contract's field names.
+    expect(result.provisionalSelections).toEqual([]);
+    expect(result.selectionExplanations).toEqual([]);
+    expect(result.strategyConflicts).toEqual([]);
+    expect(result.selectionCounts).toEqual({
+      selectedCandidates: 0,
+      underfilledSlots: 0,
+      unresolvedSelectionSlots: 0,
+    });
   });
 });
 

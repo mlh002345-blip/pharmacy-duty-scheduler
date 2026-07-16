@@ -267,3 +267,16 @@ catalogue rules produce normalized `CONFIGURED_RULE` constraint results,
 `SelectionInput` gains `ruleEvaluations`, and provenance gains
 `ruleSetFingerprint`. An empty rule set leaves this pipeline's behavior
 byte-identical.
+
+## Phase 6 pointer
+
+The configurable Selection Strategy Engine
+(`docs/architecture/DUTY_RULES_V2_SELECTION_STRATEGY_ENGINE.md`) plugs
+in after Phase 5, ordering the already-resolved strict/relaxed candidate
+set: `DutyEngineInput` gains `configuredSelectionStrategies`,
+`DutyEngineDraftResult` gains `provisionalSelections` /
+`strategyConflicts` / `selectionExplanations` / `selectionCounts`, and
+provenance gains `strategySetFingerprint` + `selectionEngineVersion`. An
+empty or omitted strategy set leaves this pipeline's behavior
+byte-identical — selection remains in-memory-only, with no
+schedule/assignment writes and no `RotationState` mutation.
