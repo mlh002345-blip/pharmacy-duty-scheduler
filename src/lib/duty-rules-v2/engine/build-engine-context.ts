@@ -20,7 +20,7 @@ import { analyzeStrategyConflicts } from "../selection/analyze-strategy-conflict
 import { strategySetFingerprint } from "../selection/canonicalize-strategy-set";
 import { getStrategyCatalogueEntry } from "../selection/catalogue";
 import { buildSelectionExplanations, type SelectionExplanation } from "../selection/build-selection-explanations";
-import { selectProvisionalWinners } from "../selection/select-provisional-winners";
+import { selectProvisionalWinnersSequential } from "../selection/apply-sequential-selection-state";
 import { SelectionEngineError } from "../selection/strategy-errors";
 import type { ConfiguredSelectionStrategy } from "../selection/domain/strategy-definition";
 import type { StrategyConflict } from "../selection/domain/strategy-conflict";
@@ -138,6 +138,7 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
   });
   const provisionalSelections: ProvisionalSlotSelection[] = [];
   const selectionExplanations: SelectionExplanation[] = [];
+  const pendingSelectionSlots: Parameters<typeof selectProvisionalWinnersSequential>[0]["slots"] = [];
 
   const calendar = resolveCalendarContext(input);
 
@@ -170,10 +171,24 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
 
       const shift = shifts.shifts.find((s) => s.shiftId === slot.shiftId) ?? null;
       const candidates = resolveCandidates(slot, pool, facts);
+      // Phase 6 corrective: explicit holiday-eve weight source. Native V2
+      // semantics (default) weight HOLIDAY_EVE by its own configured
+      // dayTypeWeights entry. In V1 compatibility mode
+      // (holidayEveWeightSource === "UNDERLYING_WEEKDAY"), an eve date is
+      // weighted by whatever its ACTUAL calendar weekday is — V1 has no
+      // eve concept at all (generate-duty-schedule.ts's resolveDutyWeight
+      // only ever branches on holiday/Saturday/Sunday/weekday), so this
+      // is the only way to reproduce V1's weight byte-for-byte on eve
+      // dates. Every other resolved day type is unaffected.
+      const weightDayTypeKey =
+        input.policy.holidayEveWeightSource === "UNDERLYING_WEEKDAY" &&
+        dayType.dayType === "HOLIDAY_EVE"
+          ? dayContext.compatibilityWeightDayType
+          : slot.dayTypeKey;
       const fairnessFacts = candidates.map((candidate) =>
         calculateFairnessFacts({
           candidate,
-          dayTypeKey: slot.dayTypeKey,
+          dayTypeKey: weightDayTypeKey,
           shift: { defaultWeight: shift?.defaultWeight ?? 1 },
           policy: input.policy,
           holidayDates,
@@ -286,16 +301,20 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
       });
       selectionInputs.push(selectionInput);
 
-      // Phase 6: provisional (in-memory only) winner selection — never
-      // writes a schedule, never advances RotationState. Skipped
-      // entirely (empty result never produced) when no strategies are
-      // configured, matching Phase 4/5 byte-identical behavior.
+      // Phase 6 corrective: collected here (in chronological loop order)
+      // rather than selected immediately — provisional selection now
+      // runs as ONE sequential pass over the whole period below, so that
+      // an earlier date's provisional winner affects a later date's
+      // fairness facts and MIN_DAYS_BETWEEN_DUTIES eligibility exactly
+      // as V1's single-loop `metrics` mutation does. See
+      // apply-sequential-selection-state.ts for the root-cause
+      // explanation and the pure, in-memory accumulator design.
       if (configuredStrategies.length > 0) {
         const holidayTypesForDay: StrategyMatchContext["holidayTypes"] =
           dayContext.holidays.length === 0
             ? ["NONE"]
             : [...new Set(dayContext.holidays.map((h) => h.type))].sort();
-        const slotSelection = selectProvisionalWinners({
+        pendingSelectionSlots.push({
           selectionInput,
           matchContextBase: {
             organizationId: plan.organizationId,
@@ -309,11 +328,9 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
             dayType: dayType.dayType ?? "",
             customDayCategory: dayType.customDayCategory,
           },
-          definitions: configuredStrategies,
-          definitionsById: strategyDefinitionsById,
+          isWeekendDate: dayContext.isSaturday || dayContext.isSunday,
+          isHolidayDate: dayContext.holidays.length > 0,
         });
-        provisionalSelections.push(slotSelection);
-        selectionExplanations.push(...buildSelectionExplanations(slotSelection));
       }
     }
   }
@@ -321,6 +338,23 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
   selectionInputs.sort((a, b) =>
     a.slot.slotKey < b.slot.slotKey ? -1 : a.slot.slotKey > b.slot.slotKey ? 1 : 0
   );
+
+  if (configuredStrategies.length > 0) {
+    pendingSelectionSlots.sort((a, b) =>
+      a.selectionInput.slot.slotKey < b.selectionInput.slot.slotKey ? -1 : 1
+    );
+    const sequentialResults = selectProvisionalWinnersSequential({
+      slots: pendingSelectionSlots,
+      minDaysBetweenDuties: input.policy.minDaysBetweenDuties,
+      definitions: configuredStrategies,
+      definitionsById: strategyDefinitionsById,
+    });
+    provisionalSelections.push(...sequentialResults);
+    for (const slotSelection of sequentialResults) {
+      selectionExplanations.push(...buildSelectionExplanations(slotSelection));
+    }
+  }
+
   provisionalSelections.sort((a, b) => (a.slotKey < b.slotKey ? -1 : a.slotKey > b.slotKey ? 1 : 0));
   selectionExplanations.sort((a, b) =>
     a.candidateKey < b.candidateKey ? -1 : a.candidateKey > b.candidateKey ? 1 : 0

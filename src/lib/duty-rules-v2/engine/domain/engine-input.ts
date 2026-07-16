@@ -79,6 +79,16 @@ export type EngineSchedulingPolicy = {
   /** When false, a second assignment on the same date (any slot) is a
    *  hard conflict — V1 semantics. When true, only the same slot is. */
   sameDaySecondAssignmentAllowed: boolean;
+  /** Phase 6 corrective: explicit holiday-eve weight source.
+   *  "CONFIGURED" (default when omitted) = use dayTypeWeights'
+   *  HOLIDAY_EVE entry as-is — native V2 semantics, a chamber may
+   *  configure any eve weight it wants. "UNDERLYING_WEEKDAY" = resolve
+   *  the weight from the eve date's actual calendar weekday
+   *  (WEEKDAY/SATURDAY/SUNDAY) instead, exactly matching V1 (which has
+   *  no eve concept at all — see CalendarDayContext.compatibilityWeightDayType).
+   *  Required for V1 compatibility equivalence; never a hidden default,
+   *  never inferred. */
+  holidayEveWeightSource?: "CONFIGURED" | "UNDERLYING_WEEKDAY";
 };
 
 export type DutyEngineInput = {
@@ -152,6 +162,7 @@ const inputSchema = z.object({
       z.object({ dayTypeKey: z.string().min(1), weight: z.number().finite().positive() })
     ),
     sameDaySecondAssignmentAllowed: z.boolean(),
+    holidayEveWeightSource: z.enum(["CONFIGURED", "UNDERLYING_WEEKDAY"]).optional(),
   }),
   holidays: z.array(
     z.object({

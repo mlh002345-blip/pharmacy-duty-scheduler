@@ -15,6 +15,7 @@ import type { SelectionInput } from "../engine/build-selection-input";
 import { applyFallbackChain, resolveApplicableStrategies, resolvePrimaryStrategy } from "./apply-fallback-chain";
 import { buildCandidateRankingFacts, buildStrategyMatchContext } from "./build-strategy-context";
 import { resolveCandidateSet } from "./resolve-candidate-set";
+import type { CandidateRankingFacts } from "./domain/ranking-fact";
 import type { ConfiguredSelectionStrategy } from "./domain/strategy-definition";
 import type { StrategyMatchContext } from "./domain/strategy-context";
 import type {
@@ -24,27 +25,24 @@ import type {
 } from "./domain/selection-result";
 import type { SelectionDiagnostic } from "./domain/selection-diagnostic";
 
-export function selectProvisionalWinners(input: {
-  selectionInput: SelectionInput;
-  matchContextBase: Omit<
-    Parameters<typeof buildStrategyMatchContext>[0],
-    "selectionInput"
-  >;
+/**
+ * The reusable ranking/fallback/selection core, decoupled from HOW the
+ * ranking facts were built — the single-slot-independent entry point
+ * below builds them straight from Phase 4/5 facts; the sequential
+ * compatibility orchestrator (apply-sequential-selection-state.ts)
+ * instead supplies facts already folded with in-run accumulator state.
+ * Pure; no database access; no RotationState mutation.
+ */
+export function selectProvisionalWinnersFromFacts(input: {
+  slotKey: string;
+  date: string;
+  requiredCount: number;
+  rankingFacts: CandidateRankingFacts[];
+  matchContext: StrategyMatchContext;
   definitions: ConfiguredSelectionStrategy[];
   definitionsById: ReadonlyMap<string, ConfiguredSelectionStrategy>;
 }): ProvisionalSlotSelection {
-  const { selectionInput } = input;
-  const slotKey = selectionInput.slot.slotKey;
-  const date = selectionInput.slot.date;
-  const requiredCount = selectionInput.requiredCount;
-
-  const matchContext: StrategyMatchContext = buildStrategyMatchContext({
-    ...input.matchContextBase,
-    selectionInput,
-  });
-
-  const origin = resolveCandidateSet(selectionInput);
-  const rankingFacts = buildCandidateRankingFacts(selectionInput, origin);
+  const { slotKey, date, requiredCount, rankingFacts, matchContext } = input;
 
   const diagnostics: SelectionDiagnostic[] = [];
   if (rankingFacts.length === 0) {
@@ -140,4 +138,41 @@ export function selectProvisionalWinners(input: {
     unresolved: false,
     diagnostics,
   };
+}
+
+/**
+ * The single-slot-independent entry point (Phase 6's original design):
+ * resolve the candidate set and ranking facts straight from Phase 4/5
+ * facts, with NO cross-slot/cross-date state. Retained for callers that
+ * legitimately want per-slot independence (e.g. a single date, or a
+ * native V2 plan with no V1 sequential-compatibility requirement).
+ * buildDutyEngineContext's default period-level orchestration now uses
+ * selectProvisionalWinnersSequential (apply-sequential-selection-state.ts)
+ * instead, which additionally carries forward in-run selections exactly
+ * as V1 does — see that module's header comment for the root-cause
+ * explanation.
+ */
+export function selectProvisionalWinners(input: {
+  selectionInput: SelectionInput;
+  matchContextBase: Omit<Parameters<typeof buildStrategyMatchContext>[0], "selectionInput">;
+  definitions: ConfiguredSelectionStrategy[];
+  definitionsById: ReadonlyMap<string, ConfiguredSelectionStrategy>;
+}): ProvisionalSlotSelection {
+  const { selectionInput } = input;
+  const matchContext: StrategyMatchContext = buildStrategyMatchContext({
+    ...input.matchContextBase,
+    selectionInput,
+  });
+  const origin = resolveCandidateSet(selectionInput);
+  const rankingFacts = buildCandidateRankingFacts(selectionInput, origin);
+
+  return selectProvisionalWinnersFromFacts({
+    slotKey: selectionInput.slot.slotKey,
+    date: selectionInput.slot.date,
+    requiredCount: selectionInput.requiredCount,
+    rankingFacts,
+    matchContext,
+    definitions: input.definitions,
+    definitionsById: input.definitionsById,
+  });
 }

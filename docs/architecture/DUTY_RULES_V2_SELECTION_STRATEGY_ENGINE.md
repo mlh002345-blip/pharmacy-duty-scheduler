@@ -197,30 +197,95 @@ is verified in
 `v1-compatibility-chain-equivalence.test.ts` ("HOLIDAY-EVE ORDERING
 PARITY").
 
-**Explicit holiday-eve parity result — the two sub-problems are
-separable, and only one is solved here:**
+**Holiday-eve parity — RESOLVED (Phase 6 corrective).** The two
+sub-problems are separable and BOTH are now solved:
 
-1. **Tie-break ORDERING parity: SOLVED.** Proven above.
-2. **Fairness WEIGHT/load parity on eve dates: NOT SOLVED in this
-   phase.** Phase 4's `dayTypeWeights` model
-   (`EngineSchedulingPolicy.dayTypeWeights`) requires exactly ONE fixed
-   weight value keyed by day-type string ("HOLIDAY_EVE"). V1's actual
-   eve-date weight is whatever weight its underlying weekday happens to
-   carry (a Friday eve gets the weekday weight; the day-type key itself
-   carries no such conditional). Making this fully general would require
-   changing Phase 4's frozen `resolveDateWeight` /
-   `calculate-fairness-facts.ts` — explicitly out of this phase's scope
-   (Phase 4/5 files are extended only additively, never modified in
-   behavior). **Consequence:** `totalWeightedLoad` (the primary
-   criterion, step 1) is only guaranteed to match V1 byte-for-byte on
-   eve-date fixtures that use a single fixed `HOLIDAY_EVE` weight
-   consistent with the fixture's chosen underlying weekday — not in the
-   fully general case where eve dates of different underlying weekdays
-   are mixed with a single static `HOLIDAY_EVE` weight configuration.
-   This is a genuine, currently open Phase 4 modeling limitation, not a
-   Phase 6 selection-engine defect — flagged here explicitly rather than
-   claimed as solved, per this phase's own instruction to self-flag
-   rather than overstate equivalence.
+1. **Tie-break ORDERING parity: SOLVED** (unchanged from the original
+   delivery, proven above).
+2. **Fairness WEIGHT/load parity on eve dates: SOLVED.** Root cause: V1
+   has NO holiday-eve concept at all — `resolveDutyWeight`
+   (`generate-duty-schedule.ts:112-125`) only ever branches on
+   holiday/Saturday/Sunday/weekday, so an eve date is weighted exactly
+   as whatever its actual calendar weekday is. Phase 4's
+   `dayTypeWeights` model, by contrast, requires exactly ONE fixed
+   weight value keyed by the resolved day-type string
+   ("HOLIDAY_EVE") — it cannot express "this day type's weight equals
+   whatever its underlying weekday's weight is" on its own.
+   **Fix:** `CalendarDayContext` gained a new, always-computed, pure
+   calendar fact — `compatibilityWeightDayType: "WEEKDAY" | "SATURDAY" |
+   "SUNDAY"` (`resolve-calendar-context.ts`) — the day type this date
+   would resolve to with holiday/eve classification ignored entirely.
+   `EngineSchedulingPolicy` gained an explicit, optional, typed field —
+   `holidayEveWeightSource?: "CONFIGURED" | "UNDERLYING_WEEKDAY"`
+   (`engine-input.ts`) — defaulting to `"CONFIGURED"` (native V2
+   semantics: HOLIDAY_EVE is weighted by its own configured
+   `dayTypeWeights` entry, completely unaffected by this change). When a
+   caller explicitly sets `"UNDERLYING_WEEKDAY"` (as the V1 compatibility
+   fixture in the golden harness does), `buildDutyEngineContext`
+   substitutes `compatibilityWeightDayType` for `slot.dayTypeKey` ONLY
+   when the resolved day type is `HOLIDAY_EVE`, before calling
+   `calculateFairnessFacts` — every other resolved day type is
+   unaffected. Nothing is inferred through string parsing; the field is
+   explicit, typed, and never a hidden default. Native V2 HOLIDAY_EVE
+   semantics are NOT globally redefined — a chamber that never sets
+   `holidayEveWeightSource` sees byte-identical Phase 4/5/6 behavior to
+   before this corrective. No chamber, city, or tradition is hardcoded —
+   the mechanism is purely calendar-arithmetic. Proven in
+   `v1-golden-equivalence.test.ts` (holiday-eve-before-a-weekday-holiday,
+   holiday-eve-before-a-weekend-holiday, the cross-run
+   weight/hash-changes-with-weekday test, the native-V2-still-uses-
+   configured-weight test, and the 3x determinism test) and exercised
+   end-to-end through the real, unmodified `buildDutyEngineContext`.
+
+## Sequential provisional-selection state (Phase 6 corrective)
+
+**Root cause of the original independent-slot divergence:** V1
+(`generate-duty-schedule.ts:248-326`) processes a period's dates in ONE
+chronological loop and mutates its `metrics` map after each date's
+selection, so date N+1's fairness comparison AND its
+`MIN_DAYS_BETWEEN_DUTIES` eligibility check already reflect every
+candidate selected on date N, N-1, … in the SAME run. The original Phase
+6 delivery selected each slot independently from Phase 4/5's
+pre-computed facts (history + persisted assignments only) — correct for
+a single date, but diverging from V1 on any multi-date period where an
+earlier date's provisional winner should have affected a later date's
+comparison.
+
+**Determination: sequential state IS required** — verified directly by
+golden-harness scenarios #20 (interval relaxation) and #24 (mixed
+strict/relaxed across a multi-day period), which fail without it.
+
+**Fix (the minimum pure in-memory state — not global optimization or
+backtracking):** a new module,
+`selection/apply-sequential-selection-state.ts`, plus a new period-level
+orchestrator, `selectProvisionalWinnersSequential`. It walks the
+already-Phase-4/5-resolved `SelectionInput`s in chronological order
+(their natural order, since `slotKey` is date-prefixed) while carrying a
+pure, immutable, per-pharmacyId accumulator: `{ addedWeight,
+addedAssignmentCount, addedWeekendCount, addedHolidayCount,
+newestLastDutyDate }`. Before ranking each date:
+`applyAccumulatorToFacts` folds the accumulator into that date's
+`CandidateRankingFacts` (weight/count/weekend/holiday/last-duty), and
+`resolveSequentialCandidateSet` recomputes strict-vs-relaxed candidate
+membership using V1's exact policy (strict first; relax the interval
+only when insufficient) against the accumulator's up-to-date
+`lastDutyDate` — sourced entirely from Phase 4's already-computed
+`strictEligible ∪ relaxedEligible` union, so every non-interval HARD
+exclusion (inactive, unavailable, blocking request, configured HARD
+rule) is untouched, since those never depend on within-run sequencing.
+After selecting, `updateAccumulatorWithSelection` folds the winners back
+in. Every function is pure (returns new Maps, never mutates its input);
+`buildDutyEngineContext` now collects all of a period's slots and runs
+this single sequential pass instead of per-slot independent calls — an
+empty/omitted strategy set is entirely unaffected, and a single-date
+period behaves identically to the original independent design (proven:
+none of the original single-date Phase 6 integration tests changed
+behavior). **No database access, no `RotationState` mutation — this is
+the same loop-local `metrics` map V1 already has, made explicit, typed,
+and pure instead of hidden mutable state.** The original
+single-slot-independent entry point (`selectProvisionalWinners`) is
+retained for callers that legitimately want per-slot independence (e.g.
+a native V2 plan with no V1 compatibility requirement).
 
 ## Explainability
 
@@ -265,14 +330,54 @@ canonicalization pattern, which sorts every set-like array.
 ConfiguredSelectionStrategy[]` field. `buildDutyEngineContext`
 validates/conflict-gates the set exactly like Phase 5's rules (ERROR →
 `SelectionEngineError`), computes `strategySetFingerprint`, and — only
-when at least one strategy is configured — calls
-`selectProvisionalWinners` once per resolved slot, collecting results
+when at least one strategy is configured — collects every slot's
+`SelectionInput` in chronological order and runs
+`selectProvisionalWinnersSequential` (see "Sequential provisional-
+selection state" above) once for the whole period, collecting results
 into `DutyEngineDraftResult.provisionalSelections`,
 `.strategyConflicts`, `.strategyDiagnostics`, `.selectionExplanations`,
 and `.selectionCounts`. **An empty or omitted strategy set produces empty
 arrays and zero counts, leaving every Phase 4/5 field byte-identical**
 (proven by `selection-engine-integration.test.ts`'s first test, which
 diffs the full canonical serialization).
+
+## V1 golden equivalence harness (Phase 6 corrective)
+
+`v1-golden-equivalence.test.ts` is the required end-to-end proof: it
+never re-implements V1's algorithm. Path A calls the actual, unmodified
+`src/lib/scheduling/generate-duty-schedule.ts` directly. Path B calls
+`adaptV1RuleToV2Config` (Phase 2, unmodified) to project the same V1
+region/duty-rule/pharmacy input into an `AdaptedV1PlanConfig`, maps that
+into a `LoadedDutyPlanVersion` fixture shaped exactly like the Phase 3
+loader's output, and then calls the real, unmodified
+`buildDutyEngineContext` with `buildCompatibilityRules(policy)` (Phase
+5) and `buildV1CompatibilitySelectionStrategy` (Phase 6) — the same
+production entry point every other caller uses, with
+`holidayEveWeightSource: "UNDERLYING_WEEKDAY"` set explicitly. Both
+paths run against identical synthetic, chamber-independent scenario
+data. 29 tests cover dailyDutyCount 1 and 3; weekday/Saturday/Sunday/
+official/religious/OTHER holidays; both eve sub-cases; overlapping
+holiday metadata (documented achievable case); unavailability;
+CANNOT_DUTY; EMERGENCY_EXCUSE; PREFER_DUTY; historical load; historical
+interval carry-over; balance adjustment; inactive-pharmacy exclusion;
+interval relaxation; quota-exceeds-candidates underfill; Turkish-name
+tie; a fully-tied deterministic case; a multi-day mixed strict/relaxed
+period; 3x repeated-execution determinism; and fingerprint-changes-
+with-selection provenance. All 29 pass, run twice consecutively.
+
+**One documented, honest non-equivalence** (not silently glossed over):
+a same-date RELIGIOUS+OFFICIAL holiday overlap is genuinely
+ARRAY-ORDER-DEPENDENT in V1 (`holidayByDateKey` is a `Map`, so whichever
+holiday record appears LAST in the caller's input array wins — an
+implementation artifact, not a specified rule), while V2's day-type
+precedence deterministically prefers RELIGIOUS_HOLIDAY regardless of
+input order. The golden harness's overlapping-holiday scenario is
+therefore constructed with two holidays sharing the same effective
+weight bucket (OFFICIAL + OTHER) to prove the achievable case; a
+RELIGIOUS+OFFICIAL overlap would require the input array to already list
+the RELIGIOUS holiday last to agree with V2's stable rule — this is a
+V1 non-determinism V2 deliberately replaces with a documented,
+deterministic one, not a Phase 6 defect.
 
 ## Test coverage (this phase)
 
@@ -292,14 +397,23 @@ diffs the full canonical serialization).
   assert the Phase 6 no-op contract by field/value rather than by string
   matching, since Phase 6 additively introduces the (empty-when-unused)
   selection fields that string match could no longer distinguish.
+- `apply-sequential-selection-state.test.ts` (7 tests, corrective): the
+  accumulator's fold/update functions in isolation — purity, weight/
+  count/weekend/holiday folding, lastDutyDate max-of-two-sources logic.
+- `v1-golden-equivalence.test.ts` (29 tests, corrective): see "V1 golden
+  equivalence harness" below.
 
-**Deferred** (explicitly out of scope for this phase, not silently
-dropped): a full loader→adapter→DB-fixture golden harness running V1's
-actual `generateDutySchedule` against a live database side-by-side with
-the V2 pipeline (this phase's ordering-equivalence proof instead exercises
-`V1_COMPATIBILITY_CHAIN` directly against hand-built fixtures, which is
-sufficient to prove the comparator logic is correct without any I/O);
-strategy persistence and admin UI; multi-slot global optimization /
-backtracking; committed-schedule generation; external strategy plugins;
-AI-generated strategies; the eve-date fairness-weight generalization
-described above.
+**Deferred** (explicitly out of scope, not silently dropped): a
+DB-fixture golden harness (the corrective harness builds its
+`LoadedDutyPlanVersion` fixture in-memory via the same shape the Phase 3
+loader produces, rather than round-tripping through a live database —
+this is a deliberate, honest scope boundary: the loader itself is
+Phase 3's already-tested responsibility, not Phase 6's); strategy
+persistence and admin UI; multi-slot GLOBAL optimization/backtracking
+(the sequential accumulator added in this corrective is local
+carry-forward state, not optimization — no candidate set is ever
+re-opened once ranked); committed-schedule generation; external strategy
+plugins; AI-generated strategies. The holiday-eve weight/load boundary
+and the independent-vs-sequential selection boundary — the two items
+this corrective was scoped to resolve — are both now resolved, not
+deferred.

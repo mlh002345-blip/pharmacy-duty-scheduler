@@ -37,6 +37,17 @@ export type CalendarDayContext = {
    *  SATURDAY > WEEKDAY. Holiday.type OTHER maps to OFFICIAL_HOLIDAY —
    *  the documented V1 weighting rule, preserved as a calendar fact. */
   candidateDayTypes: BuiltinDayType[];
+  /** Phase 6 corrective: the day type this date would resolve to if
+   *  HOLIDAY_EVE / holiday classification were ignored entirely — i.e.
+   *  purely from the underlying weekday (V1 has no eve concept at all;
+   *  resolveDutyWeight in generate-duty-schedule.ts only ever branches
+   *  on holiday/Saturday/Sunday/weekday). Always computed, independent
+   *  of any policy — a pure calendar fact, never a hidden default. Used
+   *  ONLY when EngineSchedulingPolicy.holidayEveWeightSource is
+   *  explicitly set to "UNDERLYING_WEEKDAY" AND the resolved day type is
+   *  HOLIDAY_EVE; native V2 semantics (CONFIGURED, the default) ignore
+   *  this field entirely. */
+  compatibilityWeightDayType: "WEEKDAY" | "SATURDAY" | "SUNDAY";
 };
 
 export function resolveCalendarContext(input: {
@@ -88,6 +99,7 @@ export function resolveCalendarContext(input: {
       isHolidayEve,
       customDayCategoryOverride: overrideByDate.get(date) ?? null,
       candidateDayTypes,
+      compatibilityWeightDayType: sunday ? "SUNDAY" : saturday ? "SATURDAY" : "WEEKDAY",
     };
   });
 }
