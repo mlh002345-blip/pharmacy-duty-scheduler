@@ -20,6 +20,9 @@ export const CONSTRAINT_CODES = [
   "MIN_DAYS_BETWEEN_DUTIES",
   "SAME_SLOT_DUPLICATE",
   "DAILY_ASSIGNMENT_LIMIT",
+  // Phase 5: a configured catalogue rule normalized into the constraint
+  // contract; the specific rule lives in explanationCode/violation code.
+  "CONFIGURED_RULE",
 ] as const;
 export type ConstraintCode = (typeof CONSTRAINT_CODES)[number];
 

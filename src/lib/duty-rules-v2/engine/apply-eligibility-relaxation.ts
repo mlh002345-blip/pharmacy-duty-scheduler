@@ -24,9 +24,15 @@ export type EligibilityRelaxationResult = {
   /** Additional candidates admitted by relaxation (empty when none). */
   relaxedEligible: string[];
   relaxationApplied: boolean;
-  relaxedConstraintCodes: ("MIN_DAYS_BETWEEN_DUTIES")[];
+  /** "MIN_DAYS_BETWEEN_DUTIES" and, in Phase 5, the violation codes of
+   *  catalogue rules whose entry AND configuration declare relaxability
+   *  (currently only the V1_MIN_INTERVAL mode exists). */
+  relaxedConstraintCodes: string[];
   diagnostics: EngineDiagnostic[];
 };
+
+/** The Phase 4 default: only the built-in V1 interval reason relaxes. */
+export const DEFAULT_RELAXABLE_REASONS: readonly string[] = ["MIN_DAYS_INTERVAL"];
 
 export function applyEligibilityRelaxation(context: {
   slotKey: string;
@@ -34,6 +40,10 @@ export function applyEligibilityRelaxation(context: {
   requiredCount: number;
   eligibilityResults: CandidateEligibilityResult[];
   relaxMinIntervalWhenInsufficient: boolean;
+  /** Reasons admissible for relaxation. Defaults to the V1 interval
+   *  reason only; Phase 5 adds catalogue-declared relaxable rule
+   *  violation codes (never inactive/unavailable/blocking/exclusions). */
+  relaxableReasonCodes?: readonly string[];
 }): EligibilityRelaxationResult {
   const diagnostics: EngineDiagnostic[] = [];
   const strictEligible = context.eligibilityResults
@@ -50,12 +60,16 @@ export function applyEligibilityRelaxation(context: {
       subjectKey: context.slotKey,
     });
     if (context.relaxMinIntervalWhenInsufficient) {
+      const relaxable = new Set(context.relaxableReasonCodes ?? DEFAULT_RELAXABLE_REASONS);
+      // Relax-admissible iff EVERY hard failure is a relaxable interval
+      // reason — a candidate that also fails any non-relaxable rule
+      // (inactive, unavailable, blocking, exclusion, …) stays out.
       relaxedEligible = context.eligibilityResults
         .filter(
           (result) =>
             !result.eligible &&
-            result.hardExclusionReasons.length === 1 &&
-            result.hardExclusionReasons[0] === "MIN_DAYS_INTERVAL"
+            result.hardExclusionReasons.length > 0 &&
+            result.hardExclusionReasons.every((reason) => relaxable.has(reason))
         )
         .map((result) => result.candidateKey);
       if (relaxedEligible.length > 0) {

@@ -6,7 +6,17 @@
 // no clock, no randomness. Errors are controlled DutyEngineError values;
 // diagnostics aggregate deterministically.
 
-import { applyEligibilityRelaxation } from "./apply-eligibility-relaxation";
+import { analyzeRuleConflicts } from "../rules/analyze-rule-conflicts";
+import { buildRuleEvaluationContext } from "../rules/build-rule-context";
+import { buildRuleExplanations, type RuleExplanation } from "../rules/build-rule-explanation";
+import { canonicalizeRuleSet, ruleSetFingerprint } from "../rules/canonicalize-rule-set";
+import { evaluateRulesForSlot } from "../rules/evaluate-rules";
+import { RuleEngineError } from "../rules/rule-errors";
+import type { ConfiguredRuleDefinition } from "../rules/domain/rule-definition";
+import type { RuleConflict } from "../rules/domain/rule-conflict";
+import type { RuleEvaluationResult } from "../rules/domain/rule-evaluation";
+import type { ConstraintResult } from "./domain/constraint";
+import { applyEligibilityRelaxation, DEFAULT_RELAXABLE_REASONS } from "./apply-eligibility-relaxation";
 import { buildDraftResult, type DutyEngineDraftResult, type EngineDayResult } from "./build-draft-result";
 import { buildSelectionInput, sha256Canonical, type SelectionInput } from "./build-selection-input";
 import { calculateFairnessFacts } from "./calculate-fairness-facts";
@@ -59,6 +69,37 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
   const inputHash = runtimeInputHash(input);
   const holidayDates: ReadonlySet<string> = new Set(input.holidays.map((h) => h.date));
 
+  // Phase 5: validate and conflict-gate the configured rule set BEFORE
+  // any evaluation. ERROR conflicts reject the whole run; WARNING/INFO
+  // conflicts are reported in the draft result. An empty rule set leaves
+  // Phase 4 behavior byte-identical (aside from the constant empty-set
+  // fingerprint in provenance).
+  const configuredRules: ConfiguredRuleDefinition[] = input.configuredRules ?? [];
+  const definitionsById = new Map(configuredRules.map((rule) => [rule.id, rule]));
+  let ruleConflicts: RuleConflict[] = [];
+  if (configuredRules.length > 0) {
+    ruleConflicts = analyzeRuleConflicts(configuredRules, {
+      organizationId: plan.organizationId,
+      regionId: plan.regionId,
+      knownPharmacyIds: new Set(
+        plan.rotationPools.flatMap((pool) => pool.memberships.map((m) => m.pharmacyId))
+      ),
+      knownPoolIds: new Set(plan.rotationPools.map((pool) => pool.id)),
+    });
+    const errors = ruleConflicts.filter((conflict) => conflict.level === "ERROR");
+    if (errors.length > 0) {
+      throw new RuleEngineError(
+        "RULE_SET_CONFLICTS",
+        "Kural kümesi çelişkiler içeriyor.",
+        errors.map((conflict) => `${conflict.code}:${conflict.ruleIds.join(",")}`)
+      );
+    }
+    // Canonicalization is also the cheap structural sanity pass.
+    canonicalizeRuleSet(configuredRules);
+  }
+  const rulesFingerprint = ruleSetFingerprint(configuredRules);
+  const allRuleResults: RuleEvaluationResult[] = [];
+
   const calendar = resolveCalendarContext(input);
 
   const days: EngineDayResult[] = [];
@@ -88,23 +129,8 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
       if (pool === null) continue; // SLOT_WITHOUT_POOL already diagnosed.
       diagnostics.push(...pool.diagnostics);
 
-      const shift = shifts.shifts.find((s) => s.shiftId === slot.shiftId);
+      const shift = shifts.shifts.find((s) => s.shiftId === slot.shiftId) ?? null;
       const candidates = resolveCandidates(slot, pool, facts);
-      const constraintsByCandidate = candidates.map((candidate) =>
-        evaluateConstraints(candidate, input.policy)
-      );
-      const eligibility = candidates.map((candidate, index) =>
-        evaluateEligibility(candidate, constraintsByCandidate[index])
-      );
-      const relaxation = applyEligibilityRelaxation({
-        slotKey: slot.slotKey,
-        date: slot.date,
-        requiredCount: slot.requiredCount,
-        eligibilityResults: eligibility,
-        relaxMinIntervalWhenInsufficient: input.policy.relaxMinIntervalWhenInsufficient,
-      });
-      diagnostics.push(...relaxation.diagnostics);
-
       const fairnessFacts = candidates.map((candidate) =>
         calculateFairnessFacts({
           candidate,
@@ -118,6 +144,90 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
         resolveRotationFacts(candidate, pool, slot.dayTypeKey)
       );
 
+      // Phase 5: evaluate configured rules over the slot's contexts.
+      let ruleResults: RuleEvaluationResult[] = [];
+      if (configuredRules.length > 0) {
+        const contextBase = {
+          plan,
+          generationMode: input.generationMode,
+          periodStart: input.periodStart,
+          periodEnd: input.periodEnd,
+          calendar: dayContext,
+          dayType,
+          slot,
+          shift,
+          holidayDates,
+        };
+        ruleResults = evaluateRulesForSlot({
+          definitions: configuredRules,
+          slotContext: buildRuleEvaluationContext({
+            ...contextBase,
+            candidate: null,
+            fairness: null,
+            rotation: null,
+          }),
+          candidateContexts: candidates.map((candidate, index) =>
+            buildRuleEvaluationContext({
+              ...contextBase,
+              candidate,
+              fairness: fairnessFacts[index],
+              rotation: rotationFacts[index],
+            })
+          ),
+        });
+        allRuleResults.push(...ruleResults);
+      }
+
+      // Normalize rule outcomes into the Phase 4 constraint contract:
+      // HARD failures exclude, SOFT failures flow into softConcerns,
+      // ADVISORY results never touch constraints.
+      const ruleConstraintsByCandidate = new Map<string, ConstraintResult[]>();
+      for (const result of ruleResults) {
+        if (result.candidateKey === null || result.outcome !== "FAIL") continue;
+        if (result.severity === "ADVISORY") continue;
+        const list = ruleConstraintsByCandidate.get(result.candidateKey) ?? [];
+        list.push({
+          constraintCode: "CONFIGURED_RULE",
+          severity: result.severity,
+          candidateKey: result.candidateKey,
+          date: result.date,
+          slotKey: result.slotKey,
+          passed: false,
+          observedValue: result.observedValue,
+          expectedValue: result.expectedValue,
+          explanationCode: result.violationCode ?? result.explanationCode,
+        });
+        ruleConstraintsByCandidate.set(result.candidateKey, list);
+      }
+
+      const eligibility = candidates.map((candidate) =>
+        evaluateEligibility(candidate, [
+          ...evaluateConstraints(candidate, input.policy),
+          ...(ruleConstraintsByCandidate.get(candidate.candidateKey) ?? []),
+        ])
+      );
+
+      // Relaxation stays V1-limited: the built-in interval reason plus
+      // violation codes of rules that BOTH the catalogue and the chamber
+      // configuration declare relaxable.
+      const relaxableReasonCodes = [
+        ...DEFAULT_RELAXABLE_REASONS,
+        ...new Set(
+          ruleResults
+            .filter((r) => r.outcome === "FAIL" && r.severity === "HARD" && r.relaxable)
+            .map((r) => r.violationCode ?? r.explanationCode)
+        ),
+      ];
+      const relaxation = applyEligibilityRelaxation({
+        slotKey: slot.slotKey,
+        date: slot.date,
+        requiredCount: slot.requiredCount,
+        eligibilityResults: eligibility,
+        relaxMinIntervalWhenInsufficient: input.policy.relaxMinIntervalWhenInsufficient,
+        relaxableReasonCodes,
+      });
+      diagnostics.push(...relaxation.diagnostics);
+
       selectionInputs.push(
         buildSelectionInput({
           slot,
@@ -127,9 +237,11 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
           relaxation,
           fairnessFacts,
           rotationFacts,
+          ruleEvaluations: ruleResults,
           diagnostics: [...pool.diagnostics, ...relaxation.diagnostics],
           configurationFingerprint: plan.configurationFingerprint,
           runtimeInputHash: inputHash,
+          ruleSetFingerprint: rulesFingerprint,
           loaderVersion: plan.loaderVersion,
           engineVersion: ENGINE_DOMAIN_VERSION,
         })
@@ -141,6 +253,9 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
     a.slot.slotKey < b.slot.slotKey ? -1 : a.slot.slotKey > b.slot.slotKey ? 1 : 0
   );
 
+  const ruleExplanations: RuleExplanation[] =
+    configuredRules.length > 0 ? buildRuleExplanations(definitionsById, allRuleResults) : [];
+
   return buildDraftResult({
     engineVersion: ENGINE_DOMAIN_VERSION,
     generationMode: input.generationMode,
@@ -149,6 +264,7 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
     provenance: {
       configurationFingerprint: plan.configurationFingerprint,
       runtimeInputHash: inputHash,
+      ruleSetFingerprint: rulesFingerprint,
       loaderVersion: plan.loaderVersion,
       engineVersion: ENGINE_DOMAIN_VERSION,
       planVersionId: plan.planVersionId,
@@ -158,5 +274,7 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
     days,
     selectionInputs,
     diagnostics,
+    ruleConflicts,
+    ruleExplanations,
   });
 }

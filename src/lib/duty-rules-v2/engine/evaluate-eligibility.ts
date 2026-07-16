@@ -7,7 +7,6 @@
 // mirroring V1's structure. PREFER_DUTY is deliberately NOT an
 // eligibility fact: it is a fairness preference (Stage 9).
 
-import type { EligibilityReasonCode } from "./domain/diagnostics";
 import type { ConstraintResult } from "./domain/constraint";
 import type { SlotCandidate } from "./resolve-candidates";
 
@@ -17,8 +16,10 @@ export type CandidateEligibilityResult = {
   date: string;
   pharmacyId: string;
   eligible: boolean;
-  /** Failed HARD constraints as stable reasons, sorted. */
-  hardExclusionReasons: EligibilityReasonCode[];
+  /** Failed HARD constraints as stable reasons, sorted. Built-in reasons
+   *  are EligibilityReasonCode values; configured catalogue rules
+   *  contribute their stable RULE_* violation codes (Phase 5). */
+  hardExclusionReasons: string[];
   /** Failed SOFT constraints (none exist yet in compatibility mode). */
   softConcerns: string[];
   /** The facts the verdict used — auditability, never re-derived. */
@@ -39,7 +40,7 @@ export function evaluateEligibility(
 ): CandidateEligibilityResult {
   const hardExclusionReasons = constraintResults
     .filter((result) => result.severity === "HARD" && !result.passed)
-    .map((result) => result.explanationCode as EligibilityReasonCode)
+    .map((result) => result.explanationCode)
     .sort();
 
   return {
