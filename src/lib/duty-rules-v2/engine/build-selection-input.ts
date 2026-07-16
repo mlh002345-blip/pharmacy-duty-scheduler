@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 
 import type { RotationStrategyValue } from "../domain/loaded-plan";
 import { canonicalSerialize } from "../v1-adapter";
+import type { RuleEvaluationResult } from "../rules/domain/rule-evaluation";
 import type { EngineDiagnostic } from "./domain/diagnostics";
 import type { CandidateFairnessFacts } from "./calculate-fairness-facts";
 import type { CandidateRotationFacts } from "./resolve-rotation-facts";
@@ -48,6 +49,11 @@ export type SelectionProvenance = {
   membershipSnapshotHash: string;
   effectiveDate: string;
   runtimeInputHash: string;
+  /** Phase 5: canonical hash of the configured rule set (empty-set hash
+   *  when no rules are supplied). The full provenance package is FIVE
+   *  values: configuration, membership snapshot, runtime input, rule
+   *  set, and the draft result fingerprint. */
+  ruleSetFingerprint: string;
   loaderVersion: number;
   engineVersion: number;
 };
@@ -62,6 +68,9 @@ export type SelectionInput = {
   relaxation: EligibilityRelaxationResult;
   fairnessFacts: CandidateFairnessFacts[];
   rotationFacts: CandidateRotationFacts[];
+  /** Phase 5: configured-rule outcomes for this slot (canonical order).
+   *  Empty when no rules are configured. */
+  ruleEvaluations: RuleEvaluationResult[];
   diagnostics: EngineDiagnostic[];
   provenance: SelectionProvenance;
 };
@@ -74,9 +83,11 @@ export function buildSelectionInput(input: {
   relaxation: EligibilityRelaxationResult;
   fairnessFacts: CandidateFairnessFacts[];
   rotationFacts: CandidateRotationFacts[];
+  ruleEvaluations: RuleEvaluationResult[];
   diagnostics: EngineDiagnostic[];
   configurationFingerprint: string;
   runtimeInputHash: string;
+  ruleSetFingerprint: string;
   loaderVersion: number;
   engineVersion: number;
 }): SelectionInput {
@@ -92,12 +103,14 @@ export function buildSelectionInput(input: {
     relaxation: input.relaxation,
     fairnessFacts: [...input.fairnessFacts].sort(byKey),
     rotationFacts: [...input.rotationFacts].sort(byKey),
+    ruleEvaluations: input.ruleEvaluations,
     diagnostics: input.diagnostics,
     provenance: {
       configurationFingerprint: input.configurationFingerprint,
       membershipSnapshotHash: membershipSnapshotHash(input.pool),
       effectiveDate: input.slot.date,
       runtimeInputHash: input.runtimeInputHash,
+      ruleSetFingerprint: input.ruleSetFingerprint,
       loaderVersion: input.loaderVersion,
       engineVersion: input.engineVersion,
     },

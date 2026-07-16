@@ -11,6 +11,8 @@
 // component is deterministically ordered and derived only from explicit
 // input, byte-identical inputs always produce byte-identical results.
 
+import type { RuleConflict } from "../rules/domain/rule-conflict";
+import type { RuleExplanation } from "../rules/build-rule-explanation";
 import type { EngineGenerationMode } from "./domain/engine-input";
 import { sortDiagnostics, type EngineDiagnostic } from "./domain/diagnostics";
 import { sha256Canonical } from "./build-selection-input";
@@ -39,6 +41,8 @@ export type EngineDayResult = {
 export type EngineRunProvenance = {
   configurationFingerprint: string;
   runtimeInputHash: string;
+  /** Phase 5: canonical hash of the configured rule set. */
+  ruleSetFingerprint: string;
   loaderVersion: number;
   engineVersion: number;
   planVersionId: string;
@@ -66,6 +70,11 @@ export type DutyEngineDraftResult = {
   };
   unresolvedSlots: UnresolvedSlot[];
   warnings: EngineDiagnostic[];
+  /** Phase 5: non-blocking rule conflicts (ERROR conflicts abort the
+   *  run before evaluation) and code-based explanations for every
+   *  non-PASS rule outcome. Empty without configured rules. */
+  ruleConflicts: RuleConflict[];
+  ruleExplanations: RuleExplanation[];
   resultFingerprint: string;
 };
 
@@ -78,6 +87,8 @@ export function buildDraftResult(input: {
   days: EngineDayResult[];
   selectionInputs: SelectionInput[];
   diagnostics: EngineDiagnostic[];
+  ruleConflicts: RuleConflict[];
+  ruleExplanations: RuleExplanation[];
 }): DutyEngineDraftResult {
   const unresolvedSlots: UnresolvedSlot[] = [];
   for (const day of input.days) {
@@ -135,6 +146,8 @@ export function buildDraftResult(input: {
     },
     unresolvedSlots,
     warnings: sortDiagnostics([...input.diagnostics, ...unresolvedDiagnostics]),
+    ruleConflicts: input.ruleConflicts,
+    ruleExplanations: input.ruleExplanations,
   };
 
   return { ...withoutFingerprint, resultFingerprint: sha256Canonical(withoutFingerprint) };

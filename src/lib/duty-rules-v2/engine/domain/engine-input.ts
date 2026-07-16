@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import type { LoadedDutyPlanVersion } from "../../domain/loaded-plan";
+import type { ConfiguredRuleDefinition } from "../../rules/domain/rule-definition";
 import { isIsoDateString } from "../domain/dates";
 
 export type EngineGenerationMode = "PREVIEW" | "SIMULATION";
@@ -96,6 +97,10 @@ export type DutyEngineInput = {
   historicalDuties: EngineHistoricalDuty[];
   balanceAdjustments: EngineBalanceAdjustment[];
   existingAssignments: EngineExistingAssignment[];
+  /** Phase 5: explicit in-memory configured rules (no persistence yet).
+   *  Omitted or empty = Phase 4 behavior, byte-identical. Validated and
+   *  conflict-gated before any evaluation. */
+  configuredRules?: ConfiguredRuleDefinition[];
 };
 
 // ---------------------------------------------------------------------------

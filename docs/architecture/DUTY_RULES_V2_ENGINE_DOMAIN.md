@@ -257,3 +257,13 @@ V1 remains the production source of truth; zero production call sites;
 zero database access in `engine/` (test-support fixtures are test-only);
 the single integration test only READS a persisted plan through the
 Phase 3 loader and asserts no row changed.
+
+## Phase 5 pointer
+
+The configurable Rule Engine
+(`docs/architecture/DUTY_RULES_V2_CONFIGURABLE_RULE_ENGINE.md`) plugs
+into this pipeline between candidate facts and eligibility: configured
+catalogue rules produce normalized `CONFIGURED_RULE` constraint results,
+`SelectionInput` gains `ruleEvaluations`, and provenance gains
+`ruleSetFingerprint`. An empty rule set leaves this pipeline's behavior
+byte-identical.
