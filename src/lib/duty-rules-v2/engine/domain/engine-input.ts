@@ -89,6 +89,19 @@ export type EngineSchedulingPolicy = {
    *  Required for V1 compatibility equivalence; never a hidden default,
    *  never inferred. */
   holidayEveWeightSource?: "CONFIGURED" | "UNDERLYING_WEEKDAY";
+  /** Phase 6 corrective: explicit holiday-overlap resolution mode for
+   *  same-date RELIGIOUS+OFFICIAL(+OTHER) overlaps. "NATIVE_PRECEDENCE"
+   *  (default when omitted) = deterministic, order-INDEPENDENT: the
+   *  resolved day type (and therefore weight) always prefers
+   *  RELIGIOUS_HOLIDAY over OFFICIAL_HOLIDAY, regardless of input array
+   *  order — native V2 semantics, unaffected by this field.
+   *  "V1_LAST_INPUT_WINS" = reproduces V1's actual behavior
+   *  (generate-duty-schedule.ts's `holidayByDateKey` is a Map, so
+   *  whichever holiday record appears LAST in the caller's `holidays`
+   *  array wins for BOTH weight and note) — order-DEPENDENT by design,
+   *  required for exact V1 weight equivalence when overlapping holidays
+   *  exist. Never a hidden default, never inferred from string content. */
+  holidayOverlapResolutionMode?: "NATIVE_PRECEDENCE" | "V1_LAST_INPUT_WINS";
 };
 
 export type DutyEngineInput = {
@@ -163,6 +176,7 @@ const inputSchema = z.object({
     ),
     sameDaySecondAssignmentAllowed: z.boolean(),
     holidayEveWeightSource: z.enum(["CONFIGURED", "UNDERLYING_WEEKDAY"]).optional(),
+    holidayOverlapResolutionMode: z.enum(["NATIVE_PRECEDENCE", "V1_LAST_INPUT_WINS"]).optional(),
   }),
   holidays: z.array(
     z.object({

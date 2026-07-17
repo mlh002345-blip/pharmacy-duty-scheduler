@@ -65,6 +65,11 @@ type ScenarioFixture = {
     startDay: number;
     endDay: number;
   }[];
+  /** Phase 6 corrective (Part 4/6): explicit holiday-overlap resolution
+   *  mode. Defaults to "V1_LAST_INPUT_WINS" for this harness — the whole
+   *  point of the compatibility fixture is reproducing V1 byte-for-byte,
+   *  including its order-dependent overlap behavior. */
+  holidayOverlapResolutionMode?: "NATIVE_PRECEDENCE" | "V1_LAST_INPUT_WINS";
 };
 
 function pad(n: number): string {
@@ -232,6 +237,7 @@ function buildV2Input(f: ScenarioFixture): DutyEngineInput {
     ],
     sameDaySecondAssignmentAllowed: false,
     holidayEveWeightSource: "UNDERLYING_WEEKDAY",
+    holidayOverlapResolutionMode: f.holidayOverlapResolutionMode ?? "V1_LAST_INPUT_WINS",
   };
 
   const holidays = (f.holidays ?? []).map((h) => ({
@@ -869,6 +875,117 @@ describe("V1 golden equivalence — calendar and eligibility facts", () => {
     const { v1, v2 } = runBothPaths(f);
     assertSelectionEquivalence(v1, v2, allDates(f).slice(0, 10));
     assertUnderfillEquivalence(v1, v2);
+  });
+});
+
+describe("V1 golden equivalence — holiday overlap resolution (Part 6 corrective)", () => {
+  function overlapFixture(
+    holidays: ScenarioFixture["holidays"]
+  ): ScenarioFixture {
+    return {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 1,
+      dutyRule: { ...BASE_DUTY_RULE, minDaysBetweenDuties: 0 },
+      pharmacies: threePharmacies(),
+      holidays,
+      holidayOverlapResolutionMode: "V1_LAST_INPUT_WINS",
+    };
+  }
+
+  it("1. OFFICIAL then RELIGIOUS — V1's last-write wins (RELIGIOUS)", () => {
+    const f = overlapFixture([
+      { day: 15, name: "Resmi", type: "OFFICIAL" },
+      { day: 15, name: "Dini", type: "RELIGIOUS" },
+    ]);
+    const { v1, v2 } = runBothPaths(f);
+    assertSelectionEquivalence(v1, v2, ["2026-09-15"]);
+    expect(v1ByDate(v1).get("2026-09-15")?.[0]?.weight).toBe(2.5);
+  });
+
+  it("2. RELIGIOUS then OFFICIAL — V1's last-write wins (OFFICIAL)", () => {
+    const f = overlapFixture([
+      { day: 15, name: "Dini", type: "RELIGIOUS" },
+      { day: 15, name: "Resmi", type: "OFFICIAL" },
+    ]);
+    const { v1, v2 } = runBothPaths(f);
+    assertSelectionEquivalence(v1, v2, ["2026-09-15"]);
+    expect(v1ByDate(v1).get("2026-09-15")?.[0]?.weight).toBe(2);
+  });
+
+  it("3. OFFICIAL then OTHER — both weight buckets equal, trivially consistent", () => {
+    const f = overlapFixture([
+      { day: 15, name: "Resmi", type: "OFFICIAL" },
+      { day: 15, name: "Diğer", type: "OTHER" },
+    ]);
+    const { v1, v2 } = runBothPaths(f);
+    assertSelectionEquivalence(v1, v2, ["2026-09-15"]);
+    expect(v1ByDate(v1).get("2026-09-15")?.[0]?.weight).toBe(2);
+  });
+
+  it("4. OTHER then OFFICIAL — both weight buckets equal, trivially consistent", () => {
+    const f = overlapFixture([
+      { day: 15, name: "Diğer", type: "OTHER" },
+      { day: 15, name: "Resmi", type: "OFFICIAL" },
+    ]);
+    const { v1, v2 } = runBothPaths(f);
+    assertSelectionEquivalence(v1, v2, ["2026-09-15"]);
+    expect(v1ByDate(v1).get("2026-09-15")?.[0]?.weight).toBe(2);
+  });
+
+  it("5. RELIGIOUS then OTHER — V1's last-write wins (OTHER → official-bucket weight)", () => {
+    const f = overlapFixture([
+      { day: 15, name: "Dini", type: "RELIGIOUS" },
+      { day: 15, name: "Diğer", type: "OTHER" },
+    ]);
+    const { v1, v2 } = runBothPaths(f);
+    assertSelectionEquivalence(v1, v2, ["2026-09-15"]);
+    expect(v1ByDate(v1).get("2026-09-15")?.[0]?.weight).toBe(2);
+  });
+
+  it("6. duplicate same-type holiday entries — no ambiguity, weight unaffected", () => {
+    const f = overlapFixture([
+      { day: 15, name: "Resmi A", type: "OFFICIAL" },
+      { day: 15, name: "Resmi B", type: "OFFICIAL" },
+    ]);
+    const { v1, v2 } = runBothPaths(f);
+    assertSelectionEquivalence(v1, v2, ["2026-09-15"]);
+    expect(v1ByDate(v1).get("2026-09-15")?.[0]?.weight).toBe(2);
+  });
+
+  it("7. three overlapping holiday entries — last-write-wins holds regardless of count", () => {
+    const f = overlapFixture([
+      { day: 15, name: "Resmi", type: "OFFICIAL" },
+      { day: 15, name: "Diğer", type: "OTHER" },
+      { day: 15, name: "Dini", type: "RELIGIOUS" },
+    ]);
+    const { v1, v2 } = runBothPaths(f);
+    assertSelectionEquivalence(v1, v2, ["2026-09-15"]);
+    expect(v1ByDate(v1).get("2026-09-15")?.[0]?.weight).toBe(2.5); // RELIGIOUS last
+  });
+
+  it("native V2 precedence stays RELIGIOUS-first and order-independent even with 3 overlapping entries", () => {
+    const orderA = overlapFixture([
+      { day: 15, name: "Resmi", type: "OFFICIAL" },
+      { day: 15, name: "Diğer", type: "OTHER" },
+      { day: 15, name: "Dini", type: "RELIGIOUS" },
+    ]);
+    orderA.holidayOverlapResolutionMode = "NATIVE_PRECEDENCE";
+    const orderB = overlapFixture([
+      { day: 15, name: "Dini", type: "RELIGIOUS" },
+      { day: 15, name: "Diğer", type: "OTHER" },
+      { day: 15, name: "Resmi", type: "OFFICIAL" },
+    ]);
+    orderB.holidayOverlapResolutionMode = "NATIVE_PRECEDENCE";
+    const a = buildDutyEngineContext(buildV2Input(orderA));
+    const b = buildDutyEngineContext(buildV2Input(orderB));
+    const weightOn15 = (result: DutyEngineDraftResult) =>
+      result.selectionInputs.find((s) => s.slot.date === "2026-09-15")!.fairnessFacts[0].dateWeight;
+    expect(weightOn15(a)).toBe(2.5);
+    expect(weightOn15(b)).toBe(2.5);
+    expect(a.resultFingerprint).toBe(b.resultFingerprint);
   });
 });
 

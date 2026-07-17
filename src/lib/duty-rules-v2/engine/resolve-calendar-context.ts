@@ -50,6 +50,30 @@ export type CalendarDayContext = {
   compatibilityWeightDayType: "WEEKDAY" | "SATURDAY" | "SUNDAY";
 };
 
+/** Phase 6 corrective (Part 4): the LAST holiday matching `date`, in the
+ *  caller's ORIGINAL `holidays` array order (never re-sorted) — or null
+ *  if none. V1's `holidayByDateKey` is a plain Map, so whichever holiday
+ *  record appears last in the input array wins for weight purposes;
+ *  this reproduces that exact fact.
+ *
+ *  Deliberately NOT a field on CalendarDayContext (which is embedded
+ *  wholesale into DutyEngineDraftResult.days and therefore
+ *  resultFingerprint): CalendarDayContext must stay order-insensitive to
+ *  holiday input so a NATIVE_PRECEDENCE (default) run's provenance is
+ *  genuinely unaffected by holiday array order, exactly as before this
+ *  corrective. Callers compute this ONLY when
+ *  holidayOverlapResolutionMode is explicitly "V1_LAST_INPUT_WINS". */
+export function resolveCompatibilityLastInputHoliday(
+  holidays: EngineHoliday[],
+  date: string
+): EngineHoliday | null {
+  let last: EngineHoliday | null = null;
+  for (const holiday of holidays) {
+    if (holiday.date === date) last = holiday;
+  }
+  return last;
+}
+
 export function resolveCalendarContext(input: {
   periodStart: string;
   periodEnd: string;

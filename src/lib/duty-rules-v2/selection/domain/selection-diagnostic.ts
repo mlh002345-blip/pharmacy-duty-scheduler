@@ -10,6 +10,15 @@ export const SELECTION_DIAGNOSTIC_CODES = [
   "FALLBACK_CYCLE_DETECTED",
   "UNDERFILLED_SELECTION",
   "NO_ELIGIBLE_CANDIDATES",
+  /** Phase 6 corrective: a pharmacy reachable through more than one
+   *  membership/pool would have occupied more than one seat in the SAME
+   *  slot; only the highest-ranked occurrence was kept. */
+  "PROVISIONAL_SAME_SLOT_DUPLICATE",
+  /** Phase 6 corrective: a pharmacy already provisionally selected
+   *  earlier THIS RUN on the same calendar date was excluded from a
+   *  later same-date slot because sameDaySecondAssignmentAllowed is
+   *  false. */
+  "PROVISIONAL_SAME_DAY_ASSIGNMENT_CONFLICT",
 ] as const;
 export type SelectionDiagnosticCode = (typeof SELECTION_DIAGNOSTIC_CODES)[number];
 

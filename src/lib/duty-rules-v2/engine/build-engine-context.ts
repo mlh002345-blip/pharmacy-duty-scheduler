@@ -32,7 +32,7 @@ import { buildSelectionInput, sha256Canonical, type SelectionInput } from "./bui
 import { calculateFairnessFacts } from "./calculate-fairness-facts";
 import { evaluateConstraints } from "./evaluate-constraints";
 import { evaluateEligibility } from "./evaluate-eligibility";
-import { resolveCalendarContext } from "./resolve-calendar-context";
+import { resolveCalendarContext, resolveCompatibilityLastInputHoliday } from "./resolve-calendar-context";
 import { indexRuntimeFacts, resolveCandidates } from "./resolve-candidates";
 import { resolveDayType } from "./resolve-day-type";
 import { resolvePool } from "./resolve-pool";
@@ -54,6 +54,15 @@ export function runtimeInputHash(input: DutyEngineInput): string {
     generationMode: input.generationMode,
     policy: input.policy,
     holidays: sortPlain(input.holidays),
+    // Phase 6 corrective: holidays' ORIGINAL array order only
+    // participates in the hash when V1_LAST_INPUT_WINS compatibility
+    // mode is active — that is the only mode whose behavior can depend
+    // on it (native mode's day-type precedence is order-independent by
+    // construction, so its hash — and therefore every downstream
+    // fingerprint and selection — stays byte-identical under reordering,
+    // exactly as before this corrective).
+    holidayInputOrder:
+      input.policy.holidayOverlapResolutionMode === "V1_LAST_INPUT_WINS" ? input.holidays : null,
     customDayOverrides: sortPlain(input.customDayOverrides),
     unavailability: sortPlain(input.unavailability),
     dutyRequests: sortPlain(input.dutyRequests),
@@ -180,11 +189,30 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
       // only ever branches on holiday/Saturday/Sunday/weekday), so this
       // is the only way to reproduce V1's weight byte-for-byte on eve
       // dates. Every other resolved day type is unaffected.
+      // Phase 6 corrective (Part 4): explicit holiday-overlap resolution
+      // mode. Native precedence (default) always prefers
+      // RELIGIOUS_HOLIDAY over OFFICIAL_HOLIDAY for weight purposes,
+      // deterministically, regardless of input order — untouched here.
+      // V1_LAST_INPUT_WINS instead uses whichever holiday record was
+      // LAST in the caller's original array for this date (V1's actual,
+      // order-dependent Map-overwrite behavior; OTHER maps to the
+      // OFFICIAL_HOLIDAY weight bucket, matching V1's own rule).
+      const lastInputHoliday =
+        input.policy.holidayOverlapResolutionMode === "V1_LAST_INPUT_WINS"
+          ? resolveCompatibilityLastInputHoliday(input.holidays, dayContext.date)
+          : null;
+      const overlapWeightDayType =
+        lastInputHoliday !== null
+          ? lastInputHoliday.type === "RELIGIOUS"
+            ? "RELIGIOUS_HOLIDAY"
+            : "OFFICIAL_HOLIDAY"
+          : null;
       const weightDayTypeKey =
-        input.policy.holidayEveWeightSource === "UNDERLYING_WEEKDAY" &&
+        overlapWeightDayType ??
+        (input.policy.holidayEveWeightSource === "UNDERLYING_WEEKDAY" &&
         dayType.dayType === "HOLIDAY_EVE"
           ? dayContext.compatibilityWeightDayType
-          : slot.dayTypeKey;
+          : slot.dayTypeKey);
       const fairnessFacts = candidates.map((candidate) =>
         calculateFairnessFacts({
           candidate,
@@ -329,6 +357,7 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
             customDayCategory: dayType.customDayCategory,
           },
           isWeekendDate: dayContext.isSaturday || dayContext.isSunday,
+          isSundayDate: dayContext.isSunday,
           isHolidayDate: dayContext.holidays.length > 0,
         });
       }
@@ -340,12 +369,12 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
   );
 
   if (configuredStrategies.length > 0) {
-    pendingSelectionSlots.sort((a, b) =>
-      a.selectionInput.slot.slotKey < b.selectionInput.slot.slotKey ? -1 : 1
-    );
+    // selectProvisionalWinnersSequential normalizes chronological order
+    // internally (Phase 6 corrective, Part 3) — no pre-sort needed here.
     const sequentialResults = selectProvisionalWinnersSequential({
       slots: pendingSelectionSlots,
       minDaysBetweenDuties: input.policy.minDaysBetweenDuties,
+      sameDaySecondAssignmentAllowed: input.policy.sameDaySecondAssignmentAllowed,
       definitions: configuredStrategies,
       definitionsById: strategyDefinitionsById,
     });

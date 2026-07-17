@@ -100,10 +100,28 @@ export function selectProvisionalWinnersFromFacts(input: {
     diagnostics.push({ code: "FALLBACK_USED", date, subjectKey: attempt.usedDefinition!.id });
   }
 
-  const selectedCount = Math.min(requiredCount, attempt.rankResult.rankings.length);
-  const selectedKeys = new Set(
-    attempt.rankResult.rankings.slice(0, selectedCount).map((r) => r.candidateKey)
-  );
+  // PROVISIONAL_SAME_SLOT_DUPLICATE guard: a slot may select AT MOST one
+  // candidate per pharmacyId even when that pharmacy appears through
+  // multiple distinct memberships/pools (multiple candidateKeys). Ranked
+  // order is otherwise fully preserved — a later-ranked candidate is
+  // simply skipped, never promoted, so this never changes WHO is
+  // eligible, only prevents one pharmacy occupying two seats in one slot.
+  const seenPharmacyIds = new Set<string>();
+  const selectedKeys = new Set<string>();
+  let sameSlotDuplicateSkipped = false;
+  for (const ranking of attempt.rankResult.rankings) {
+    if (selectedKeys.size >= requiredCount) break;
+    if (seenPharmacyIds.has(ranking.rankFacts.pharmacyId)) {
+      sameSlotDuplicateSkipped = true;
+      continue;
+    }
+    seenPharmacyIds.add(ranking.rankFacts.pharmacyId);
+    selectedKeys.add(ranking.candidateKey);
+  }
+  if (sameSlotDuplicateSkipped) {
+    diagnostics.push({ code: "PROVISIONAL_SAME_SLOT_DUPLICATE", date, subjectKey: slotKey });
+  }
+  const selectedCount = selectedKeys.size;
 
   const rankings: CandidateRanking[] = attempt.rankResult.rankings.map((ranking) => ({
     candidateKey: ranking.candidateKey,
@@ -130,7 +148,7 @@ export function selectProvisionalWinnersFromFacts(input: {
     strategyId: attempt.usedDefinition!.id,
     strategyType: attempt.usedDefinition!.strategyType,
     selectedCandidateKeys: attempt.rankResult.rankings
-      .slice(0, selectedCount)
+      .filter((r) => selectedKeys.has(r.candidateKey))
       .map((r) => r.candidateKey),
     rankings,
     fallbackChainTrace: attempt.trace,

@@ -287,6 +287,84 @@ single-slot-independent entry point (`selectProvisionalWinners`) is
 retained for callers that legitimately want per-slot independence (e.g.
 a native V2 plan with no V1 compatibility requirement).
 
+### Round-2 corrective: same-date/same-slot double booking (B1)
+
+**Root cause:** the round-1 accumulator only folded weight/count/
+interval facts. Phase 4's `DAILY_ASSIGNMENT_LIMIT` / `SAME_SLOT_DUPLICATE`
+constraints (`evaluate-constraints.ts`) are computed once, before any
+provisional selection, purely from **persisted** `existingAssignments` —
+they have no visibility into this run's own earlier-slot picks. With
+`minDaysBetweenDuties=0` and multiple slots on one date, this let one
+pharmacy be provisionally selected twice on the same date despite
+`sameDaySecondAssignmentAllowed=false` (confirmed by a reproduction
+probe during independent review: a single-pharmacy pool, two same-date
+slots, produced `["ph-a","ph-a"]`).
+
+**Fix:** the accumulator's `newestLastDutyDate` field doubles as the
+same-day check (`acc.newestLastDutyDate === date` means "picked earlier
+THIS date, within this run"). `resolveSequentialCandidateSet` now
+removes such a pharmacy from the candidate set **entirely** — hard,
+non-relaxable, exactly matching Phase 4's own `DAILY_ASSIGNMENT_LIMIT`
+severity — before ranking any later same-date slot, whenever
+`sameDaySecondAssignmentAllowed` is false. When it is true, no exclusion
+is applied at all (no hidden behavior change). A **separate** same-slot
+duplicate case — one pharmacy reachable through two distinct memberships
+selected twice within one slot's own ranking — is fixed independently in
+`select-provisional-winners.ts`: the top-N cut now dedupes by
+`pharmacyId`, not `candidateKey`, skipping (never promoting) a
+lower-ranked duplicate. Both fixes emit dedicated diagnostic codes,
+`PROVISIONAL_SAME_DAY_ASSIGNMENT_CONFLICT` and
+`PROVISIONAL_SAME_SLOT_DUPLICATE`. Both are pharmacyId-keyed, so the
+policy is enforced regardless of which pool or membership a pharmacy is
+reachable through. Proven by 13 dedicated tests in
+`selection/multi-slot-sequential-regression.test.ts`.
+
+### Round-2 corrective: chronological-order safety (Part 3)
+
+`selectProvisionalWinnersSequential` no longer relies solely on caller
+ordering discipline: it sorts its `slots` input internally (date
+ascending, then slotKey ascending) before processing, and defensively
+throws `SelectionEngineError("DUPLICATE_SLOT_IN_PERIOD")` if the same
+slotKey appears twice. Reversed-date and shuffled-same-date-slot inputs
+are proven to normalize to byte-identical output (`apply-sequential-
+selection-state.test.ts`).
+
+### Round-2 corrective: Sunday count
+
+`applyAccumulatorToFacts`/`updateAccumulatorWithSelection` now also fold
+`sundayCount` (`addedSundayCount`), closing a gap where a chamber
+configuring a native strategy with the `SUNDAY_COUNT_ASC` tie-breaker
+over a multi-Sunday period would have silently under-counted in-run
+Sunday selections on later dates. (This never affected V1 equivalence:
+`V1_COMPATIBILITY_CHAIN` never emits `SUNDAY_COUNT_ASC` — V1 has no
+Sunday-specific counter at all, only a combined weekend counter.)
+
+### Round-2 corrective: configured-relaxable-rule boundary (Part 8)
+
+**Explicit decision: Option B** (restrict automatic in-run
+re-evaluation to `MIN_DAYS_BETWEEN_DUTIES`; never silently claim broader
+support). `resolveSequentialCandidateSet` now only re-examines
+accumulator-based interval eligibility for candidates Phase 4/5 **already
+classified `strictEligible`** (meaning the interval was their only
+possible relaxable concern, since strict membership requires zero hard
+failures of any kind). A candidate Phase 4/5 placed in `relaxedEligible`
+— for the interval, a configured relaxable rule, or both;
+`applyEligibilityRelaxation`'s policy doesn't distinguish which relaxable
+reason(s) applied — is **never promoted back to strict** by this module,
+even if it would trivially pass the interval check in isolation: doing so
+would silently override whatever non-interval relaxable rule Phase 4/5
+actually evaluated, using only this module's narrow interval check, which
+has no way to re-verify a chamber-configured rule's condition against
+in-run facts. `MIN_DAYS_BETWEEN_ASSIGNMENTS` is currently the **only**
+relaxable rule type in the whole Phase 5 catalogue (every other rule
+declares `relaxationMode: null`), so this boundary is not yet exercised
+by any real configured-rule scenario — but the code is scoped correctly
+for when a second relaxable rule type is added, proven by a dedicated
+unit test constructing that scenario directly. A full
+`RuleEvaluationContext`-based re-run of arbitrary configured rules
+against synthesized in-run `existingAssignments` (Option A) remains
+future, separately-reviewable work.
+
 ## Explainability
 
 No Turkish prose anywhere in engine logic — only stable codes
@@ -365,19 +443,53 @@ tie; a fully-tied deterministic case; a multi-day mixed strict/relaxed
 period; 3x repeated-execution determinism; and fingerprint-changes-
 with-selection provenance. All 29 pass, run twice consecutively.
 
-**One documented, honest non-equivalence** (not silently glossed over):
-a same-date RELIGIOUS+OFFICIAL holiday overlap is genuinely
-ARRAY-ORDER-DEPENDENT in V1 (`holidayByDateKey` is a `Map`, so whichever
-holiday record appears LAST in the caller's input array wins — an
-implementation artifact, not a specified rule), while V2's day-type
-precedence deterministically prefers RELIGIOUS_HOLIDAY regardless of
-input order. The golden harness's overlapping-holiday scenario is
-therefore constructed with two holidays sharing the same effective
-weight bucket (OFFICIAL + OTHER) to prove the achievable case; a
-RELIGIOUS+OFFICIAL overlap would require the input array to already list
-the RELIGIOUS holiday last to agree with V2's stable rule — this is a
-V1 non-determinism V2 deliberately replaces with a documented,
-deterministic one, not a Phase 6 defect.
+**RESOLVED in the round-2 corrective** (originally an accepted gap; an
+independent review reclassified it BLOCKING per its own stated rule
+that any supported real input order producing different V1/V2 output
+without explicit compatibility handling is not acceptable — see "Holiday
+overlap resolution" below). All 7 explicit overlap scenarios (both
+RELIGIOUS/OFFICIAL orders, OFFICIAL/OTHER both orders, RELIGIOUS/OTHER,
+duplicate same-type entries, three overlapping entries) now pass in the
+golden harness with `holidayOverlapResolutionMode: "V1_LAST_INPUT_WINS"`.
+
+## Holiday overlap resolution (Round-2 corrective, Part 4)
+
+**Root cause:** V1's `holidayByDateKey` (`generate-duty-schedule.ts`) is
+a plain `Map`, so for a same-date RELIGIOUS+OFFICIAL(+OTHER) overlap,
+whichever holiday record appears LAST in the caller's `holidays` array
+wins for weight purposes — an array-order artifact, not a specified
+rule. V2's day-type precedence (`resolve-day-type.ts`) always
+deterministically prefers RELIGIOUS_HOLIDAY, regardless of input order —
+correct, desirable NATIVE V2 behavior, but a genuine divergence from V1
+for a realistic input (two holidays of different type on the same date,
+supplied in either order) when compatibility with V1 is required.
+
+**Fix:** `EngineSchedulingPolicy` gains
+`holidayOverlapResolutionMode?: "NATIVE_PRECEDENCE" | "V1_LAST_INPUT_WINS"`
+(default `"NATIVE_PRECEDENCE"` — unaffected native V2 behavior). A new
+pure helper, `resolveCompatibilityLastInputHoliday(holidays, date)`
+(`resolve-calendar-context.ts`), finds the last holiday matching a date
+in the caller's ORIGINAL array order — deliberately **not** a field on
+`CalendarDayContext` (which is embedded wholesale into
+`DutyEngineDraftResult.days` and therefore `resultFingerprint`): keeping
+it a standalone function, called only when
+`holidayOverlapResolutionMode === "V1_LAST_INPUT_WINS"`, ensures native
+mode's provenance stays genuinely order-insensitive to holiday input,
+exactly as before this corrective (an order-sensitivity leak through
+this exact path was caught and fixed during implementation — see the
+dedicated "native precedence... order-independent" tests). `OTHER` maps
+to the `OFFICIAL_HOLIDAY` weight bucket in both modes, matching V1's
+existing rule.
+
+**Provenance:** `runtimeInputHash` includes the RAW (unsorted)
+`input.holidays` array **only** when `holidayOverlapResolutionMode ===
+"V1_LAST_INPUT_WINS"` — the one mode whose behavior can depend on it.
+Native mode's hash (and therefore `resultFingerprint` and
+`provisionalSelectionFingerprint`) stays fully order-insensitive to
+holiday input, proven by a dedicated test asserting identical
+fingerprints under reversed holiday order in native mode, alongside a
+separate test proving compatibility-mode fingerprints DO differ when the
+order changes V1's actual selected weight.
 
 ## Test coverage (this phase)
 
@@ -397,11 +509,21 @@ deterministic one, not a Phase 6 defect.
   assert the Phase 6 no-op contract by field/value rather than by string
   matching, since Phase 6 additively introduces the (empty-when-unused)
   selection fields that string match could no longer distinguish.
-- `apply-sequential-selection-state.test.ts` (7 tests, corrective): the
-  accumulator's fold/update functions in isolation — purity, weight/
-  count/weekend/holiday folding, lastDutyDate max-of-two-sources logic.
-- `v1-golden-equivalence.test.ts` (29 tests, corrective): see "V1 golden
-  equivalence harness" below.
+- `apply-sequential-selection-state.test.ts` (14 tests, round-2
+  corrective): the accumulator's fold/update functions in isolation —
+  purity, weight/count/weekend/sunday/holiday folding, lastDutyDate
+  max-of-two-sources logic, same-day exclusion (B1), the configured-
+  relaxable-rule boundary (Part 8), and chronological-order
+  normalization/duplicate-rejection (Part 3).
+- `multi-slot-sequential-regression.test.ts` (13 tests, round-2
+  corrective, Part 7): the full required multi-slot scenario matrix —
+  same-day-forbidden/allowed, 3-slot underfill, same pharmacy across two
+  pools and two memberships, strict-to-relaxed promotion across dates,
+  weekend/Sunday/holiday count carry-forward, exact/one-day-below
+  interval boundaries, reversed-input equivalence, no-mutation.
+- `v1-golden-equivalence.test.ts` (37 tests, corrective): see "V1 golden
+  equivalence harness" below (29 original + 7 holiday-overlap scenarios
+  + 1 native-precedence-order-independence check, round-2).
 
 **Deferred** (explicitly out of scope, not silently dropped): a
 DB-fixture golden harness (the corrective harness builds its
