@@ -28,6 +28,7 @@ import type { ProvisionalSlotSelection } from "../selection/domain/selection-res
 import type { StrategyMatchContext } from "../selection/domain/strategy-context";
 import { applyEligibilityRelaxation, DEFAULT_RELAXABLE_REASONS } from "./apply-eligibility-relaxation";
 import { buildDraftResult, type DutyEngineDraftResult, type EngineDayResult } from "./build-draft-result";
+import { assembleCompleteDraftSchedule } from "../draft/build-complete-draft-schedule";
 import { buildSelectionInput, sha256Canonical, type SelectionInput } from "./build-selection-input";
 import { calculateFairnessFacts } from "./calculate-fairness-facts";
 import { evaluateConstraints } from "./evaluate-constraints";
@@ -399,7 +400,7 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
   const ruleExplanations: RuleExplanation[] =
     configuredRules.length > 0 ? buildRuleExplanations(definitionsById, allRuleResults) : [];
 
-  return buildDraftResult({
+  const preDraftResult = buildDraftResult({
     engineVersion: ENGINE_DOMAIN_VERSION,
     generationMode: input.generationMode,
     periodStart: input.periodStart,
@@ -425,4 +426,18 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
     strategyConflicts,
     selectionExplanations,
   });
+
+  // Phase 7: additive assembly of the Complete Draft Schedule from the
+  // Phase 4-6 result above. Orchestration only — no assembly/validation
+  // logic lives in this function; see build-complete-draft-schedule.ts.
+  const completeDraftSchedule = assembleCompleteDraftSchedule(preDraftResult, {
+    sameDaySecondAssignmentAllowed: input.policy.sameDaySecondAssignmentAllowed,
+  });
+
+  return {
+    ...preDraftResult,
+    completeDraftSchedule,
+    completeDraftFingerprint: completeDraftSchedule.completeDraftFingerprint,
+    draftManifest: completeDraftSchedule.manifest,
+  };
 }
