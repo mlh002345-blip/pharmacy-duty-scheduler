@@ -13,6 +13,10 @@
 
 import type { RuleConflict } from "../rules/domain/rule-conflict";
 import type { RuleExplanation } from "../rules/build-rule-explanation";
+import type { StrategyConflict } from "../selection/domain/strategy-conflict";
+import type { SelectionDiagnostic } from "../selection/domain/selection-diagnostic";
+import type { ProvisionalSlotSelection } from "../selection/domain/selection-result";
+import type { SelectionExplanation } from "../selection/build-selection-explanations";
 import type { EngineGenerationMode } from "./domain/engine-input";
 import { sortDiagnostics, type EngineDiagnostic } from "./domain/diagnostics";
 import { sha256Canonical } from "./build-selection-input";
@@ -43,6 +47,11 @@ export type EngineRunProvenance = {
   runtimeInputHash: string;
   /** Phase 5: canonical hash of the configured rule set. */
   ruleSetFingerprint: string;
+  /** Phase 6: canonical hash of the configured selection-strategy set. */
+  strategySetFingerprint: string;
+  /** Phase 6: version of the selection (ranking/comparator) engine,
+   *  independent of the rule-domain engineVersion above. */
+  selectionEngineVersion: number;
   loaderVersion: number;
   engineVersion: number;
   planVersionId: string;
@@ -75,6 +84,19 @@ export type DutyEngineDraftResult = {
    *  non-PASS rule outcome. Empty without configured rules. */
   ruleConflicts: RuleConflict[];
   ruleExplanations: RuleExplanation[];
+  /** Phase 6: additive, read-only provisional selection outcome per
+   *  slot (in-memory only — no DB writes, no RotationState advancement).
+   *  Empty without configured selection strategies, leaving every prior
+   *  field byte-identical to Phase 4/5 behavior. */
+  provisionalSelections: ProvisionalSlotSelection[];
+  strategyConflicts: StrategyConflict[];
+  strategyDiagnostics: SelectionDiagnostic[];
+  selectionExplanations: SelectionExplanation[];
+  selectionCounts: {
+    selectedCandidates: number;
+    underfilledSlots: number;
+    unresolvedSelectionSlots: number;
+  };
   resultFingerprint: string;
 };
 
@@ -89,6 +111,9 @@ export function buildDraftResult(input: {
   diagnostics: EngineDiagnostic[];
   ruleConflicts: RuleConflict[];
   ruleExplanations: RuleExplanation[];
+  provisionalSelections: ProvisionalSlotSelection[];
+  strategyConflicts: StrategyConflict[];
+  selectionExplanations: SelectionExplanation[];
 }): DutyEngineDraftResult {
   const unresolvedSlots: UnresolvedSlot[] = [];
   for (const day of input.days) {
@@ -148,6 +173,18 @@ export function buildDraftResult(input: {
     warnings: sortDiagnostics([...input.diagnostics, ...unresolvedDiagnostics]),
     ruleConflicts: input.ruleConflicts,
     ruleExplanations: input.ruleExplanations,
+    provisionalSelections: input.provisionalSelections,
+    strategyConflicts: input.strategyConflicts,
+    strategyDiagnostics: input.provisionalSelections.flatMap((s) => s.diagnostics),
+    selectionExplanations: input.selectionExplanations,
+    selectionCounts: {
+      selectedCandidates: input.provisionalSelections.reduce(
+        (sum, s) => sum + s.selectedCandidateKeys.length,
+        0
+      ),
+      underfilledSlots: input.provisionalSelections.filter((s) => s.underfilled).length,
+      unresolvedSelectionSlots: input.provisionalSelections.filter((s) => s.unresolved).length,
+    },
   };
 
   return { ...withoutFingerprint, resultFingerprint: sha256Canonical(withoutFingerprint) };

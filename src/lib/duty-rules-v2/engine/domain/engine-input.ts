@@ -13,6 +13,7 @@ import { z } from "zod";
 
 import type { LoadedDutyPlanVersion } from "../../domain/loaded-plan";
 import type { ConfiguredRuleDefinition } from "../../rules/domain/rule-definition";
+import type { ConfiguredSelectionStrategy } from "../../selection/domain/strategy-definition";
 import { isIsoDateString } from "../domain/dates";
 
 export type EngineGenerationMode = "PREVIEW" | "SIMULATION";
@@ -78,6 +79,29 @@ export type EngineSchedulingPolicy = {
   /** When false, a second assignment on the same date (any slot) is a
    *  hard conflict — V1 semantics. When true, only the same slot is. */
   sameDaySecondAssignmentAllowed: boolean;
+  /** Phase 6 corrective: explicit holiday-eve weight source.
+   *  "CONFIGURED" (default when omitted) = use dayTypeWeights'
+   *  HOLIDAY_EVE entry as-is — native V2 semantics, a chamber may
+   *  configure any eve weight it wants. "UNDERLYING_WEEKDAY" = resolve
+   *  the weight from the eve date's actual calendar weekday
+   *  (WEEKDAY/SATURDAY/SUNDAY) instead, exactly matching V1 (which has
+   *  no eve concept at all — see CalendarDayContext.compatibilityWeightDayType).
+   *  Required for V1 compatibility equivalence; never a hidden default,
+   *  never inferred. */
+  holidayEveWeightSource?: "CONFIGURED" | "UNDERLYING_WEEKDAY";
+  /** Phase 6 corrective: explicit holiday-overlap resolution mode for
+   *  same-date RELIGIOUS+OFFICIAL(+OTHER) overlaps. "NATIVE_PRECEDENCE"
+   *  (default when omitted) = deterministic, order-INDEPENDENT: the
+   *  resolved day type (and therefore weight) always prefers
+   *  RELIGIOUS_HOLIDAY over OFFICIAL_HOLIDAY, regardless of input array
+   *  order — native V2 semantics, unaffected by this field.
+   *  "V1_LAST_INPUT_WINS" = reproduces V1's actual behavior
+   *  (generate-duty-schedule.ts's `holidayByDateKey` is a Map, so
+   *  whichever holiday record appears LAST in the caller's `holidays`
+   *  array wins for BOTH weight and note) — order-DEPENDENT by design,
+   *  required for exact V1 weight equivalence when overlapping holidays
+   *  exist. Never a hidden default, never inferred from string content. */
+  holidayOverlapResolutionMode?: "NATIVE_PRECEDENCE" | "V1_LAST_INPUT_WINS";
 };
 
 export type DutyEngineInput = {
@@ -101,6 +125,12 @@ export type DutyEngineInput = {
    *  Omitted or empty = Phase 4 behavior, byte-identical. Validated and
    *  conflict-gated before any evaluation. */
   configuredRules?: ConfiguredRuleDefinition[];
+  /** Phase 6: explicit in-memory configured selection strategies (no
+   *  persistence yet). Omitted or empty = no provisional selections;
+   *  Phase 4/5 evaluation (rules, eligibility, fairness/rotation facts)
+   *  is otherwise byte-identical. Validated and conflict-gated before
+   *  any ranking. */
+  configuredSelectionStrategies?: ConfiguredSelectionStrategy[];
 };
 
 // ---------------------------------------------------------------------------
@@ -145,6 +175,8 @@ const inputSchema = z.object({
       z.object({ dayTypeKey: z.string().min(1), weight: z.number().finite().positive() })
     ),
     sameDaySecondAssignmentAllowed: z.boolean(),
+    holidayEveWeightSource: z.enum(["CONFIGURED", "UNDERLYING_WEEKDAY"]).optional(),
+    holidayOverlapResolutionMode: z.enum(["NATIVE_PRECEDENCE", "V1_LAST_INPUT_WINS"]).optional(),
   }),
   holidays: z.array(
     z.object({

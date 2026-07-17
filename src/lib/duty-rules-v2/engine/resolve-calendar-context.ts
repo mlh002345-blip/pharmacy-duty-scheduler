@@ -37,7 +37,42 @@ export type CalendarDayContext = {
    *  SATURDAY > WEEKDAY. Holiday.type OTHER maps to OFFICIAL_HOLIDAY —
    *  the documented V1 weighting rule, preserved as a calendar fact. */
   candidateDayTypes: BuiltinDayType[];
+  /** Phase 6 corrective: the day type this date would resolve to if
+   *  HOLIDAY_EVE / holiday classification were ignored entirely — i.e.
+   *  purely from the underlying weekday (V1 has no eve concept at all;
+   *  resolveDutyWeight in generate-duty-schedule.ts only ever branches
+   *  on holiday/Saturday/Sunday/weekday). Always computed, independent
+   *  of any policy — a pure calendar fact, never a hidden default. Used
+   *  ONLY when EngineSchedulingPolicy.holidayEveWeightSource is
+   *  explicitly set to "UNDERLYING_WEEKDAY" AND the resolved day type is
+   *  HOLIDAY_EVE; native V2 semantics (CONFIGURED, the default) ignore
+   *  this field entirely. */
+  compatibilityWeightDayType: "WEEKDAY" | "SATURDAY" | "SUNDAY";
 };
+
+/** Phase 6 corrective (Part 4): the LAST holiday matching `date`, in the
+ *  caller's ORIGINAL `holidays` array order (never re-sorted) — or null
+ *  if none. V1's `holidayByDateKey` is a plain Map, so whichever holiday
+ *  record appears last in the input array wins for weight purposes;
+ *  this reproduces that exact fact.
+ *
+ *  Deliberately NOT a field on CalendarDayContext (which is embedded
+ *  wholesale into DutyEngineDraftResult.days and therefore
+ *  resultFingerprint): CalendarDayContext must stay order-insensitive to
+ *  holiday input so a NATIVE_PRECEDENCE (default) run's provenance is
+ *  genuinely unaffected by holiday array order, exactly as before this
+ *  corrective. Callers compute this ONLY when
+ *  holidayOverlapResolutionMode is explicitly "V1_LAST_INPUT_WINS". */
+export function resolveCompatibilityLastInputHoliday(
+  holidays: EngineHoliday[],
+  date: string
+): EngineHoliday | null {
+  let last: EngineHoliday | null = null;
+  for (const holiday of holidays) {
+    if (holiday.date === date) last = holiday;
+  }
+  return last;
+}
 
 export function resolveCalendarContext(input: {
   periodStart: string;
@@ -88,6 +123,7 @@ export function resolveCalendarContext(input: {
       isHolidayEve,
       customDayCategoryOverride: overrideByDate.get(date) ?? null,
       candidateDayTypes,
+      compatibilityWeightDayType: sunday ? "SUNDAY" : saturday ? "SATURDAY" : "WEEKDAY",
     };
   });
 }

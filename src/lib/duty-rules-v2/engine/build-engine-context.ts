@@ -16,13 +16,23 @@ import type { ConfiguredRuleDefinition } from "../rules/domain/rule-definition";
 import type { RuleConflict } from "../rules/domain/rule-conflict";
 import type { RuleEvaluationResult } from "../rules/domain/rule-evaluation";
 import type { ConstraintResult } from "./domain/constraint";
+import { analyzeStrategyConflicts } from "../selection/analyze-strategy-conflicts";
+import { strategySetFingerprint } from "../selection/canonicalize-strategy-set";
+import { getStrategyCatalogueEntry } from "../selection/catalogue";
+import { buildSelectionExplanations, type SelectionExplanation } from "../selection/build-selection-explanations";
+import { selectProvisionalWinnersSequential } from "../selection/apply-sequential-selection-state";
+import { SelectionEngineError } from "../selection/strategy-errors";
+import type { ConfiguredSelectionStrategy } from "../selection/domain/strategy-definition";
+import type { StrategyConflict } from "../selection/domain/strategy-conflict";
+import type { ProvisionalSlotSelection } from "../selection/domain/selection-result";
+import type { StrategyMatchContext } from "../selection/domain/strategy-context";
 import { applyEligibilityRelaxation, DEFAULT_RELAXABLE_REASONS } from "./apply-eligibility-relaxation";
 import { buildDraftResult, type DutyEngineDraftResult, type EngineDayResult } from "./build-draft-result";
 import { buildSelectionInput, sha256Canonical, type SelectionInput } from "./build-selection-input";
 import { calculateFairnessFacts } from "./calculate-fairness-facts";
 import { evaluateConstraints } from "./evaluate-constraints";
 import { evaluateEligibility } from "./evaluate-eligibility";
-import { resolveCalendarContext } from "./resolve-calendar-context";
+import { resolveCalendarContext, resolveCompatibilityLastInputHoliday } from "./resolve-calendar-context";
 import { indexRuntimeFacts, resolveCandidates } from "./resolve-candidates";
 import { resolveDayType } from "./resolve-day-type";
 import { resolvePool } from "./resolve-pool";
@@ -33,6 +43,7 @@ import { validateEngineInput, type DutyEngineInput } from "./domain/engine-input
 import type { EngineDiagnostic } from "./domain/diagnostics";
 
 export const ENGINE_DOMAIN_VERSION = 1;
+export const SELECTION_ENGINE_VERSION = 1;
 
 /** Canonical hash of everything runtime-supplied (the loaded plan is
  *  covered separately by its configuration fingerprint). */
@@ -43,6 +54,15 @@ export function runtimeInputHash(input: DutyEngineInput): string {
     generationMode: input.generationMode,
     policy: input.policy,
     holidays: sortPlain(input.holidays),
+    // Phase 6 corrective: holidays' ORIGINAL array order only
+    // participates in the hash when V1_LAST_INPUT_WINS compatibility
+    // mode is active — that is the only mode whose behavior can depend
+    // on it (native mode's day-type precedence is order-independent by
+    // construction, so its hash — and therefore every downstream
+    // fingerprint and selection — stays byte-identical under reordering,
+    // exactly as before this corrective).
+    holidayInputOrder:
+      input.policy.holidayOverlapResolutionMode === "V1_LAST_INPUT_WINS" ? input.holidays : null,
     customDayOverrides: sortPlain(input.customDayOverrides),
     unavailability: sortPlain(input.unavailability),
     dutyRequests: sortPlain(input.dutyRequests),
@@ -100,6 +120,35 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
   const rulesFingerprint = ruleSetFingerprint(configuredRules);
   const allRuleResults: RuleEvaluationResult[] = [];
 
+  // Phase 6: validate and conflict-gate the configured selection-strategy
+  // set BEFORE any ranking — same ERROR-abort / WARNING-report split as
+  // rules above. An empty strategy set produces no provisional selections
+  // (Phase 4/5 behavior otherwise unchanged, aside from the constant
+  // empty-set fingerprint in provenance).
+  const configuredStrategies: ConfiguredSelectionStrategy[] = input.configuredSelectionStrategies ?? [];
+  const strategyDefinitionsById = new Map(configuredStrategies.map((s) => [s.id, s]));
+  let strategyConflicts: StrategyConflict[] = [];
+  if (configuredStrategies.length > 0) {
+    strategyConflicts = analyzeStrategyConflicts(configuredStrategies, {
+      organizationId: plan.organizationId,
+      regionId: plan.regionId,
+    });
+    const strategyErrors = strategyConflicts.filter((conflict) => conflict.level === "ERROR");
+    if (strategyErrors.length > 0) {
+      throw new SelectionEngineError(
+        "STRATEGY_SET_CONFLICTS",
+        "Seçim stratejisi kümesi çelişkiler içeriyor.",
+        strategyErrors.map((conflict) => `${conflict.code}:${conflict.strategyIds.join(",")}`)
+      );
+    }
+  }
+  const strategiesFingerprint = strategySetFingerprint(configuredStrategies, (strategyType) => {
+    return getStrategyCatalogueEntry(strategyType)?.comparatorVersion ?? 0;
+  });
+  const provisionalSelections: ProvisionalSlotSelection[] = [];
+  const selectionExplanations: SelectionExplanation[] = [];
+  const pendingSelectionSlots: Parameters<typeof selectProvisionalWinnersSequential>[0]["slots"] = [];
+
   const calendar = resolveCalendarContext(input);
 
   const days: EngineDayResult[] = [];
@@ -131,10 +180,43 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
 
       const shift = shifts.shifts.find((s) => s.shiftId === slot.shiftId) ?? null;
       const candidates = resolveCandidates(slot, pool, facts);
+      // Phase 6 corrective: explicit holiday-eve weight source. Native V2
+      // semantics (default) weight HOLIDAY_EVE by its own configured
+      // dayTypeWeights entry. In V1 compatibility mode
+      // (holidayEveWeightSource === "UNDERLYING_WEEKDAY"), an eve date is
+      // weighted by whatever its ACTUAL calendar weekday is — V1 has no
+      // eve concept at all (generate-duty-schedule.ts's resolveDutyWeight
+      // only ever branches on holiday/Saturday/Sunday/weekday), so this
+      // is the only way to reproduce V1's weight byte-for-byte on eve
+      // dates. Every other resolved day type is unaffected.
+      // Phase 6 corrective (Part 4): explicit holiday-overlap resolution
+      // mode. Native precedence (default) always prefers
+      // RELIGIOUS_HOLIDAY over OFFICIAL_HOLIDAY for weight purposes,
+      // deterministically, regardless of input order — untouched here.
+      // V1_LAST_INPUT_WINS instead uses whichever holiday record was
+      // LAST in the caller's original array for this date (V1's actual,
+      // order-dependent Map-overwrite behavior; OTHER maps to the
+      // OFFICIAL_HOLIDAY weight bucket, matching V1's own rule).
+      const lastInputHoliday =
+        input.policy.holidayOverlapResolutionMode === "V1_LAST_INPUT_WINS"
+          ? resolveCompatibilityLastInputHoliday(input.holidays, dayContext.date)
+          : null;
+      const overlapWeightDayType =
+        lastInputHoliday !== null
+          ? lastInputHoliday.type === "RELIGIOUS"
+            ? "RELIGIOUS_HOLIDAY"
+            : "OFFICIAL_HOLIDAY"
+          : null;
+      const weightDayTypeKey =
+        overlapWeightDayType ??
+        (input.policy.holidayEveWeightSource === "UNDERLYING_WEEKDAY" &&
+        dayType.dayType === "HOLIDAY_EVE"
+          ? dayContext.compatibilityWeightDayType
+          : slot.dayTypeKey);
       const fairnessFacts = candidates.map((candidate) =>
         calculateFairnessFacts({
           candidate,
-          dayTypeKey: slot.dayTypeKey,
+          dayTypeKey: weightDayTypeKey,
           shift: { defaultWeight: shift?.defaultWeight ?? 1 },
           policy: input.policy,
           holidayDates,
@@ -228,29 +310,83 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
       });
       diagnostics.push(...relaxation.diagnostics);
 
-      selectionInputs.push(
-        buildSelectionInput({
-          slot,
-          pool,
-          candidates,
-          eligibility,
-          relaxation,
-          fairnessFacts,
-          rotationFacts,
-          ruleEvaluations: ruleResults,
-          diagnostics: [...pool.diagnostics, ...relaxation.diagnostics],
-          configurationFingerprint: plan.configurationFingerprint,
-          runtimeInputHash: inputHash,
-          ruleSetFingerprint: rulesFingerprint,
-          loaderVersion: plan.loaderVersion,
-          engineVersion: ENGINE_DOMAIN_VERSION,
-        })
-      );
+      const selectionInput = buildSelectionInput({
+        slot,
+        pool,
+        candidates,
+        eligibility,
+        relaxation,
+        fairnessFacts,
+        rotationFacts,
+        ruleEvaluations: ruleResults,
+        diagnostics: [...pool.diagnostics, ...relaxation.diagnostics],
+        configurationFingerprint: plan.configurationFingerprint,
+        runtimeInputHash: inputHash,
+        ruleSetFingerprint: rulesFingerprint,
+        strategySetFingerprint: strategiesFingerprint,
+        loaderVersion: plan.loaderVersion,
+        engineVersion: ENGINE_DOMAIN_VERSION,
+      });
+      selectionInputs.push(selectionInput);
+
+      // Phase 6 corrective: collected here (in chronological loop order)
+      // rather than selected immediately — provisional selection now
+      // runs as ONE sequential pass over the whole period below, so that
+      // an earlier date's provisional winner affects a later date's
+      // fairness facts and MIN_DAYS_BETWEEN_DUTIES eligibility exactly
+      // as V1's single-loop `metrics` mutation does. See
+      // apply-sequential-selection-state.ts for the root-cause
+      // explanation and the pure, in-memory accumulator design.
+      if (configuredStrategies.length > 0) {
+        const holidayTypesForDay: StrategyMatchContext["holidayTypes"] =
+          dayContext.holidays.length === 0
+            ? ["NONE"]
+            : [...new Set(dayContext.holidays.map((h) => h.type))].sort();
+        pendingSelectionSlots.push({
+          selectionInput,
+          matchContextBase: {
+            organizationId: plan.organizationId,
+            regionId: plan.regionId,
+            planId: plan.planId,
+            planVersionId: plan.planVersionId,
+            generationMode: input.generationMode,
+            date: slot.date,
+            weekday: dayContext.weekdayName,
+            holidayTypes: holidayTypesForDay,
+            dayType: dayType.dayType ?? "",
+            customDayCategory: dayType.customDayCategory,
+          },
+          isWeekendDate: dayContext.isSaturday || dayContext.isSunday,
+          isSundayDate: dayContext.isSunday,
+          isHolidayDate: dayContext.holidays.length > 0,
+        });
+      }
     }
   }
 
   selectionInputs.sort((a, b) =>
     a.slot.slotKey < b.slot.slotKey ? -1 : a.slot.slotKey > b.slot.slotKey ? 1 : 0
+  );
+
+  if (configuredStrategies.length > 0) {
+    // selectProvisionalWinnersSequential normalizes chronological order
+    // internally (Phase 6 corrective, Part 3) — no pre-sort needed here.
+    const sequentialResults = selectProvisionalWinnersSequential({
+      slots: pendingSelectionSlots,
+      minDaysBetweenDuties: input.policy.minDaysBetweenDuties,
+      sameDaySecondAssignmentAllowed: input.policy.sameDaySecondAssignmentAllowed,
+      definitions: configuredStrategies,
+      definitionsById: strategyDefinitionsById,
+    });
+    provisionalSelections.push(...sequentialResults);
+    for (const slotSelection of sequentialResults) {
+      selectionExplanations.push(...buildSelectionExplanations(slotSelection));
+    }
+  }
+
+  provisionalSelections.sort((a, b) => (a.slotKey < b.slotKey ? -1 : a.slotKey > b.slotKey ? 1 : 0));
+  selectionExplanations.sort((a, b) =>
+    a.candidateKey < b.candidateKey ? -1 : a.candidateKey > b.candidateKey ? 1 : 0
   );
 
   const ruleExplanations: RuleExplanation[] =
@@ -265,6 +401,8 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
       configurationFingerprint: plan.configurationFingerprint,
       runtimeInputHash: inputHash,
       ruleSetFingerprint: rulesFingerprint,
+      strategySetFingerprint: strategiesFingerprint,
+      selectionEngineVersion: SELECTION_ENGINE_VERSION,
       loaderVersion: plan.loaderVersion,
       engineVersion: ENGINE_DOMAIN_VERSION,
       planVersionId: plan.planVersionId,
@@ -276,5 +414,8 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
     diagnostics,
     ruleConflicts,
     ruleExplanations,
+    provisionalSelections,
+    strategyConflicts,
+    selectionExplanations,
   });
 }
