@@ -79,6 +79,17 @@ export type SelectionInput = {
   ruleEvaluations: RuleEvaluationResult[];
   diagnostics: EngineDiagnostic[];
   provenance: SelectionProvenance;
+  /** Phase 6 corrective (sequential-relaxation contract fix): the exact
+   *  per-slot relaxable hard-exclusion reason codes Phase 4/5 used to
+   *  compute `relaxation` above (built-in interval reason plus any
+   *  catalogue-and-chamber-declared relaxable rule violation codes),
+   *  deterministically sorted. Carried on SelectionInput so the Phase 6
+   *  sequential-compatibility layer can re-run the SAME relax-
+   *  admissibility predicate (`isRelaxAdmissible`, apply-eligibility-
+   *  relaxation.ts) against every candidate's eligibility result under
+   *  in-run accumulator state — never a separate, possibly-drifting
+   *  hardcoded list. */
+  relaxableReasonCodes: string[];
 };
 
 export function buildSelectionInput(input: {
@@ -97,6 +108,7 @@ export function buildSelectionInput(input: {
   strategySetFingerprint: string;
   loaderVersion: number;
   engineVersion: number;
+  relaxableReasonCodes: readonly string[];
 }): SelectionInput {
   const byKey = (a: { candidateKey: string }, b: { candidateKey: string }) =>
     a.candidateKey < b.candidateKey ? -1 : a.candidateKey > b.candidateKey ? 1 : 0;
@@ -112,6 +124,7 @@ export function buildSelectionInput(input: {
     rotationFacts: [...input.rotationFacts].sort(byKey),
     ruleEvaluations: input.ruleEvaluations,
     diagnostics: input.diagnostics,
+    relaxableReasonCodes: [...new Set(input.relaxableReasonCodes)].sort(),
     provenance: {
       configurationFingerprint: input.configurationFingerprint,
       membershipSnapshotHash: membershipSnapshotHash(input.pool),

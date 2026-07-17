@@ -19,6 +19,16 @@ export const SELECTION_DIAGNOSTIC_CODES = [
    *  later same-date slot because sameDaySecondAssignmentAllowed is
    *  false. */
   "PROVISIONAL_SAME_DAY_ASSIGNMENT_CONFLICT",
+  /** Sequential-relaxation-contract corrective: accumulator-adjusted
+   *  strict count fell below requiredCount for this slot, and at least
+   *  one candidate was admitted into the relaxed pool solely because
+   *  this module independently re-derived relax-admissibility from
+   *  Phase 4/5's own static eligibility facts — a candidate Phase 4's
+   *  own static (pre-sequential) evaluation never placed in
+   *  relaxedEligible. subjectKey encodes
+   *  "{slotKey}#required={n}#strict={n}#relaxed={n}" — no pharmacy or
+   *  tenant display name. */
+  "SEQUENTIAL_RELAXATION_APPLIED",
 ] as const;
 export type SelectionDiagnosticCode = (typeof SELECTION_DIAGNOSTIC_CODES)[number];
 

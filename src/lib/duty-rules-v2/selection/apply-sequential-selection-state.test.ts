@@ -207,6 +207,7 @@ function selectionInput(overrides: Partial<SelectionInput> & { slotKey: string; 
     ruleEvaluations: [],
     diagnostics: [],
     provenance: {} as SelectionInput["provenance"],
+    relaxableReasonCodes: ["MIN_DAYS_INTERVAL"],
     ...overrides,
   };
 }
@@ -231,7 +232,8 @@ describe("resolveSequentialCandidateSet — same-day exclusion (B1 fix)", () => 
       input,
       accumulator,
       0,
-      false
+      false,
+      true
     );
     expect(origin.size).toBe(0);
     expect(sameDayExcludedPharmacyIds).toEqual(["ph-a"]);
@@ -256,6 +258,7 @@ describe("resolveSequentialCandidateSet — same-day exclusion (B1 fix)", () => 
       input,
       accumulator,
       0,
+      true,
       true
     );
     expect(origin.size).toBe(1);
@@ -281,7 +284,8 @@ describe("resolveSequentialCandidateSet — same-day exclusion (B1 fix)", () => 
       input,
       accumulator,
       0,
-      false
+      false,
+      true
     );
     expect(origin.size).toBe(1);
     expect(sameDayExcludedPharmacyIds).toEqual([]);
@@ -318,7 +322,7 @@ describe("resolveSequentialCandidateSet — configured-relaxable-rule boundary (
         } as SelectionInput["fairnessFacts"][number],
       ],
     });
-    const { origin } = resolveSequentialCandidateSet(input, new Map(), 0, true);
+    const { origin } = resolveSequentialCandidateSet(input, new Map(), 0, true, true);
     expect(origin.get("2026-09-05:WEEKDAY:shift-1:0#m-a")).toBe("RELAXED");
   });
 });
@@ -358,6 +362,7 @@ describe("selectProvisionalWinnersSequential — chronological-order safety (Par
       slots: forward,
       minDaysBetweenDuties: 0,
       sameDaySecondAssignmentAllowed: true,
+      relaxMinIntervalWhenInsufficient: true,
       definitions: [STRATEGY],
       definitionsById: DEFINITIONS_BY_ID,
     });
@@ -365,6 +370,7 @@ describe("selectProvisionalWinnersSequential — chronological-order safety (Par
       slots: reversed,
       minDaysBetweenDuties: 0,
       sameDaySecondAssignmentAllowed: true,
+      relaxMinIntervalWhenInsufficient: true,
       definitions: [STRATEGY],
       definitionsById: DEFINITIONS_BY_ID,
     });
@@ -380,6 +386,7 @@ describe("selectProvisionalWinnersSequential — chronological-order safety (Par
       slots,
       minDaysBetweenDuties: 0,
       sameDaySecondAssignmentAllowed: true,
+      relaxMinIntervalWhenInsufficient: true,
       definitions: [STRATEGY],
       definitionsById: DEFINITIONS_BY_ID,
     });
@@ -401,6 +408,7 @@ describe("selectProvisionalWinnersSequential — chronological-order safety (Par
         slots,
         minDaysBetweenDuties: 0,
         sameDaySecondAssignmentAllowed: true,
+        relaxMinIntervalWhenInsufficient: true,
         definitions: [STRATEGY],
         definitionsById: DEFINITIONS_BY_ID,
       })

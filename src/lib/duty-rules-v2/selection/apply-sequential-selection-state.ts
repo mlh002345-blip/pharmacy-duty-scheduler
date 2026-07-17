@@ -47,8 +47,29 @@
 // configured rules is out of scope here (would require re-invoking the
 // Rule Engine per slot with synthesized "this-run" existingAssignments —
 // a larger, separately-reviewable change).
+//
+// SEQUENTIAL-RELAXATION-CONTRACT CORRECTIVE (this round): closes a
+// separate, previously-undetected gap found via the Phase 7 full-period
+// V1 golden harness. Phase 4's applyEligibilityRelaxation only
+// populates `relaxedEligible` when its OWN static, single-slot
+// strictEligible count is already insufficient — it has no visibility
+// into candidates this run's OWN sequential accumulator will later
+// demote out of strict. When accumulator-adjusted strict count drops
+// below requiredCount, this module now independently re-derives, from
+// selectionInput.eligibility + selectionInput.relaxableReasonCodes
+// (both already Phase 4/5 facts — NEVER re-evaluated), the FULL set of
+// candidates whose hard failures are entirely relaxable, using the
+// EXACT SAME predicate Phase 4 itself uses (`isRelaxAdmissible`,
+// apply-eligibility-relaxation.ts) — never a duplicated or
+// independently-invented rule. This is strictly a widening of the
+// CANDIDATE UNIVERSE the sequential layer may draw from; it changes
+// nothing about WHICH reasons are relaxable (still governed entirely by
+// Phase 4/5's own relaxableReasonCodes) and never re-evaluates a
+// configured HARD rule's condition — the Part 8 boundary above is
+// otherwise unchanged.
 
 import { diffInDays } from "../engine/domain/dates";
+import { isRelaxAdmissible } from "../engine/apply-eligibility-relaxation";
 import type { SelectionInput } from "../engine/build-selection-input";
 import { buildCandidateRankingFacts, buildStrategyMatchContext } from "./build-strategy-context";
 import { selectProvisionalWinnersFromFacts } from "./select-provisional-winners";
@@ -125,22 +146,33 @@ export type SequentialCandidateSetResult = {
    *  run (sameDaySecondAssignmentAllowed=false). Never relaxable —
    *  matches Phase 4's own DAILY_ASSIGNMENT_LIMIT severity. */
   sameDayExcludedPharmacyIds: string[];
+  /** candidateKeys admitted ONLY because this module's sequential-
+   *  relaxation widening fired (accumulator-adjusted strict count fell
+   *  below requiredCount, and this candidate was independently found
+   *  relax-admissible from Phase 4/5's own static eligibility facts,
+   *  despite never appearing in Phase 4's static relaxedEligible).
+   *  Empty when the widening never activates. Used only for the
+   *  SEQUENTIAL_RELAXATION_APPLIED diagnostic — never changes ranking. */
+  sequentiallyRelaxedCandidateKeys: string[];
 };
 
 /** Recompute strict/relaxed/hard-excluded candidate-set membership using
  *  the accumulator's up-to-date lastDutyDate and same-day state, exactly
  *  V1's policy (strict first; relax the interval only when strictly-
  *  eligible candidates can't fill requiredCount; same-day exclusion is
- *  NEVER relaxable). Sourced from Phase 4's ALREADY-COMPUTED
+ *  NEVER relaxable). Starts from Phase 4's ALREADY-COMPUTED
  *  strictEligible ∪ relaxedEligible union — every non-interval,
  *  non-same-day HARD exclusion (inactive, unavailable, blocking request,
  *  configured HARD rule) is untouched, since those never depend on
- *  within-run sequencing. */
+ *  within-run sequencing — and WIDENS that union (see the
+ *  SEQUENTIAL-RELAXATION-CONTRACT CORRECTIVE header comment above) only
+ *  when accumulator-adjusted strict count is insufficient. */
 export function resolveSequentialCandidateSet(
   selectionInput: SelectionInput,
   accumulator: SequentialAccumulator,
   minDaysBetweenDuties: number,
-  sameDaySecondAssignmentAllowed: boolean
+  sameDaySecondAssignmentAllowed: boolean,
+  relaxMinIntervalWhenInsufficient: boolean
 ): SequentialCandidateSetResult {
   const date = selectionInput.slot.date;
   const available = [
@@ -151,22 +183,27 @@ export function resolveSequentialCandidateSet(
   ];
   const candidateByKey = new Map(selectionInput.candidates.map((c) => [c.candidateKey, c]));
   const fairnessByKey = new Map(selectionInput.fairnessFacts.map((f) => [f.candidateKey, f]));
-
   const sameDayExcludedPharmacyIds = new Set<string>();
-  const eligibleToday: string[] = [];
-  for (const candidateKey of available) {
+  // Applies the SAME_DAY_ASSIGNMENT_LIMIT, in-run, non-relaxable check
+  // to any candidateKey — reused below for both the original
+  // strict∪relaxed union and any sequentially-widened candidates, so a
+  // pharmacy already picked earlier THIS date can never re-enter
+  // through either path.
+  const passesSameDayCheck = (candidateKey: string): boolean => {
     const candidate = candidateByKey.get(candidateKey);
-    if (!candidate) continue; // defensive; cannot happen for a validated SelectionInput
+    if (!candidate) return false; // defensive; cannot happen for a validated SelectionInput
     const acc = accumulator.get(candidate.pharmacyId) ?? EMPTY_ENTRY;
-    // SAME_DAY_ASSIGNMENT_LIMIT, in-run: non-relaxable, exactly like
-    // Phase 4's own DAILY_ASSIGNMENT_LIMIT constraint — a pharmacy
-    // already picked earlier THIS date is removed from the candidate set
-    // entirely, never merely deprioritized.
     if (!sameDaySecondAssignmentAllowed && acc.newestLastDutyDate === date) {
       sameDayExcludedPharmacyIds.add(candidate.pharmacyId);
-      continue;
+      return false;
     }
-    eligibleToday.push(candidateKey);
+    return true;
+  };
+
+  const eligibleToday: string[] = [];
+  for (const candidateKey of available) {
+    if (!candidateByKey.has(candidateKey)) continue; // defensive
+    if (passesSameDayCheck(candidateKey)) eligibleToday.push(candidateKey);
   }
 
   // Part 8 boundary (explicit, not silent — see this file's header
@@ -202,13 +239,47 @@ export function resolveSequentialCandidateSet(
     }
   }
 
-  const pool = strict.length >= selectionInput.requiredCount ? strict : eligibleToday;
+  // SEQUENTIAL-RELAXATION-CONTRACT CORRECTIVE: only when the
+  // accumulator-adjusted strict count can no longer fill requiredCount
+  // do we widen the universe beyond Phase 4's static strict∪relaxed
+  // union. This exactly mirrors V1's own trigger condition
+  // (`strictlyEligible.length < dailyDutyCount`) — re-evaluated HERE,
+  // against CURRENT in-run state, rather than trusting Phase 4's
+  // one-time static evaluation of the same condition.
+  const sequentiallyRelaxedCandidateKeys: string[] = [];
+  let widenedEligibleToday = eligibleToday;
+  if (relaxMinIntervalWhenInsufficient && strict.length < selectionInput.requiredCount) {
+    const relaxableSet = new Set(selectionInput.relaxableReasonCodes);
+    const alreadyConsidered = new Set(eligibleToday);
+    const additional: string[] = [];
+    for (const eligibilityResult of selectionInput.eligibility) {
+      const candidateKey = eligibilityResult.candidateKey;
+      if (alreadyConsidered.has(candidateKey)) continue; // already in eligibleToday
+      // The EXACT SAME predicate Phase 4 uses — never re-invented, never
+      // re-evaluating a configured HARD rule's condition. A candidate
+      // failing anything non-relaxable (inactive, unavailable, blocking,
+      // exclusion, a non-relaxable configured rule, …) is never admitted.
+      if (!isRelaxAdmissible(eligibilityResult, relaxableSet)) continue;
+      if (!passesSameDayCheck(candidateKey)) continue;
+      additional.push(candidateKey);
+    }
+    if (additional.length > 0) {
+      sequentiallyRelaxedCandidateKeys.push(...additional.sort());
+      widenedEligibleToday = [...eligibleToday, ...additional];
+    }
+  }
+
+  const pool = strict.length >= selectionInput.requiredCount ? strict : widenedEligibleToday;
   const strictSet = new Set(strict);
   const origin = new Map<string, "STRICT" | "RELAXED">();
   for (const key of pool) {
     origin.set(key, strictSet.has(key) ? "STRICT" : "RELAXED");
   }
-  return { origin, sameDayExcludedPharmacyIds: [...sameDayExcludedPharmacyIds].sort() };
+  return {
+    origin,
+    sameDayExcludedPharmacyIds: [...sameDayExcludedPharmacyIds].sort(),
+    sequentiallyRelaxedCandidateKeys,
+  };
 }
 
 /** Fold one slot's provisional selection into the accumulator. Pure:
@@ -277,6 +348,10 @@ export function selectProvisionalWinnersSequential(input: {
   slots: SequentialSlotInput[];
   minDaysBetweenDuties: number;
   sameDaySecondAssignmentAllowed: boolean;
+  /** Mirrors EngineSchedulingPolicy.relaxMinIntervalWhenInsufficient —
+   *  gates BOTH Phase 4's static relaxation AND this module's sequential
+   *  widening (see resolveSequentialCandidateSet). */
+  relaxMinIntervalWhenInsufficient: boolean;
   definitions: ConfiguredSelectionStrategy[];
   definitionsById: ReadonlyMap<string, ConfiguredSelectionStrategy>;
 }): ProvisionalSlotSelection[] {
@@ -299,11 +374,12 @@ export function selectProvisionalWinnersSequential(input: {
   let accumulator: SequentialAccumulator = new Map();
 
   for (const { selectionInput, matchContextBase, isWeekendDate, isSundayDate, isHolidayDate } of ordered) {
-    const { origin, sameDayExcludedPharmacyIds } = resolveSequentialCandidateSet(
+    const { origin, sameDayExcludedPharmacyIds, sequentiallyRelaxedCandidateKeys } = resolveSequentialCandidateSet(
       selectionInput,
       accumulator,
       input.minDaysBetweenDuties,
-      input.sameDaySecondAssignmentAllowed
+      input.sameDaySecondAssignmentAllowed,
+      input.relaxMinIntervalWhenInsufficient
     );
     const baseFacts = buildCandidateRankingFacts(selectionInput, origin);
     const adjustedFacts = applyAccumulatorToFacts(baseFacts, accumulator, selectionInput.slot.date);
@@ -327,6 +403,20 @@ export function selectProvisionalWinnersSequential(input: {
             code: "PROVISIONAL_SAME_DAY_ASSIGNMENT_CONFLICT",
             date: selectionInput.slot.date,
             subjectKey: selectionInput.slot.slotKey,
+          },
+        ],
+      };
+    }
+    if (sequentiallyRelaxedCandidateKeys.length > 0) {
+      const strictCount = [...origin.values()].filter((o) => o === "STRICT").length;
+      result = {
+        ...result,
+        diagnostics: [
+          ...result.diagnostics,
+          {
+            code: "SEQUENTIAL_RELAXATION_APPLIED",
+            date: selectionInput.slot.date,
+            subjectKey: `${selectionInput.slot.slotKey}#required=${selectionInput.requiredCount}#strict=${strictCount}#relaxed=${sequentiallyRelaxedCandidateKeys.length}`,
           },
         ],
       };
