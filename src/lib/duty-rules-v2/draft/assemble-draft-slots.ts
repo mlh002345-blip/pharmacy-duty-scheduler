@@ -53,8 +53,6 @@ export function assembleDraftSlot(input: {
 
   const provisional = input.provisional;
   const selectionInput = input.selectionInput;
-  const strictSet = new Set(selectionInput?.relaxation.strictEligible ?? []);
-  const relaxedSet = new Set(selectionInput?.relaxation.relaxedEligible ?? []);
   const fairnessByCandidateKey = new Map((selectionInput?.fairnessFacts ?? []).map((f) => [f.candidateKey, f]));
   const ruleRefsByCandidateKey = new Map<string, string[]>();
   for (const rule of selectionInput?.ruleEvaluations ?? []) {
@@ -72,11 +70,17 @@ export function assembleDraftSlot(input: {
     const ranking = rankingByKey.get(candidateKey);
     if (!ranking) return; // Unresolvable: validate-draft-references.ts reports this.
 
-    const origin: "STRICT" | "RELAXED" = strictSet.has(candidateKey)
-      ? "STRICT"
-      : relaxedSet.has(candidateKey)
-        ? "RELAXED"
-        : ranking.rankFacts.origin;
+    // ranking.rankFacts.origin is Phase 6's own authoritative per-
+    // candidate origin (apply-sequential-selection-state.ts's origin
+    // map) — the single source of truth, correct for both a Phase-4-
+    // static-relaxed candidate and one admitted only via Phase 6's
+    // sequential-relaxation widening (sequential-relaxation-contract
+    // corrective). Phase 4's static strictEligible/relaxedEligible sets
+    // are a one-time, single-slot snapshot and can go stale once the
+    // sequential accumulator later demotes a candidate Phase 4 saw as
+    // strict — using them here would silently relabel a RELAXED
+    // assignment as STRICT.
+    const origin: "STRICT" | "RELAXED" = ranking.rankFacts.origin;
     const explanation = input.explanationsByCandidateKey.get(candidateKey) ?? null;
     const fairness = fairnessByCandidateKey.get(candidateKey) ?? null;
 

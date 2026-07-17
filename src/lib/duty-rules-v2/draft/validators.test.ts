@@ -222,7 +222,13 @@ function fakeResult(overrides: Partial<EngineDraftResultPreDraft> = {}): EngineD
         strategyId: "strategy-1",
         strategyType: "V1_COMPATIBILITY",
         selectedCandidateKeys: ["2026-08-03:WEEKDAY:shift-1:0#m-a"],
-        rankings: [{ candidateKey: "2026-08-03:WEEKDAY:shift-1:0#m-a", provisionalRank: 1 }],
+        rankings: [
+          {
+            candidateKey: "2026-08-03:WEEKDAY:shift-1:0#m-a",
+            provisionalRank: 1,
+            rankFacts: { origin: "STRICT" },
+          },
+        ],
       } as unknown as EngineDraftResultPreDraft["provisionalSelections"][number],
     ],
     ...overrides,
@@ -260,11 +266,54 @@ describe("validateDraftReferences", () => {
 });
 
 describe("validateDraftEligibilityOrigin", () => {
-  it("flags DRAFT_ORIGIN_MISMATCH when recorded origin disagrees with strict/relaxed membership", () => {
+  it("flags DRAFT_ORIGIN_MISMATCH when recorded origin disagrees with the candidate's own rankFacts.origin", () => {
     const result = fakeResult();
     const s = slot({}, [assignment({ origin: "RELAXED" })]);
     const diagnostics = validateDraftEligibilityOrigin({ result, slots: [s] });
     expect(diagnostics.some((d) => d.code === "DRAFT_ORIGIN_MISMATCH")).toBe(true);
+  });
+
+  it("flags DRAFT_CANDIDATE_NOT_IN_STRICT_OR_RELAXED when a candidateKey has no matching ranking", () => {
+    const result = fakeResult();
+    const s = slot({}, [assignment({ candidateKey: "2026-08-03:WEEKDAY:shift-1:0#m-ghost" })]);
+    const diagnostics = validateDraftEligibilityOrigin({ result, slots: [s] });
+    expect(diagnostics.some((d) => d.code === "DRAFT_CANDIDATE_NOT_IN_STRICT_OR_RELAXED")).toBe(true);
+  });
+
+  it("does not flag a RELAXED-origin assignment admitted via sequential-relaxation widening (sequential-relaxation-contract corrective)", () => {
+    // Regression for the Phase 7 / PR #11 integration gap: a candidate
+    // admitted only through Phase 6's sequential widening (never present
+    // in Phase 4's static strictEligible/relaxedEligible sets) must
+    // still validate cleanly, because rankFacts.origin — not the static
+    // sets — is the authoritative source this validator checks against.
+    const result = fakeResult({
+      selectionInputs: [
+        {
+          slot: { slotKey: "2026-08-03:WEEKDAY:shift-1:0" },
+          candidates: [{ pharmacyId: "ph-a", membershipId: "m-a" }],
+          relaxation: { strictEligible: [], relaxedEligible: [], relaxationApplied: false },
+        } as unknown as EngineDraftResultPreDraft["selectionInputs"][number],
+      ],
+      provisionalSelections: [
+        {
+          slotKey: "2026-08-03:WEEKDAY:shift-1:0",
+          date: "2026-08-03",
+          strategyId: "strategy-1",
+          strategyType: "V1_COMPATIBILITY",
+          selectedCandidateKeys: ["2026-08-03:WEEKDAY:shift-1:0#m-a"],
+          rankings: [
+            {
+              candidateKey: "2026-08-03:WEEKDAY:shift-1:0#m-a",
+              provisionalRank: 1,
+              rankFacts: { origin: "RELAXED" },
+            },
+          ],
+        } as unknown as EngineDraftResultPreDraft["provisionalSelections"][number],
+      ],
+    });
+    const s = slot({}, [assignment({ origin: "RELAXED" })]);
+    const diagnostics = validateDraftEligibilityOrigin({ result, slots: [s] });
+    expect(diagnostics).toHaveLength(0);
   });
 
   it("flags DRAFT_STRATEGY_MISMATCH when the assignment's strategy disagrees with the provisional selection", () => {
@@ -279,21 +328,6 @@ describe("validateDraftEligibilityOrigin", () => {
     const s = slot({}, [assignment({ provisionalRank: 99 })]);
     const diagnostics = validateDraftEligibilityOrigin({ result, slots: [s] });
     expect(diagnostics.some((d) => d.code === "DRAFT_SELECTED_RANK_MISMATCH")).toBe(true);
-  });
-
-  it("flags DRAFT_RELAXATION_MISMATCH when a RELAXED-origin assignment exists but relaxationApplied is false", () => {
-    const result = fakeResult({
-      selectionInputs: [
-        {
-          slot: { slotKey: "2026-08-03:WEEKDAY:shift-1:0" },
-          candidates: [{ pharmacyId: "ph-a", membershipId: "m-a" }],
-          relaxation: { strictEligible: [], relaxedEligible: ["2026-08-03:WEEKDAY:shift-1:0#m-a"], relaxationApplied: false },
-        } as unknown as EngineDraftResultPreDraft["selectionInputs"][number],
-      ],
-    });
-    const s = slot({}, [assignment({ origin: "RELAXED" })]);
-    const diagnostics = validateDraftEligibilityOrigin({ result, slots: [s] });
-    expect(diagnostics.some((d) => d.code === "DRAFT_RELAXATION_MISMATCH")).toBe(true);
   });
 
   it("reports no diagnostics for an internally consistent slot", () => {

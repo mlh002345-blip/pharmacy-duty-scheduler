@@ -1521,28 +1521,22 @@ describe("Phase 7 — full-period Complete Draft Schedule equivalence (32-scenar
     expect(v1ByDate(v1).get("2026-09-01")?.[0]?.pharmacyId).toBe("ph-c"); // zero load wins
   });
 
-  it("23. historical last-duty interval carries into the period", () => {
-    // KNOWN, NEWLY-DISCOVERED DIVERGENCE (flagged, not hidden): this
-    // full-period assertion is intentionally scoped to 2026-09-01 and
-    // 2026-09-02 only (matching the original Phase 6 harness's scope),
-    // NOT the full allDates(f). Extending to 2026-09-03 exposes a real
-    // V1/V2 mismatch: once minDaysBetweenDuties=5 has excluded EVERY
-    // candidate from strict eligibility (which happens on 09-03, once
-    // ph-a/ph-b/ph-c have all served within the last 5 days), V1's
-    // relaxation reuses its SAME comparator chain — including step 6,
-    // lastDutyDate ascending — and V1 picks ph-a (lastDutyDate 08-30,
-    // earliest). V2 instead picks ph-b on that date. Both paths' primary
-    // criteria (totalWeightedLoad, totalAssignmentCount) are tied
-    // 3-way at that point, so the divergence traces to how the relaxed
-    // candidate set's carried-forward fairness facts (sequential
-    // accumulator, apply-sequential-selection-state.ts) resolve
-    // lastDutyDate for a candidate whose most recent duty predates the
-    // period (pure historical, never accumulator-touched) versus one
-    // whose most recent duty is THIS RUN's own earlier assignment — an
-    // asymmetry not previously exercised by any committed scenario.
-    // This requires a dedicated Phase 4/6 investigation and is NOT
-    // fixed in this Phase 7 delivery — see the architecture doc's
-    // "Known open gap" section. Filed here rather than silently omitted.
+  it("23. historical last-duty interval carries into the period (sequential-relaxation-contract corrective: full period, previously narrowed to 09-01/09-02 only)", () => {
+    // Previously narrowed to 09-01/09-02 only, pending a dedicated
+    // Phase 4/6 investigation of a confirmed V1/V2 divergence on 09-03:
+    // once minDaysBetweenDuties=5 has excluded EVERY candidate from
+    // strict eligibility (ph-a/ph-b/ph-c have all served within the
+    // last 5 days by 09-03), V1 rebuilds its candidate pool fresh from
+    // live state and picks ph-a (earliest lastDutyDate). V2 previously
+    // picked ph-b because ph-a was structurally absent from Phase 4's
+    // statically-computed strictEligible ∪ relaxedEligible pool — Phase
+    // 4 could not see that Phase 6's sequential accumulator would later
+    // demote ph-b/ph-c out of strict within the same run. Fixed by PR
+    // #11 (commit 29b32f8): resolveSequentialCandidateSet now widens
+    // the candidate pool from the accumulator-adjusted state using the
+    // same isRelaxAdmissible predicate Phase 4 already applied. Now
+    // asserted over the FULL period, not narrowed — see the
+    // architecture doc (this gap is no longer open).
     const f: ScenarioFixture = {
       organizationId: "org-1",
       regionId: "region-1",
@@ -1554,8 +1548,14 @@ describe("Phase 7 — full-period Complete Draft Schedule equivalence (32-scenar
       historicalAssignments: [{ pharmacyId: "ph-a", date: "2026-08-30", weight: 1 }],
     };
     const { v1, v2 } = runBothPaths(f);
-    assertFullPhase7Equivalence(v1, v2, f, ["2026-09-01", "2026-09-02"]);
+    assertFullPhase7Equivalence(v1, v2, f, allDates(f));
     expect(v1ByDate(v1).get("2026-09-01")?.[0]?.pharmacyId).not.toBe("ph-a");
+    expect(v1ByDate(v1).get("2026-09-03")?.[0]?.pharmacyId).toBe("ph-a");
+    const v2Sept3 = v2.completeDraftSchedule.assignments
+      .filter((a) => a.date === "2026-09-03")
+      .sort((a, b) => a.selectionOrdinal - b.selectionOrdinal);
+    expect(v2Sept3[0]?.pharmacyId).toBe("ph-a");
+    expect(v2Sept3[0]?.origin).toBe("RELAXED");
   });
 
   it("24. balance adjustment shifts fairness ordering independent of history", () => {

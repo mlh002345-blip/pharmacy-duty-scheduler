@@ -387,11 +387,39 @@ optimization, backtracking/global search, any AI-generated logic.
 `isCommitEligible` is a forward-looking signal only — no code in this
 repository currently reads it to gate a write.
 
-## Known open gap (unresolved — see scenario 23 above)
+## Resolved gap: sequential-relaxation-contract corrective (PR #11)
 
-A genuine V1/V2 relaxed-candidate tie-break divergence exists once
-`minDaysBetweenDuties` simultaneously excludes every candidate in a pool
-from strict eligibility. Requires a dedicated Phase 4/6 investigation
-(`apply-sequential-selection-state.ts` fairness-fact folding for
-historical-only vs. in-run `lastDutyDate`), out of Phase 7's scope, not
-fixed in this delivery.
+The V1/V2 relaxed-candidate divergence previously documented here —
+occurring once `minDaysBetweenDuties` simultaneously excludes every
+candidate in a pool from strict eligibility — was root-caused and fixed
+by PR #11 (`fix/duty-rules-v2-sequential-relaxation-contract`, commit
+`29b32f8`), merged into `deploy/postgresql-demo` and brought into this
+branch. The defect: Phase 4's `applyEligibilityRelaxation` computed
+`relaxedEligible` only from its own static, single-slot evaluation, with
+no visibility into candidates Phase 6's sequential accumulator would
+later demote out of strict within the same run. The fix extracts a
+shared `isRelaxAdmissible` predicate (`engine/apply-eligibility-
+relaxation.ts`) used identically by Phase 4 and by a new widening step in
+`resolveSequentialCandidateSet` (`selection/apply-sequential-selection-
+state.ts`), which re-derives the admissible relaxed pool from current
+in-run state when the accumulator-adjusted strict count drops below
+`requiredCount`.
+
+Bringing PR #11 into this branch also surfaced a second, Phase-7-local
+integration bug in `draft/assemble-draft-slots.ts`: assignment origin was
+computed by checking a candidate against Phase 4's static
+`strictEligible`/`relaxedEligible` sets FIRST, falling back to Phase 6's
+authoritative `rankFacts.origin` only when the candidate was in neither
+set. Once a Phase-4-static-strict candidate is later demoted by Phase
+6's sequential accumulator but still admitted into the widened RELAXED
+pool, the static sets still (stale) reported it as strict, so the
+assembled `DraftAssignment.origin` was silently mislabeled `STRICT`.
+Fixed by always sourcing `origin` from `ranking.rankFacts.origin` — the
+single authoritative, sequential-widening-aware fact Phase 6 already
+computes — and by updating `draft/validate-draft-eligibility-origin.ts`
+to independently re-check against that same authoritative source instead
+of the stale static sets. `v1-golden-equivalence.test.ts` scenario 23
+("historical last-duty interval carries into the period") now asserts
+full-period equivalence (previously narrowed to 2026-09-01/09-02) with
+explicit checks that both V1 and V2 select `ph-a` on 2026-09-03 with
+origin `RELAXED`.

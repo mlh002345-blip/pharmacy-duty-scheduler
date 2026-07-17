@@ -56,11 +56,13 @@ export const DRAFT_DIAGNOSTIC_CODES = [
   "DRAFT_STRATEGY_MISSING_FOR_SELECTED_SLOT",
 
   // --- eligibility origin (validate-draft-eligibility-origin.ts) ---
-  /** An assignment's candidateKey is not present in the source slot's
-   *  strict or relaxed eligible sets (Phase 4/5's own determination). */
+  /** An assignment's candidateKey has no matching entry in the source
+   *  provisional selection's own rankings (Phase 6's own determination
+   *  of the admitted candidate pool, including sequential-relaxation
+   *  widening). */
   "DRAFT_CANDIDATE_NOT_IN_STRICT_OR_RELAXED",
-  /** An assignment's recorded origin does not match the origin implied
-   *  by the source slot's own strict/relaxed eligible sets. */
+  /** An assignment's recorded origin does not match its own
+   *  CandidateRankingFacts.origin as recorded by Phase 6. */
   "DRAFT_ORIGIN_MISMATCH",
   /** An assignment's strategyId/strategyType does not match the
    *  provisional selection's own recorded strategy for that slot. */
@@ -68,9 +70,6 @@ export const DRAFT_DIAGNOSTIC_CODES = [
   /** An assignment's provisionalRank does not match its own ranking's
    *  provisionalRank as recorded by Phase 6. */
   "DRAFT_SELECTED_RANK_MISMATCH",
-  /** A relaxed-origin assignment exists on a slot whose relaxation
-   *  summary reports relaxationApplied === false, or vice versa. */
-  "DRAFT_RELAXATION_MISMATCH",
 
   // --- chronology / identity uniqueness (validate-draft-chronology.ts) ---
   /** Two assignments in the whole draft share a draftAssignmentKey. */
@@ -140,7 +139,6 @@ export const DRAFT_DIAGNOSTIC_SEVERITY: Readonly<Record<DraftDiagnosticCode, "ER
   DRAFT_ORIGIN_MISMATCH: "ERROR",
   DRAFT_STRATEGY_MISMATCH: "ERROR",
   DRAFT_SELECTED_RANK_MISMATCH: "ERROR",
-  DRAFT_RELAXATION_MISMATCH: "ERROR",
 
   DRAFT_DUPLICATE_ASSIGNMENT_KEY: "ERROR",
   DRAFT_DUPLICATE_CANDIDATE_KEY_IN_SLOT: "ERROR",
