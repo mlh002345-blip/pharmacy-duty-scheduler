@@ -18,6 +18,7 @@ import type { SelectionDiagnostic } from "../selection/domain/selection-diagnost
 import type { ProvisionalSlotSelection } from "../selection/domain/selection-result";
 import type { SelectionExplanation } from "../selection/build-selection-explanations";
 import type { EngineGenerationMode } from "./domain/engine-input";
+import type { CompleteDraftSchedule, DraftGenerationManifest } from "../draft/domain/draft-schedule";
 import { sortDiagnostics, type EngineDiagnostic } from "./domain/diagnostics";
 import { sha256Canonical } from "./build-selection-input";
 import type { SelectionInput } from "./build-selection-input";
@@ -98,7 +99,24 @@ export type DutyEngineDraftResult = {
     unresolvedSelectionSlots: number;
   };
   resultFingerprint: string;
+  /** Phase 7: the assembled Complete Draft Schedule — additive, computed
+   *  from this very result (via its resultFingerprint) by
+   *  buildDutyEngineContext AFTER this builder returns. Never affects
+   *  resultFingerprint above, which stays computed over Phase 4-6 fields
+   *  only, exactly as before Phase 7. */
+  completeDraftSchedule: CompleteDraftSchedule;
+  completeDraftFingerprint: string;
+  draftManifest: DraftGenerationManifest;
 };
+
+/** buildDraftResult's own output, BEFORE the Phase 7 draft-schedule
+ *  fields are attached by buildDutyEngineContext (which needs this
+ *  result's resultFingerprint as an input to Phase 7 assembly, so the
+ *  three draft fields cannot be produced inside this function itself). */
+export type EngineDraftResultPreDraft = Omit<
+  DutyEngineDraftResult,
+  "completeDraftSchedule" | "completeDraftFingerprint" | "draftManifest"
+>;
 
 export function buildDraftResult(input: {
   engineVersion: number;
@@ -114,7 +132,7 @@ export function buildDraftResult(input: {
   provisionalSelections: ProvisionalSlotSelection[];
   strategyConflicts: StrategyConflict[];
   selectionExplanations: SelectionExplanation[];
-}): DutyEngineDraftResult {
+}): EngineDraftResultPreDraft {
   const unresolvedSlots: UnresolvedSlot[] = [];
   for (const day of input.days) {
     for (const slot of day.slots) {
