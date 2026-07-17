@@ -1,181 +1,116 @@
 // Duty Rules V2 — Phase 7: pure assembly of DraftSlot/DraftAssignment
-// facts from an already-computed DutyEngineDraftResult. This module
-// NEVER re-ranks, re-selects, excludes, or resurrects a candidate — it
-// only restates Phase 4-6's own decisions in the Complete Draft shape,
-// while recording any structural inconsistency it observes as a
-// DraftDiagnostic instead of silently tolerating or "fixing" it.
+// facts from an already-computed DutyEngineDraftResult.
+//
+// PURE PROJECTION ONLY. This module NEVER re-ranks, re-selects,
+// excludes, or resurrects a candidate, and it NEVER decides whether a
+// structural inconsistency is a diagnostic — that is entirely the
+// validators' job (validate-draft-*.ts). Assembly does its best-effort
+// construction (e.g. an unresolvable candidateKey simply cannot produce
+// an assignment fact — there is no pharmacyId to project), and the
+// validators independently re-derive expectations from the same source
+// data to catch every case where assembly's best effort fell short.
 
 import type { EngineDraftResultPreDraft } from "../engine/build-draft-result";
 import type { ResolvedSlot } from "../engine/resolve-slots";
 import type { SelectionInput } from "../engine/build-selection-input";
 import type { ProvisionalSlotSelection } from "../selection/domain/selection-result";
-import { makeDraftDiagnostic, type DraftDiagnostic } from "./domain/draft-diagnostic";
+import type { SelectionExplanation } from "../selection/build-selection-explanations";
 import type { DraftAssignment, DraftSlot, DraftSlotStatus } from "./domain/draft-schedule";
 
-const SLOT_KEY_SHAPE = /^\d{4}-\d{2}-\d{2}:.+:.+:\d+$/;
-
-export type AssembledSlot = {
-  slot: DraftSlot;
-  diagnostics: DraftDiagnostic[];
-};
+/** "{slotKey}#{membershipId}" → membershipId (the last '#'-delimited
+ *  segment; slotKey itself never contains '#', see resolve-slots.ts). */
+function membershipIdFromCandidateKey(candidateKey: string): string {
+  const parts = candidateKey.split("#");
+  return parts[parts.length - 1];
+}
 
 export function assembleDraftSlot(input: {
   resolvedSlot: ResolvedSlot;
-  periodStart: string;
-  periodEnd: string;
+  resolvedDayType: string | null;
+  compatibilityWeightDayType: "WEEKDAY" | "SATURDAY" | "SUNDAY" | null;
+  planVersionId: string;
   hasAnyStrategyConfigured: boolean;
   selectionInput: SelectionInput | null;
   provisional: ProvisionalSlotSelection | null;
-}): AssembledSlot {
+  explanationsByCandidateKey: ReadonlyMap<string, SelectionExplanation>;
+}): DraftSlot {
   const { resolvedSlot } = input;
-  const diagnostics: DraftDiagnostic[] = [];
-
-  if (!SLOT_KEY_SHAPE.test(resolvedSlot.slotKey)) {
-    diagnostics.push(makeDraftDiagnostic("DRAFT_SLOT_KEY_FORMAT_INVALID", resolvedSlot.date, resolvedSlot.slotKey));
-  }
-  if (resolvedSlot.date < input.periodStart || resolvedSlot.date > input.periodEnd) {
-    diagnostics.push(
-      makeDraftDiagnostic("DRAFT_PERIOD_BOUNDARY_VIOLATION", resolvedSlot.date, resolvedSlot.slotKey)
-    );
-  }
 
   if (!resolvedSlot.resolvable) {
-    diagnostics.push(makeDraftDiagnostic("DRAFT_SLOT_WITHOUT_POOL", resolvedSlot.date, resolvedSlot.slotKey));
-    return {
-      slot: baseSlot(resolvedSlot, "UNSCHEDULED", [], diagnostics),
-      diagnostics,
-    };
+    return baseSlot(resolvedSlot, "UNSCHEDULED", [], null, null, false);
   }
 
   if (!input.hasAnyStrategyConfigured || input.provisional === null) {
-    if (resolvedSlot.requiredCount > 0) {
-      diagnostics.push(
-        makeDraftDiagnostic("DRAFT_SLOT_UNRESOLVED_NO_STRATEGY", resolvedSlot.date, resolvedSlot.slotKey)
-      );
-    }
-    return {
-      slot: baseSlot(resolvedSlot, resolvedSlot.requiredCount > 0 ? "UNRESOLVED" : "FILLED", [], diagnostics),
-      diagnostics,
-    };
-  }
-
-  const provisional = input.provisional;
-  const strictSet = new Set(input.selectionInput?.relaxation.strictEligible ?? []);
-  const relaxedSet = new Set(input.selectionInput?.relaxation.relaxedEligible ?? []);
-  const candidatePharmacyIds = new Set(
-    (input.selectionInput?.candidates ?? []).map((c) => c.pharmacyId)
-  );
-  const fallbackUsedOnSlot = provisional.diagnostics.some((d) => d.code === "FALLBACK_USED");
-
-  if (provisional.selectedCandidateKeys.length > 0 && provisional.strategyId === null) {
-    diagnostics.push(
-      makeDraftDiagnostic("DRAFT_STRATEGY_MISSING_FOR_SELECTED_SLOT", resolvedSlot.date, resolvedSlot.slotKey)
+    return baseSlot(
+      resolvedSlot,
+      resolvedSlot.requiredCount > 0 ? "UNRESOLVED" : "FILLED",
+      [],
+      null,
+      null,
+      false
     );
   }
 
+  const provisional = input.provisional;
+  const selectionInput = input.selectionInput;
+  const strictSet = new Set(selectionInput?.relaxation.strictEligible ?? []);
+  const relaxedSet = new Set(selectionInput?.relaxation.relaxedEligible ?? []);
+  const fairnessByCandidateKey = new Map((selectionInput?.fairnessFacts ?? []).map((f) => [f.candidateKey, f]));
+  const ruleRefsByCandidateKey = new Map<string, string[]>();
+  for (const rule of selectionInput?.ruleEvaluations ?? []) {
+    if (rule.candidateKey === null || rule.outcome === "PASS") continue;
+    const list = ruleRefsByCandidateKey.get(rule.candidateKey) ?? [];
+    list.push(rule.violationCode ?? rule.explanationCode);
+    ruleRefsByCandidateKey.set(rule.candidateKey, list);
+  }
+  const fallbackUsedOnSlot = provisional.diagnostics.some((d) => d.code === "FALLBACK_USED");
+
   const rankingByKey = new Map(provisional.rankings.map((r) => [r.candidateKey, r]));
   const assignments: DraftAssignment[] = [];
-  const seenPharmacyIds = new Set<string>();
-  let previousRank = -Infinity;
-  let rankMonotonic = true;
 
   provisional.selectedCandidateKeys.forEach((candidateKey, index) => {
     const ranking = rankingByKey.get(candidateKey);
-    if (!ranking) {
-      diagnostics.push(
-        makeDraftDiagnostic(
-          "DRAFT_ASSIGNMENT_REFERENCES_UNKNOWN_CANDIDATE",
-          resolvedSlot.date,
-          `${resolvedSlot.slotKey}#${candidateKey}`
-        )
-      );
-      return;
-    }
-
-    const expectedOrdinal = index + 1;
-    if (ranking.selectionOrdinal !== null && ranking.selectionOrdinal < previousRank) {
-      rankMonotonic = false;
-    }
-    if (ranking.provisionalRank >= previousRank) {
-      previousRank = ranking.provisionalRank;
-    } else {
-      rankMonotonic = false;
-    }
-
-    if (ranking.rankFacts.pharmacyId !== undefined && seenPharmacyIds.has(ranking.rankFacts.pharmacyId)) {
-      diagnostics.push(
-        makeDraftDiagnostic("DRAFT_SAME_SLOT_DUPLICATE_PHARMACY", resolvedSlot.date, resolvedSlot.slotKey)
-      );
-    }
-    seenPharmacyIds.add(ranking.rankFacts.pharmacyId);
+    if (!ranking) return; // Unresolvable: validate-draft-references.ts reports this.
 
     const origin: "STRICT" | "RELAXED" = strictSet.has(candidateKey)
       ? "STRICT"
       : relaxedSet.has(candidateKey)
         ? "RELAXED"
         : ranking.rankFacts.origin;
-    if (!strictSet.has(candidateKey) && !relaxedSet.has(candidateKey)) {
-      diagnostics.push(
-        makeDraftDiagnostic(
-          "DRAFT_CANDIDATE_NOT_IN_STRICT_OR_RELAXED",
-          resolvedSlot.date,
-          `${resolvedSlot.slotKey}#${candidateKey}`
-        )
-      );
-    }
-    if (candidatePharmacyIds.size > 0 && !candidatePharmacyIds.has(ranking.rankFacts.pharmacyId)) {
-      diagnostics.push(
-        makeDraftDiagnostic(
-          "DRAFT_UNKNOWN_PHARMACY_REFERENCE",
-          resolvedSlot.date,
-          `${resolvedSlot.slotKey}#${ranking.rankFacts.pharmacyId}`
-        )
-      );
-    }
-
-    if (provisional.date !== resolvedSlot.date) {
-      diagnostics.push(
-        makeDraftDiagnostic("DRAFT_SLOT_DATE_MISMATCH", resolvedSlot.date, resolvedSlot.slotKey)
-      );
-    }
+    const explanation = input.explanationsByCandidateKey.get(candidateKey) ?? null;
+    const fairness = fairnessByCandidateKey.get(candidateKey) ?? null;
 
     assignments.push({
-      assignmentKey: `${resolvedSlot.slotKey}#${candidateKey}`,
+      draftAssignmentKey: `${resolvedSlot.slotKey}#${candidateKey}`,
       slotKey: resolvedSlot.slotKey,
       date: provisional.date,
+      shiftId: resolvedSlot.shiftId,
+      shiftKey: resolvedSlot.shiftKey,
+      poolId: resolvedSlot.poolId,
       candidateKey,
+      membershipId: membershipIdFromCandidateKey(candidateKey),
       pharmacyId: ranking.rankFacts.pharmacyId,
       pharmacyName: ranking.rankFacts.pharmacyName,
       origin,
       strategyId: provisional.strategyId,
       strategyType: provisional.strategyType,
       provisionalRank: ranking.provisionalRank,
-      selectionOrdinal: expectedOrdinal,
+      selectionOrdinal: index + 1,
       fallbackUsed: fallbackUsedOnSlot,
+      dutyWeight: fairness?.dateWeight ?? 0,
+      resolvedDayType: input.resolvedDayType,
+      compatibilityWeightDayType: input.compatibilityWeightDayType,
+      decisiveComparatorCriterion: explanation?.decisiveCriterion ?? null,
+      ruleExplanationRefs: [...(ruleRefsByCandidateKey.get(candidateKey) ?? [])].sort(),
+      sourceProvenance: {
+        configurationFingerprint: selectionInput?.provenance.configurationFingerprint ?? "",
+        runtimeInputHash: selectionInput?.provenance.runtimeInputHash ?? "",
+        ruleSetFingerprint: selectionInput?.provenance.ruleSetFingerprint ?? "",
+        strategySetFingerprint: selectionInput?.provenance.strategySetFingerprint ?? "",
+        membershipSnapshotHash: selectionInput?.provenance.membershipSnapshotHash ?? "",
+      },
     });
   });
-
-  if (!rankMonotonic) {
-    diagnostics.push(makeDraftDiagnostic("DRAFT_RANK_NOT_MONOTONIC", resolvedSlot.date, resolvedSlot.slotKey));
-  }
-  if (assignments.length !== provisional.selectedCandidateKeys.length) {
-    diagnostics.push(
-      makeDraftDiagnostic("DRAFT_ASSIGNMENT_COUNT_MISMATCH_SELECTION", resolvedSlot.date, resolvedSlot.slotKey)
-    );
-  }
-  if (assignments.length > resolvedSlot.requiredCount) {
-    diagnostics.push(
-      makeDraftDiagnostic("DRAFT_ASSIGNMENT_COUNT_EXCEEDS_REQUIRED", resolvedSlot.date, resolvedSlot.slotKey)
-    );
-  }
-
-  const expectedOrdinals = assignments.map((a) => a.selectionOrdinal);
-  const contiguous = expectedOrdinals.every((ordinal, i) => ordinal === i + 1);
-  if (!contiguous) {
-    diagnostics.push(
-      makeDraftDiagnostic("DRAFT_SELECTION_ORDINAL_GAP", resolvedSlot.date, resolvedSlot.slotKey)
-    );
-  }
 
   let status: DraftSlotStatus;
   if (resolvedSlot.requiredCount === 0) {
@@ -184,22 +119,27 @@ export function assembleDraftSlot(input: {
     status = "UNRESOLVED";
   } else if (assignments.length < resolvedSlot.requiredCount) {
     status = "UNDERFILLED";
-    diagnostics.push(makeDraftDiagnostic("DRAFT_SLOT_UNDERFILLED", resolvedSlot.date, resolvedSlot.slotKey));
   } else {
     status = "FILLED";
   }
 
-  return {
-    slot: baseSlot(resolvedSlot, status, assignments, diagnostics),
-    diagnostics,
-  };
+  return baseSlot(
+    resolvedSlot,
+    status,
+    assignments,
+    provisional,
+    selectionInput,
+    fallbackUsedOnSlot
+  );
 }
 
 function baseSlot(
   resolvedSlot: ResolvedSlot,
   status: DraftSlotStatus,
   assignments: DraftAssignment[],
-  diagnostics: DraftDiagnostic[] = []
+  provisional: ProvisionalSlotSelection | null,
+  selectionInput: SelectionInput | null,
+  fallbackUsed: boolean
 ): DraftSlot {
   return {
     slotKey: resolvedSlot.slotKey,
@@ -212,17 +152,35 @@ function baseSlot(
     slotName: resolvedSlot.slotName,
     sortOrder: resolvedSlot.sortOrder,
     requiredCount: resolvedSlot.requiredCount,
+    selectedCount: assignments.length,
+    missingCount: Math.max(0, resolvedSlot.requiredCount - assignments.length),
     status,
+    strategyId: provisional?.strategyId ?? null,
+    strategyType: provisional?.strategyType ?? null,
+    fallbackUsed,
+    relaxation: {
+      strictEligibleCount: selectionInput?.relaxation.strictEligible.length ?? 0,
+      relaxedEligibleCount: selectionInput?.relaxation.relaxedEligible.length ?? 0,
+      relaxationApplied: selectionInput?.relaxation.relaxationApplied ?? false,
+    },
     assignments,
-    diagnostics,
+    ruleDiagnosticRefs: [
+      ...new Set((selectionInput?.ruleEvaluations ?? []).filter((r) => r.outcome !== "PASS").map((r) => r.violationCode ?? r.explanationCode)),
+    ].sort(),
+    strategyDiagnosticRefs: [...new Set((provisional?.diagnostics ?? []).map((d) => d.code))].sort(),
+    explanationRefs: assignments.map((a) => a.candidateKey).sort(),
+    diagnostics: [],
   };
 }
 
 export function assembleDraftDays(
-  result: EngineDraftResultPreDraft
-): { slot: DraftSlot; diagnostics: DraftDiagnostic[] }[][] {
+  result: EngineDraftResultPreDraft,
+  sameDaySecondAssignmentAllowed: boolean
+): DraftSlot[][] {
+  void sameDaySecondAssignmentAllowed; // cross-slot checks run at orchestrator level, not here.
   const selectionInputBySlotKey = new Map(result.selectionInputs.map((si) => [si.slot.slotKey, si]));
   const provisionalBySlotKey = new Map(result.provisionalSelections.map((p) => [p.slotKey, p]));
+  const explanationsByCandidateKey = new Map(result.selectionExplanations.map((e) => [e.candidateKey, e]));
   // A provisional selection exists for every resolvable slot whenever at
   // least one selection strategy is configured (build-engine-context.ts
   // always pushes one pendingSelectionSlot per resolvable slot). The
@@ -234,11 +192,14 @@ export function assembleDraftDays(
     day.slots.map((resolvedSlot) =>
       assembleDraftSlot({
         resolvedSlot,
-        periodStart: result.periodStart,
-        periodEnd: result.periodEnd,
+        resolvedDayType: day.dayType.dayType,
+        compatibilityWeightDayType:
+          day.dayType.dayType === "HOLIDAY_EVE" ? day.calendar.compatibilityWeightDayType : null,
+        planVersionId: result.provenance.planVersionId,
         hasAnyStrategyConfigured,
         selectionInput: selectionInputBySlotKey.get(resolvedSlot.slotKey) ?? null,
         provisional: provisionalBySlotKey.get(resolvedSlot.slotKey) ?? null,
+        explanationsByCandidateKey,
       })
     )
   );

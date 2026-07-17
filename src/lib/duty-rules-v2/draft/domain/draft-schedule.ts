@@ -7,9 +7,23 @@
 // direct, traceable projection of a Phase 6 ProvisionalSlotSelection's
 // selectedCandidateKeys. It contains NO DutySchedule/DutyAssignment
 // records and performs no database access.
+//
+// Every field here is either copied verbatim from Phase 4-6 output or a
+// deterministic derivation of it (e.g. dutyWeight = the candidate's own
+// dateWeight fact). No field is a database-generated id or a
+// current-time value — see fingerprint-complete-draft.ts's header for
+// the exact canonical payload this feeds.
 
 import type { DraftDiagnostic } from "./draft-diagnostic";
 import type { EngineRunProvenance } from "../../engine/build-draft-result";
+
+export type DraftAssignmentSourceProvenance = {
+  configurationFingerprint: string;
+  runtimeInputHash: string;
+  ruleSetFingerprint: string;
+  strategySetFingerprint: string;
+  membershipSnapshotHash: string;
+};
 
 /** One resolved seat filled by one candidate, traceable back to its
  *  originating ProvisionalSlotSelection ranking. Never re-derives
@@ -17,10 +31,14 @@ import type { EngineRunProvenance } from "../../engine/build-draft-result";
  *  decided, in assembled form. */
 export type DraftAssignment = {
   /** Deterministic, globally unique: "{slotKey}#{candidateKey}". */
-  assignmentKey: string;
+  draftAssignmentKey: string;
   slotKey: string;
   date: string;
+  shiftId: string;
+  shiftKey: string;
+  poolId: string | null;
   candidateKey: string;
+  membershipId: string;
   pharmacyId: string;
   pharmacyName: string;
   origin: "STRICT" | "RELAXED";
@@ -31,6 +49,20 @@ export type DraftAssignment = {
   /** Phase 6's own 1-based selection order within this slot. */
   selectionOrdinal: number;
   fallbackUsed: boolean;
+  /** The candidate's own dateWeight fact (Phase 4 fairness facts) — the
+   *  weight this specific assignment carries, never recomputed here. */
+  dutyWeight: number;
+  resolvedDayType: string | null;
+  /** Phase 6 corrective compatibility fact, only non-null on
+   *  HOLIDAY_EVE dates: see resolve-calendar-context.ts. */
+  compatibilityWeightDayType: "WEEKDAY" | "SATURDAY" | "SUNDAY" | null;
+  /** Phase 6's own decisive comparator criterion for this candidate, or
+   *  null when no SelectionExplanation exists for this candidateKey. */
+  decisiveComparatorCriterion: string | null;
+  /** Stable violation/explanation codes of every non-PASS Phase 5 rule
+   *  outcome this candidate carries for this slot (ADVISORY included). */
+  ruleExplanationRefs: string[];
+  sourceProvenance: DraftAssignmentSourceProvenance;
 };
 
 export type DraftSlotStatus = "FILLED" | "UNDERFILLED" | "UNRESOLVED" | "UNSCHEDULED";
@@ -46,16 +78,44 @@ export type DraftSlot = {
   slotName: string | null;
   sortOrder: number;
   requiredCount: number;
+  selectedCount: number;
+  missingCount: number;
   status: DraftSlotStatus;
+  strategyId: string | null;
+  strategyType: string | null;
+  fallbackUsed: boolean;
+  relaxation: {
+    strictEligibleCount: number;
+    relaxedEligibleCount: number;
+    relaxationApplied: boolean;
+  };
   /** Ordered by selectionOrdinal. */
   assignments: DraftAssignment[];
+  /** Stable codes: every non-PASS Phase 5 rule outcome anywhere in this
+   *  slot (candidate-independent view; per-candidate refs live on the
+   *  assignment). */
+  ruleDiagnosticRefs: string[];
+  /** Stable Phase 6 SelectionDiagnostic codes for this slot. */
+  strategyDiagnosticRefs: string[];
+  /** candidateKeys with a SelectionExplanation for this slot. */
+  explanationRefs: string[];
   diagnostics: DraftDiagnostic[];
 };
 
 export type DraftDay = {
   date: string;
+  weekdayName: string;
   dayTypeKey: string | null;
+  compatibilityWeightDayType: "WEEKDAY" | "SATURDAY" | "SUNDAY" | null;
+  isHolidayEve: boolean;
+  holidays: { type: string; name: string }[];
   served: boolean;
+  requiredCount: number;
+  selectedCount: number;
+  missingCount: number;
+  status: DraftSlotStatus;
+  slotKeys: string[];
+  assignmentKeys: string[];
   slots: DraftSlot[];
 };
 
@@ -68,15 +128,34 @@ export type DraftValidationSummary = {
 };
 
 export type DraftGenerationManifest = {
+  planVersionId: string;
+  organizationId: string;
+  regionId: string;
+  periodStart: string;
+  periodEnd: string;
+  status: CompleteDraftStatus;
+  isCommitEligible: boolean;
+  counts: {
+    totalSlots: number;
+    filledSlots: number;
+    underfilledSlots: number;
+    unresolvedSlots: number;
+    unscheduledSlots: number;
+    totalAssignments: number;
+  };
   /** The DutyEngineDraftResult this draft was assembled from. */
   sourceResultFingerprint: string;
   provenance: EngineRunProvenance;
   generatedFromProvisionalSelectionsCount: number;
-  slotCount: number;
-  assignmentCount: number;
+  completeDraftFingerprint: string;
+  /** Deterministically ordered (ASC). */
+  assignmentKeys: string[];
+  unresolvedSlotKeys: string[];
+  underfilledSlotKeys: string[];
+  /** Deduplicated, sorted ERROR-severity diagnostic codes present
+   *  anywhere in the draft. Empty unless status is INVALID. */
+  blockingDiagnosticCodes: string[];
   validation: DraftValidationSummary;
-  status: CompleteDraftStatus;
-  isCommitEligible: boolean;
 };
 
 export type CompleteDraftSchedule = {
@@ -87,9 +166,9 @@ export type CompleteDraftSchedule = {
   periodEnd: string;
   provenance: EngineRunProvenance;
   days: DraftDay[];
-  /** Flat, deterministically ordered (assignmentKey ASC) view of every
-   *  assignment across the whole period — the primary consumption shape
-   *  for anything that doesn't need per-day/per-slot grouping. */
+  /** Flat, deterministically ordered (draftAssignmentKey ASC) view of
+   *  every assignment across the whole period — the primary consumption
+   *  shape for anything that doesn't need per-day/per-slot grouping. */
   assignments: DraftAssignment[];
   counts: {
     totalSlots: number;

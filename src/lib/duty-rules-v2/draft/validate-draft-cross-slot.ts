@@ -14,15 +14,15 @@ export function validateDraftCrossSlot(input: {
 
   const seenAssignmentKeys = new Set<string>();
   for (const assignment of input.assignments) {
-    if (seenAssignmentKeys.has(assignment.assignmentKey)) {
+    if (seenAssignmentKeys.has(assignment.draftAssignmentKey)) {
       diagnostics.push(
-        makeDraftDiagnostic("DRAFT_DUPLICATE_ASSIGNMENT_KEY", assignment.date, assignment.assignmentKey)
+        makeDraftDiagnostic("DRAFT_DUPLICATE_ASSIGNMENT_KEY", assignment.date, assignment.draftAssignmentKey)
       );
     }
-    seenAssignmentKeys.add(assignment.assignmentKey);
+    seenAssignmentKeys.add(assignment.draftAssignmentKey);
     if (assignment.fallbackUsed) {
       diagnostics.push(
-        makeDraftDiagnostic("DRAFT_FALLBACK_USED_ON_ASSIGNMENT", assignment.date, assignment.assignmentKey)
+        makeDraftDiagnostic("DRAFT_FALLBACK_USED_ON_ASSIGNMENT", assignment.date, assignment.draftAssignmentKey)
       );
     }
   }
@@ -38,17 +38,20 @@ export function validateDraftCrossSlot(input: {
     for (const group of byDatePharmacy.values()) {
       if (group.length <= 1) continue;
       // Multiple seats on the same slot were already reported as
-      // DRAFT_SAME_SLOT_DUPLICATE_PHARMACY at assembly time; this check
-      // is specifically for the SAME pharmacy across DIFFERENT slots on
-      // the same date, which the Phase 6 sequential accumulator already
-      // prevents in-run — reported here as a defensive, independent
-      // re-check of the assembled artifact rather than a re-trust of it.
+      // DRAFT_SAME_SLOT_DUPLICATE_PHARMACY by validate-draft-chronology.ts;
+      // this check is specifically for the SAME pharmacy across DIFFERENT
+      // slots on the same date, which the Phase 6 sequential accumulator
+      // already prevents in-run — reported here as a defensive,
+      // independent re-check of the assembled artifact.
       const distinctSlots = new Set(group.map((a) => a.slotKey));
       if (distinctSlots.size <= 1) continue;
+      const distinctMemberships = new Set(group.map((a) => a.membershipId));
+      const code =
+        distinctMemberships.size > 1
+          ? "DRAFT_SAME_DAY_PHARMACY_MULTI_MEMBERSHIP_CONFLICT"
+          : "DRAFT_SAME_DAY_PHARMACY_CONFLICT";
       for (const assignment of group) {
-        diagnostics.push(
-          makeDraftDiagnostic("DRAFT_SAME_DAY_PHARMACY_CONFLICT", assignment.date, assignment.assignmentKey)
-        );
+        diagnostics.push(makeDraftDiagnostic(code, assignment.date, assignment.draftAssignmentKey));
       }
     }
   }

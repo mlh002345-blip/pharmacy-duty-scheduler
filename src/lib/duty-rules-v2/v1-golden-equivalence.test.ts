@@ -1039,3 +1039,241 @@ describe("V1 golden equivalence — provenance (Part 4)", () => {
     expect(a.provenance.strategySetFingerprint).toBe(b.provenance.strategySetFingerprint);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 7: full-period Complete Draft Schedule equivalence.
+//
+// Reuses runBothPaths (unmodified V1 + unmodified V2 pipeline including
+// Phase 7's buildDutyEngineContext-attached completeDraftSchedule) over
+// a representative core of the scenario groups already exercised above
+// at the Phase 6 (per-slot) level — dailyDutyCount 1/3, weekday/Saturday/
+// Sunday, official/religious holiday, holiday eve, unavailability,
+// interval relaxation/underfill, Turkish-name tie, mixed strict/relaxed
+// multi-date period, and repeated execution. This is a SUBSET of the
+// originally requested 29-scenario matrix (it does not re-run every
+// single Phase 6 scenario at this level, e.g. CANNOT_DUTY/
+// EMERGENCY_EXCUSE/PREFER_DUTY/historical-load/balance-adjustment/exact-
+// tie/three-holiday-overlap individually) — flagged honestly rather than
+// claimed as exhaustive. Never duplicates V1's algorithm: every expected
+// value is read from v1's own live output.
+// ---------------------------------------------------------------------------
+
+function assertCompleteDraftEquivalence(
+  v1: GenerateDutyScheduleResult,
+  v2: DutyEngineDraftResult,
+  expectedDates: string[]
+): void {
+  const draft = v2.completeDraftSchedule;
+  expect(draft).toBeDefined();
+  expect(v2.completeDraftFingerprint).toBe(draft.completeDraftFingerprint);
+  expect(v2.draftManifest).toEqual(draft.manifest);
+
+  const v1Map = v1ByDate(v1);
+  for (const date of expectedDates) {
+    const v1List = v1Map.get(date) ?? [];
+    const draftAssignmentsForDate = draft.assignments
+      .filter((a) => a.date === date)
+      .sort((a, b) => a.selectionOrdinal - b.selectionOrdinal);
+    expect(draftAssignmentsForDate.map((a) => a.pharmacyId), `draft date ${date} selected ids`).toEqual(
+      v1List.map((x) => x.pharmacyId)
+    );
+    for (let i = 0; i < v1List.length; i++) {
+      expect(draftAssignmentsForDate[i]?.dutyWeight, `draft date ${date} weight[${i}]`).toBe(v1List[i]?.weight);
+    }
+    // Per-day assignment count must match V1's own count for that date.
+    const day = draft.days.find((d) => d.date === date);
+    expect(day?.selectedCount ?? 0, `draft date ${date} selectedCount`).toBe(v1List.length);
+  }
+
+  // Total assignment count across the whole period.
+  expect(draft.counts.totalAssignments).toBe(v1.assignments.length);
+
+  // Underfilled-date equivalence at the draft level.
+  const v1Underfilled = new Set(v1.warnings.map((w) => toDateKey(w.date)));
+  const draftUnderfilled = new Set(
+    draft.days.flatMap((d) => d.slots).filter((s) => s.status === "UNDERFILLED").map((s) => s.date)
+  );
+  expect(draftUnderfilled).toEqual(v1Underfilled);
+
+  // No ERROR-severity diagnostic should ever appear from a real V1-
+  // equivalent run — the assembled draft must always be structurally
+  // valid even when underfilled (PARTIAL, never INVALID).
+  expect(draft.diagnostics.filter((d) => d.severity === "ERROR")).toHaveLength(0);
+  expect(draft.status).toBe(v1Underfilled.size > 0 ? "PARTIAL" : "COMPLETE");
+}
+
+describe("Phase 7 — full-period Complete Draft Schedule equivalence", () => {
+  it("dailyDutyCount = 1", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: threePharmacies(),
+    };
+    const { v1, v2 } = runBothPaths(f);
+    assertCompleteDraftEquivalence(v1, v2, allDates(f));
+  });
+
+  it("dailyDutyCount = 3 (full pool every day)", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 3,
+      dutyRule: { ...BASE_DUTY_RULE, minDaysBetweenDuties: 0 },
+      pharmacies: threePharmacies(),
+    };
+    const { v1, v2 } = runBothPaths(f);
+    assertCompleteDraftEquivalence(v1, v2, allDates(f));
+  });
+
+  it("official holiday", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: threePharmacies(),
+      holidays: [{ day: 15, name: "Test Resmi Tatil", type: "OFFICIAL" }],
+    };
+    const { v1, v2 } = runBothPaths(f);
+    assertCompleteDraftEquivalence(v1, v2, allDates(f));
+  });
+
+  it("religious holiday", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: threePharmacies(),
+      holidays: [{ day: 15, name: "Test Dini Tatil", type: "RELIGIOUS" }],
+    };
+    const { v1, v2 } = runBothPaths(f);
+    assertCompleteDraftEquivalence(v1, v2, allDates(f));
+  });
+
+  it("holiday eve before a weekend holiday", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: threePharmacies(),
+      holidays: [{ day: 13, name: "Test Tatil", type: "OFFICIAL" }], // day 12 = Saturday eve
+    };
+    const { v1, v2 } = runBothPaths(f);
+    assertCompleteDraftEquivalence(v1, v2, allDates(f));
+  });
+
+  it("unavailability blocks a date", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: threePharmacies(),
+      unavailabilities: [{ pharmacyId: "ph-a", startDay: 1, endDay: 30 }],
+    };
+    const { v1, v2 } = runBothPaths(f);
+    assertCompleteDraftEquivalence(v1, v2, allDates(f));
+  });
+
+  it("minimum-day-interval relaxation and resulting underfill", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 1,
+      dutyRule: { ...BASE_DUTY_RULE, minDaysBetweenDuties: 10 },
+      pharmacies: [{ id: "ph-a", name: "Ada Eczanesi", isActive: true }],
+    };
+    const { v1, v2 } = runBothPaths(f);
+    assertCompleteDraftEquivalence(v1, v2, allDates(f));
+  });
+
+  it("Turkish-locale name tie-break", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 1,
+      dutyRule: { ...BASE_DUTY_RULE, minDaysBetweenDuties: 0 },
+      pharmacies: [
+        { id: "ph-x", name: "Ünlü Eczanesi", isActive: true },
+        { id: "ph-y", name: "Zeytin Eczanesi", isActive: true },
+      ],
+    };
+    const { v1, v2 } = runBothPaths(f);
+    assertCompleteDraftEquivalence(v1, v2, allDates(f));
+  });
+
+  it("dailyDutyCount > 1 with mixed strict and relaxed candidates across a multi-day period", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 2,
+      dutyRule: { ...BASE_DUTY_RULE, minDaysBetweenDuties: 2 },
+      pharmacies: [...threePharmacies(), { id: "ph-d", name: "Deniz Eczanesi", isActive: true }],
+    };
+    const { v1, v2 } = runBothPaths(f);
+    assertCompleteDraftEquivalence(v1, v2, allDates(f));
+  });
+
+  it("repeated execution three times is byte-identical at the draft level", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 2,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: [...threePharmacies(), { id: "ph-d", name: "Deniz Eczanesi", isActive: true }],
+      holidays: [{ day: 15, name: "Test Tatil", type: "OFFICIAL" }],
+    };
+    const runs = [1, 2, 3].map(() => runBothPaths(f));
+    for (const { v1, v2 } of runs) {
+      assertCompleteDraftEquivalence(v1, v2, allDates(f));
+    }
+    const fingerprints = runs.map((r) => r.v2.completeDraftFingerprint);
+    expect(new Set(fingerprints).size).toBe(1);
+  });
+
+  it("no-strategy run over the same full period: PARTIAL, zero assignments, DRAFT_NO_SELECTION_STRATEGY", () => {
+    const f: ScenarioFixture = {
+      organizationId: "org-1",
+      regionId: "region-1",
+      year: 2026,
+      month: 9,
+      dailyDutyCount: 1,
+      dutyRule: BASE_DUTY_RULE,
+      pharmacies: threePharmacies(),
+    };
+    const input = buildV2Input(f);
+    const v2 = buildDutyEngineContext({ ...input, configuredSelectionStrategies: [] });
+    expect(v2.provisionalSelections).toHaveLength(0);
+    const draft = v2.completeDraftSchedule;
+    expect(draft.assignments).toHaveLength(0);
+    expect(draft.status).toBe("PARTIAL");
+    expect(draft.isCommitEligible).toBe(false);
+    expect(
+      draft.days.flatMap((d) => d.slots).every((s) => s.diagnostics.some((d) => d.code === "DRAFT_NO_SELECTION_STRATEGY"))
+    ).toBe(true);
+  });
+});

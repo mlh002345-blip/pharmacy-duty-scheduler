@@ -67,14 +67,14 @@ describe("assembleCompleteDraftSchedule — end-to-end via buildDutyEngineContex
     expect(result.completeDraftSchedule.isCommitEligible).toBe(false);
   });
 
-  it("marks a slot UNRESOLVED_NO_STRATEGY (not UNDERFILLED) when no strategy is configured at all", () => {
+  it("marks a slot UNRESOLVED with DRAFT_NO_SELECTION_STRATEGY when no strategy is configured at all", () => {
     const plan = makeLoadedPlan();
     const result = buildDutyEngineContext(makeEngineInput(plan));
     expect(result.provisionalSelections).toHaveLength(0);
     const slot = result.completeDraftSchedule.days.flatMap((d) => d.slots)[0];
     expect(slot.status).toBe("UNRESOLVED");
     expect(slot.assignments).toHaveLength(0);
-    expect(slot.diagnostics.some((d) => d.code === "DRAFT_SLOT_UNRESOLVED_NO_STRATEGY")).toBe(true);
+    expect(slot.diagnostics.some((d) => d.code === "DRAFT_NO_SELECTION_STRATEGY")).toBe(true);
     expect(result.completeDraftSchedule.status).toBe("PARTIAL");
   });
 
@@ -127,7 +127,7 @@ describe("assembleCompleteDraftSchedule — end-to-end via buildDutyEngineContex
     const result = buildDutyEngineContext(
       strategyInput(plan, { periodStart: "2026-08-03", periodEnd: "2026-08-09" })
     );
-    const keys = result.completeDraftSchedule.assignments.map((a) => a.assignmentKey);
+    const keys = result.completeDraftSchedule.assignments.map((a) => a.draftAssignmentKey);
     const sorted = [...keys].sort();
     expect(keys).toEqual(sorted);
   });
