@@ -43,7 +43,12 @@ import { validateEngineInput, type DutyEngineInput } from "./domain/engine-input
 import type { EngineDiagnostic } from "./domain/diagnostics";
 
 export const ENGINE_DOMAIN_VERSION = 1;
-export const SELECTION_ENGINE_VERSION = 1;
+// Bumped for the sequential-relaxation-contract corrective: this is a
+// genuine behavior change (a previously-invisible-to-sequential-
+// relaxation candidate can now be admitted), so any affected run's
+// provisionalSelectionFingerprint/resultFingerprint changes — expected,
+// version-bumped for provenance honesty, never silently absorbed.
+export const SELECTION_ENGINE_VERSION = 2;
 
 /** Canonical hash of everything runtime-supplied (the loaded plan is
  *  covered separately by its configuration fingerprint). */
@@ -326,6 +331,7 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
         strategySetFingerprint: strategiesFingerprint,
         loaderVersion: plan.loaderVersion,
         engineVersion: ENGINE_DOMAIN_VERSION,
+        relaxableReasonCodes,
       });
       selectionInputs.push(selectionInput);
 
@@ -375,6 +381,7 @@ export function buildDutyEngineContext(input: DutyEngineInput): DutyEngineDraftR
       slots: pendingSelectionSlots,
       minDaysBetweenDuties: input.policy.minDaysBetweenDuties,
       sameDaySecondAssignmentAllowed: input.policy.sameDaySecondAssignmentAllowed,
+      relaxMinIntervalWhenInsufficient: input.policy.relaxMinIntervalWhenInsufficient,
       definitions: configuredStrategies,
       definitionsById: strategyDefinitionsById,
     });

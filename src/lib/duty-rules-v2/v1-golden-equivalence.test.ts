@@ -724,7 +724,7 @@ describe("V1 golden equivalence — calendar and eligibility facts", () => {
     expect(v1ByDate(v1).get("2026-09-01")?.[0]?.pharmacyId).toBe("ph-c"); // zero load wins
   });
 
-  it("17. historical last-duty interval carries into the period", () => {
+  it("17. historical last-duty interval carries into the period (sequential-relaxation-contract corrective: full period, previously narrowed to 09-01/09-02 only)", () => {
     const f: ScenarioFixture = {
       organizationId: "org-1",
       regionId: "region-1",
@@ -737,8 +737,17 @@ describe("V1 golden equivalence — calendar and eligibility facts", () => {
     };
     const { v1, v2 } = runBothPaths(f);
     // ph-a served 2026-08-30; minDaysBetweenDuties=5 excludes it from
-    // strict eligibility through 2026-09-04.
-    assertSelectionEquivalence(v1, v2, ["2026-09-01", "2026-09-02"]);
+    // strict eligibility through 2026-09-04. By 2026-09-03, ph-b
+    // (09-01) and ph-c (09-02) have ALSO fallen inside the interval
+    // window (this run's own sequential picks), so every candidate is
+    // simultaneously interval-excluded — the exact confirmed
+    // divergence this corrective fixes. Previously this assertion was
+    // narrowed to 09-01/09-02 only because V2 selected the wrong
+    // pharmacy (ph-b) on 09-03 instead of V1's ph-a. Now asserted over
+    // the FULL period, not narrowed.
+    assertSelectionEquivalence(v1, v2, allDates(f));
+    expect(v1ByDate(v1).get("2026-09-03")?.[0]?.pharmacyId).toBe("ph-a");
+    expect(v2ByDate(v2).get("2026-09-03")?.[0]?.pharmacyId).toBe("ph-a");
     expect(v1ByDate(v1).get("2026-09-01")?.[0]?.pharmacyId).not.toBe("ph-a");
   });
 

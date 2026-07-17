@@ -34,6 +34,33 @@ export type EligibilityRelaxationResult = {
 /** The Phase 4 default: only the built-in V1 interval reason relaxes. */
 export const DEFAULT_RELAXABLE_REASONS: readonly string[] = ["MIN_DAYS_INTERVAL"];
 
+/** The single, shared relax-admissibility predicate — the ONLY place
+ *  "is this candidate's failure set entirely relaxable" is decided.
+ *  Phase 6's sequential-compatibility layer (apply-sequential-selection-
+ *  state.ts) imports and reuses this EXACT function rather than
+ *  duplicating the rule, so both the static (Phase 4, single-slot) and
+ *  the sequential (Phase 6, in-run) admission decisions are always
+ *  governed by one definition.
+ *
+ *  Relax-admissible iff: the candidate is NOT strictly eligible, it has
+ *  at least one hard exclusion reason, and EVERY hard exclusion reason
+ *  is a member of relaxableReasonCodes (a candidate that also fails any
+ *  non-relaxable rule — inactive, unavailable, blocking, exclusion, …
+ *  stays inadmissible). This is exactly V1's implicit rule: its
+ *  `availableToday` fallback pool already excludes unavailable/blocked
+ *  pharmacies before the interval check ever runs, so the ONLY V1
+ *  concept of "relaxable" is the interval. */
+export function isRelaxAdmissible(
+  eligibilityResult: CandidateEligibilityResult,
+  relaxableReasonCodes: ReadonlySet<string>
+): boolean {
+  return (
+    !eligibilityResult.eligible &&
+    eligibilityResult.hardExclusionReasons.length > 0 &&
+    eligibilityResult.hardExclusionReasons.every((reason) => relaxableReasonCodes.has(reason))
+  );
+}
+
 export function applyEligibilityRelaxation(context: {
   slotKey: string;
   date: string;
@@ -65,12 +92,7 @@ export function applyEligibilityRelaxation(context: {
       // reason — a candidate that also fails any non-relaxable rule
       // (inactive, unavailable, blocking, exclusion, …) stays out.
       relaxedEligible = context.eligibilityResults
-        .filter(
-          (result) =>
-            !result.eligible &&
-            result.hardExclusionReasons.length > 0 &&
-            result.hardExclusionReasons.every((reason) => relaxable.has(reason))
-        )
+        .filter((result) => isRelaxAdmissible(result, relaxable))
         .map((result) => result.candidateKey);
       if (relaxedEligible.length > 0) {
         relaxationApplied = true;
