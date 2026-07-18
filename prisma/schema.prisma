@@ -66,6 +66,8 @@ model User {
   dutyBalanceAdjustments   DutyBalanceAdjustment[]
   reviewedDutyRequests     DutyRequest[]
   pharmacyImportBatches    PharmacyImportBatch[]
+  approvedGenerationRuns   DutyGenerationRun[] @relation("ApprovedGenerationRuns")
+  publishedGenerationRuns  DutyGenerationRun[] @relation("PublishedGenerationRuns")
 
   @@index([organizationId])
 }
@@ -197,6 +199,13 @@ model Unavailability {
 
 enum DutyScheduleStatus {
   DRAFT
+  // Duty Rules V2 Phase 9: an intermediate human-reviewed checkpoint
+  // between a persisted DRAFT (Phase 8) and PUBLISHED. Only ever set by
+  // approve-generated-draft.ts, and only for schedules that carry a
+  // DutyGenerationRun (Phase 8-generated). V1-generated schedules go
+  // straight from DRAFT to PUBLISHED, exactly as before — this status is
+  // never produced by any V1 code path.
+  APPROVED
   PUBLISHED
 }
 
@@ -337,12 +346,15 @@ model DutyScheduleWarning {
 }
 
 enum DutyGenerationRunStatus {
-  // The only status this phase ever writes: one successful atomic
-  // commit-complete-draft.ts transaction. A future approval/publication
-  // phase may introduce additional statuses (e.g. a superseded marker)
-  // — this enum is deliberately left open for that, not collapsed to a
-  // boolean, but nothing in this phase produces any value but COMMITTED.
+  // Written by commit-complete-draft.ts (Phase 8) — the schedule is
+  // DRAFT.
   COMMITTED
+  // Duty Rules V2 Phase 9: written by approve-generated-draft.ts. Mirrors
+  // DutySchedule.status === APPROVED for this run's own schedule.
+  APPROVED
+  // Duty Rules V2 Phase 9: written by publish-approved-schedule.ts.
+  // Mirrors DutySchedule.status === PUBLISHED.
+  PUBLISHED
 }
 
 // Duty Rules V2 — Phase 8: one immutable, append-only provenance record
@@ -433,6 +445,31 @@ model DutyGenerationRun {
   // generation summary (counts, blockingDiagnosticCodes, assignmentKeys,
   // etc.) survives independent of the DutyAssignment rows below.
   manifest Json
+
+  // Duty Rules V2 Phase 9 (additive, nullable): set once by
+  // approve-generated-draft.ts. Mirrors DutyRequest's reviewedById/
+  // reviewedAt naming convention.
+  approvedById String?
+  approvedBy   User?     @relation("ApprovedGenerationRuns", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+
+  // Duty Rules V2 Phase 9 (additive, nullable): a snapshot, captured at
+  // approval time, of every RotationState row publication will touch —
+  // [{ rotationStateId, lockVersion }, ...]. This is "the state expected
+  // by the generation input" the optimistic-lock check at publication
+  // time compares against: if any listed row's CURRENT lockVersion has
+  // since changed, publication is rejected with ROTATION_STATE_CONFLICT
+  // rather than silently overwriting a change made after this draft was
+  // approved. Plain descriptive JSON, never interpreted as code. See
+  // publish-approved-schedule.ts.
+  rotationStateSnapshot Json?
+
+  // Duty Rules V2 Phase 9 (additive, nullable): set once by
+  // publish-approved-schedule.ts, in the same transaction that advances
+  // RotationState and sets DutySchedule.status = PUBLISHED.
+  publishedById String?
+  publishedBy   User?     @relation("PublishedGenerationRuns", fields: [publishedById], references: [id])
+  publishedAt   DateTime?
 
   assignments DutyAssignment[]
 
@@ -1026,8 +1063,10 @@ model RotationPoolMembership {
 // carriedForward is a SMALL validated JSON list (see
 // src/lib/duty-rules-v2/rotation-state.ts) of skipped memberships owed a
 // turn — deliberately minimal, not a generic blob. lockVersion enables
-// optimistic concurrency for the future engine; NOTHING advances this
-// state yet.
+// optimistic concurrency, used by Duty Rules V2 Phase 9's
+// publish-approved-schedule.ts — the ONLY writer of this table's
+// currentRound/lastServedMembershipId/carriedForward/lockVersion fields.
+// See docs/architecture/DUTY_RULES_V2_APPROVAL_PUBLICATION.md.
 model RotationState {
   id                     String   @id @default(cuid())
   dayTypeScope           String   @default("ALL")
