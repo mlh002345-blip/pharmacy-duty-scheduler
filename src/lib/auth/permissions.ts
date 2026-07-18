@@ -20,7 +20,15 @@ export type Permission =
   | "deleteSchedule"
   | "exportSchedule"
   | "manageUsers"
-  | "importPharmacies";
+  | "importPharmacies"
+  // Duty Rules V2 — Phase 11: day-type/shift/slot/pool/membership CRUD on
+  // DRAFT plan versions. Granted to ADMIN and STAFF, matching
+  // manageSetupData's pattern. Activating a version (which retires any
+  // other ACTIVE version for the region) is a separate, ADMIN-only check
+  // performed directly against user.role in the activation server
+  // action — never via hasPermission — mirroring how Phase 10 gates
+  // approve/publish (see cizelgeler/[id]/v2-lifecycle-actions.ts).
+  | "managePlanConfiguration";
 
 // PLATFORM_ADMIN intentionally holds none of these organization-scoped
 // permissions — it manages Organizations themselves (see
@@ -40,6 +48,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "exportSchedule",
     "manageUsers",
     "importPharmacies",
+    "managePlanConfiguration",
   ],
   STAFF: [
     "manageSetupData",
@@ -47,6 +56,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "editAssignment",
     "publishSchedule",
     "exportSchedule",
+    "managePlanConfiguration",
   ],
   VIEWER: ["exportSchedule"],
 };

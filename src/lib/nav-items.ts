@@ -13,6 +13,7 @@ import {
   Globe,
   Users,
   ShieldCheck,
+  Settings2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,6 +36,12 @@ export const navItems: NavItem[] = [
   { label: "Nöbet Talepleri", href: "/nobet-talepleri", icon: Inbox },
   { label: "Geçmiş Nöbetler", href: "/gecmis-nobetler", icon: Archive },
   { label: "Nöbet Çizelgeleri", href: "/cizelgeler", icon: CalendarRange },
+  {
+    label: "V2 Plan Yapılandırma",
+    href: "/cizelgeler/v2/planlar",
+    icon: Settings2,
+    permission: "managePlanConfiguration",
+  },
   { label: "Nöbet Dengesi", href: "/nobet-dengesi", icon: Scale },
   { label: "Veri Kontrol", href: "/veri-kontrol", icon: ShieldCheck },
   {
