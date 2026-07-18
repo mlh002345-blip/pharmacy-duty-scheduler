@@ -107,14 +107,24 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/platform/kurumlar/actions.ts:94": "[platform-only operation] pre-check for the new first-ADMIN's email against the globally-unique User.email constraint, guarded by requirePlatformAdmin(); intentionally organization-agnostic since email uniqueness is global, not per-tenant.",
   "src/app/(dashboard)/cizelgeler/[id]/atama/assignment-actions.ts:115": "[parent-scoped query] dutyRequest scoped by candidatePharmacyId, which was already verified against organizationId a few lines above (the cross-tenant relation validation on the client-supplied pharmacyId).",
   "src/app/(dashboard)/cizelgeler/[id]/atama/assignment-actions.ts:148": "[parent-scoped query] dutyAssignment scoped by candidatePharmacyId, same prior verification as above.",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:119": "[parent-scoped query] dutyRequest groupBy scoped by pharmacy.regionId === schedule.regionId, where schedule was already loaded with an organizationId-scoped findFirst above.",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:144": "[parent-scoped query] dutyRequest scoped by assignmentPharmacyIds, derived only from this org-validated schedule's own assignments.",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:205": "[parent-scoped query] historicalDutyRecord groupBy scoped by pharmacyIds derived from this org-validated schedule's own assignments (fairnessRows).",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:210": "[parent-scoped query] dutyBalanceAdjustment groupBy scoped by the same org-validated pharmacyIds.",
-  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:215": "[parent-scoped query] dutyAssignment groupBy scoped by the same org-validated pharmacyIds.",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:135": "[parent-scoped query] dutyRequest groupBy scoped by pharmacy.regionId === schedule.regionId, where schedule was already loaded with an organizationId-scoped findFirst above.",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:160": "[parent-scoped query] dutyRequest scoped by assignmentPharmacyIds, derived only from this org-validated schedule's own assignments.",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:221": "[parent-scoped query] historicalDutyRecord groupBy scoped by pharmacyIds derived from this org-validated schedule's own assignments (fairnessRows).",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:226": "[parent-scoped query] dutyBalanceAdjustment groupBy scoped by the same org-validated pharmacyIds.",
+  "src/app/(dashboard)/cizelgeler/[id]/page.tsx:231": "[parent-scoped query] dutyAssignment groupBy scoped by the same org-validated pharmacyIds.",
   "src/app/(dashboard)/cizelgeler/actions.ts:98": "[parent-scoped query] dutySchedule.findUnique by the compound (year, month, regionId) key — regionId was already verified against organizationId a few lines above via the region findFirst.",
   "src/lib/balance/duty-balance.ts:164": "[parent-scoped query] getOpeningBalanceByPharmacy's historicalDutyRecord groupBy is scoped by the regionId parameter, which the sole caller (generate-and-save-duty-schedule.ts) has already validated against organizationId.",
   "src/lib/balance/duty-balance.ts:173": "[parent-scoped query] getOpeningBalanceByPharmacy's dutyBalanceAdjustment groupBy, same caller-validated regionId as above.",
+  // Duty Rules V2 Phase 10: assembleV1CompatibilityEngineInput validates
+  // regionId against organizationId via a single region.findFirst near
+  // the top of the function (an organizationId-scoped call, so not
+  // itself flagged); every query below is scoped by pharmacyIds derived
+  // exclusively from that same org-validated region's active pharmacies,
+  // or by the region's own dutyRule/id — never client-supplied directly.
+  "src/lib/duty-rules-v2/ui/assemble-v1-compatibility-engine-input.ts:195": "[parent-scoped query] unavailability scoped by pharmacyIds derived from the already-org-validated region's own active pharmacies.",
+  "src/lib/duty-rules-v2/ui/assemble-v1-compatibility-engine-input.ts:204": "[parent-scoped query] dutyRequest (APPROVED-only) scoped by the same org-validated pharmacyIds.",
+  "src/lib/duty-rules-v2/ui/assemble-v1-compatibility-engine-input.ts:220": "[parent-scoped query] dutyAssignment (historical, date < periodStart) scoped by the same org-validated pharmacyIds.",
+  "src/lib/duty-rules-v2/ui/assemble-v1-compatibility-engine-input.ts:228": "[parent-scoped query] dutyBalanceAdjustment scoped by the same org-validated pharmacyIds.",
 };
 
 type Finding = { file: string; line: number; snippet: string };

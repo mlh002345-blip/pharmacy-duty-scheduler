@@ -41,6 +41,7 @@ model Organization {
   rotationPools             RotationPool[]
   pharmacyImportBatches     PharmacyImportBatch[]
   dutyGenerationRuns        DutyGenerationRun[]
+  dutyDraftPreviews         DutyDraftPreview[]
 
   @@index([isActive])
 }
@@ -68,6 +69,7 @@ model User {
   pharmacyImportBatches    PharmacyImportBatch[]
   approvedGenerationRuns   DutyGenerationRun[] @relation("ApprovedGenerationRuns")
   publishedGenerationRuns  DutyGenerationRun[] @relation("PublishedGenerationRuns")
+  dutyDraftPreviews        DutyDraftPreview[]
 
   @@index([organizationId])
 }
@@ -106,6 +108,7 @@ model Region {
   dutyPlans             DutyPlan[]
   rotationPools         RotationPool[]
   dutyGenerationRuns    DutyGenerationRun[]
+  dutyDraftPreviews     DutyDraftPreview[]
 
   // Region names may repeat across organizations, but not within one.
   @@unique([organizationId, name])
@@ -914,6 +917,7 @@ model DutyPlanVersion {
   shiftDefinitions   ShiftDefinition[]
   dutySchedules      DutySchedule[]
   dutyGenerationRuns DutyGenerationRun[]
+  dutyDraftPreviews  DutyDraftPreview[]
 
   @@unique([planId, versionNumber])
   @@index([planId, status])
@@ -1086,4 +1090,61 @@ model RotationState {
 
   @@unique([poolId, dayTypeScope])
   @@index([poolId])
+}
+
+// ---------------------------------------------------------------------------
+// Duty Rules V2 — Phase 10: Admin UI integration (additive only).
+// ---------------------------------------------------------------------------
+
+// Mirrors src/lib/duty-rules-v2/draft/domain/draft-schedule.ts's
+// CompleteDraftStatus TypeScript union — persisted here only so
+// DutyDraftPreview.status can be typed, never interpreted by any Phase
+// 2-9 engine/persistence code (those modules keep using the plain
+// TypeScript union).
+enum CompleteDraftStatus {
+  COMPLETE
+  PARTIAL
+  INVALID
+}
+
+// Duty Rules V2 — Phase 10: a short-lived, tenant-scoped holder for one
+// generated (but not yet committed) Phase 7 CompleteDraftSchedule, so an
+// admin can review a rendered preview before persisting it — WITHOUT
+// regenerating it and WITHOUT the browser ever needing to round-trip raw
+// assignment data. Modeled closely on PharmacyImportBatch above (same
+// tenant-scoping + createdBy + expiresAt/consumedAt preview-then-commit
+// pattern). `payload` stores the CompleteDraftSchedule verbatim as plain
+// descriptive JSON (never interpreted as code, never containing a raw
+// Prisma error) — commitV2DraftAction reads it back from THIS row and
+// feeds it into commit-complete-draft.ts, so persistence never trusts
+// anything the browser itself posts.
+model DutyDraftPreview {
+  id                       String              @id @default(cuid())
+  status                   CompleteDraftStatus
+  isCommitEligible         Boolean
+  periodStart              DateTime
+  periodEnd                DateTime
+  assignmentCount          Int
+  missingAssignmentCount   Int
+  warningCount             Int
+  completeDraftFingerprint String
+  payload                  Json
+  expiresAt                DateTime
+  consumedAt               DateTime?
+  createdAt                DateTime            @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
+  planVersionId String
+  planVersion   DutyPlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  @@index([organizationId, regionId])
+  @@index([expiresAt])
 }
