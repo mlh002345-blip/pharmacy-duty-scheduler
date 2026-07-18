@@ -36,7 +36,9 @@ import {
   formatPoints,
   meanOf,
 } from "@/lib/balance/balance-status";
+import { ConfirmSubmitForm } from "@/components/layout/confirm-submit-form";
 import { publishDutyScheduleAction, unpublishDutyScheduleAction } from "../actions";
+import { approveV2DraftAction, publishV2ScheduleAction } from "./v2-lifecycle-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +84,20 @@ export default async function CizelgeDetayPage({
       status: true,
       regionId: true,
       region: { select: { name: true, dailyDutyCount: true } },
+      generationRun: {
+        select: {
+          id: true,
+          status: true,
+          approvedById: true,
+          approvedAt: true,
+          publishedById: true,
+          publishedAt: true,
+          completeDraftFingerprint: true,
+          planVersionId: true,
+          approvedBy: { select: { name: true } },
+          publishedBy: { select: { name: true } },
+        },
+      },
       assignments: {
         select: {
           id: true,
@@ -277,6 +293,7 @@ export default async function CizelgeDetayPage({
             />
           </div>
           {canPublish &&
+            !schedule.generationRun &&
             (schedule.status === "DRAFT" ? (
               <form action={publishDutyScheduleAction.bind(null, schedule.id)}>
                 <SubmitButton disabled={requestConflicts.length > 0}>Yayınla</SubmitButton>
@@ -286,10 +303,90 @@ export default async function CizelgeDetayPage({
                 <SubmitButton variant="secondary">Yayından Kaldır</SubmitButton>
               </form>
             ))}
+          {user.role === "ADMIN" && schedule.generationRun && schedule.status === "DRAFT" && (
+            <ConfirmSubmitForm
+              action={approveV2DraftAction.bind(null, schedule.id)}
+              confirmMessage="Bu taslağı onaylamak istediğinize emin misiniz? Onay, atamaları veya rotasyon durumunu değiştirmez."
+            >
+              Taslağı Onayla
+            </ConfirmSubmitForm>
+          )}
+          {user.role === "ADMIN" && schedule.generationRun && schedule.status === "APPROVED" && (
+            <ConfirmSubmitForm
+              action={publishV2ScheduleAction.bind(null, schedule.id)}
+              confirmMessage="Bu çizelgeyi yayınlamak istediğinize emin misiniz? Yayınlama, ilgili rotasyon sıralarını (RotationState) kalıcı olarak ilerletecektir ve geri alınamaz."
+            >
+              Çizelgeyi Yayınla
+            </ConfirmSubmitForm>
+          )}
         </div>
       </div>
 
       <ListBanner success={success} error={error} />
+
+      {schedule.generationRun && (
+        <Card>
+          <CardHeader>
+            <CardTitle>V2 Yaşam Döngüsü</CardTitle>
+            <CardDescription>
+              Bu çizelge Duty Rules V2 kural motoruyla oluşturuldu.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {(
+                [
+                  { key: "created", label: "Taslak Oluşturuldu", done: true },
+                  { key: "saved", label: "Kaydedildi", done: true },
+                  {
+                    key: "approved",
+                    label: "Onaylandı",
+                    done: schedule.status === "APPROVED" || schedule.status === "PUBLISHED",
+                  },
+                  { key: "published", label: "Yayınlandı", done: schedule.status === "PUBLISHED" },
+                ] as const
+              ).map((step, index, arr) => (
+                <div key={step.key} className="flex items-center gap-2">
+                  <Badge variant={step.done ? "success" : "outline"}>{step.label}</Badge>
+                  {index < arr.length - 1 && <span className="text-muted-foreground">→</span>}
+                </div>
+              ))}
+            </div>
+            <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-muted-foreground text-xs">Taslak Parmak İzi</dt>
+                <dd className="font-mono text-xs">
+                  {schedule.generationRun.completeDraftFingerprint.slice(0, 12)}…
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground text-xs">Plan Sürümü</dt>
+                <dd className="font-mono text-xs">{schedule.generationRun.planVersionId}</dd>
+              </div>
+              {schedule.generationRun.approvedBy && (
+                <div>
+                  <dt className="text-muted-foreground text-xs">Onaylayan</dt>
+                  <dd>
+                    {schedule.generationRun.approvedBy.name}
+                    {schedule.generationRun.approvedAt &&
+                      ` — ${schedule.generationRun.approvedAt.toLocaleString("tr-TR")}`}
+                  </dd>
+                </div>
+              )}
+              {schedule.generationRun.publishedBy && (
+                <div>
+                  <dt className="text-muted-foreground text-xs">Yayınlayan</dt>
+                  <dd>
+                    {schedule.generationRun.publishedBy.name}
+                    {schedule.generationRun.publishedAt &&
+                      ` — ${schedule.generationRun.publishedAt.toLocaleString("tr-TR")}`}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </CardContent>
+        </Card>
+      )}
 
       {requestConflicts.length > 0 && schedule.status === "DRAFT" && (
         <p className="text-destructive text-sm font-medium">

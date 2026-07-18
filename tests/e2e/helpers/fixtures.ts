@@ -29,6 +29,9 @@ export type TrackedIds = {
   pharmacyIds: string[];
   dutyScheduleIds: string[];
   dutyRequestIds: string[];
+  dutyGenerationRunIds: string[];
+  dutyPlanVersionIds: string[];
+  dutyPlanIds: string[];
 };
 
 export function newTrackedIds(): TrackedIds {
@@ -41,6 +44,9 @@ export function newTrackedIds(): TrackedIds {
     pharmacyIds: [],
     dutyScheduleIds: [],
     dutyRequestIds: [],
+    dutyGenerationRunIds: [],
+    dutyPlanVersionIds: [],
+    dutyPlanIds: [],
   };
 }
 
@@ -182,6 +188,100 @@ export async function createE2EDutyRequest(
   return request;
 }
 
+// Minimal V2 fixture: just enough persisted DutyPlan/DutyPlanVersion +
+// DutyGenerationRun to make a DutySchedule look V2-generated for lifecycle
+// UI tests (button visibility, ADMIN gating, tenant isolation). Does NOT
+// build a full rotation-pool/day-type-rule graph — no real generation
+// runs through this fixture, it only needs to satisfy DutyGenerationRun's
+// required FKs and uniqueness constraints. The real generation pipeline
+// is covered by tests/integration/duty-rules-v2-ui-generation.integration.test.ts.
+export async function createE2EV2GeneratedSchedule(
+  tracked: TrackedIds,
+  params: {
+    organizationId: string;
+    regionId: string;
+    month?: number;
+    year?: number;
+    scheduleStatus?: "DRAFT" | "APPROVED" | "PUBLISHED";
+  }
+) {
+  const id = testRunId();
+  const { organizationId, regionId } = params;
+  const month = params.month ?? 6;
+  const year = params.year ?? 2031; // far-future, avoids colliding with other E2E fixtures' 2030
+
+  const plan = await e2ePrisma.dutyPlan.create({
+    data: { name: `E2E V2 Plan ${id}`, organizationId, regionId },
+  });
+  tracked.dutyPlanIds.push(plan.id);
+
+  const planVersion = await e2ePrisma.dutyPlanVersion.create({
+    data: {
+      planId: plan.id,
+      versionNumber: 1,
+      status: "ACTIVE",
+      validFrom: new Date(`${year}-01-01T00:00:00.000Z`),
+      activatedAt: new Date(),
+    },
+  });
+  tracked.dutyPlanVersionIds.push(planVersion.id);
+
+  const schedule = await e2ePrisma.dutySchedule.create({
+    data: {
+      month,
+      year,
+      regionId,
+      status: params.scheduleStatus ?? "DRAFT",
+      planVersionId: planVersion.id,
+    },
+  });
+  tracked.dutyScheduleIds.push(schedule.id);
+
+  const generationRun = await e2ePrisma.dutyGenerationRun.create({
+    data: {
+      status:
+        params.scheduleStatus === "PUBLISHED"
+          ? "PUBLISHED"
+          : params.scheduleStatus === "APPROVED"
+            ? "APPROVED"
+            : "COMMITTED",
+      organizationId,
+      regionId,
+      planId: plan.id,
+      planVersionId: planVersion.id,
+      dutyScheduleId: schedule.id,
+      generationMode: "PREVIEW",
+      periodStart: new Date(`${year}-${String(month).padStart(2, "0")}-01T00:00:00.000Z`),
+      periodEnd: new Date(`${year}-${String(month).padStart(2, "0")}-02T00:00:00.000Z`),
+      configurationFingerprint: `e2e-config-${id}`,
+      runtimeInputHash: `e2e-runtime-${id}`,
+      ruleSetFingerprint: `e2e-ruleset-${id}`,
+      strategySetFingerprint: `e2e-strategyset-${id}`,
+      upstreamResultFingerprint: `e2e-upstream-${id}`,
+      membershipSnapshotHash: `e2e-membership-${id}`,
+      provisionalSelectionFingerprint: `e2e-provisional-${id}`,
+      completeDraftFingerprint: `e2e-fingerprint-${id}`,
+      engineVersion: 1,
+      selectionEngineVersion: 1,
+      draftEngineVersion: 1,
+      // validate-generation-run-integrity.ts (shared by approve/publish)
+      // cross-checks manifest.counts.totalAssignments against the actual
+      // persisted DutyAssignment count for this run — this fixture
+      // creates zero DutyAssignment rows, so the manifest must declare
+      // zero too, or approval/publication will fail with
+      // GENERATION_RECORD_CORRUPTED.
+      manifest: { counts: { totalAssignments: 0 } },
+      ...(params.scheduleStatus === "APPROVED" || params.scheduleStatus === "PUBLISHED"
+        ? { approvedAt: new Date() }
+        : {}),
+      ...(params.scheduleStatus === "PUBLISHED" ? { publishedAt: new Date() } : {}),
+    },
+  });
+  tracked.dutyGenerationRunIds.push(generationRun.id);
+
+  return { schedule, generationRun, planVersion, plan };
+}
+
 // Deletes exactly the rows this E2E test run created, in FK-safe order
 // (children before parents). Never issues a table-wide deleteMany, so
 // it's safe even on a shared E2E database.
@@ -208,6 +308,19 @@ export async function cleanupTrackedIds(tracked: TrackedIds): Promise<void> {
       where: { dutyScheduleId: { in: tracked.dutyScheduleIds } },
     });
     await e2ePrisma.dutySchedule.deleteMany({ where: { id: { in: tracked.dutyScheduleIds } } });
+  }
+  // DutyGenerationRun rows cascade-delete automatically via
+  // DutySchedule's onDelete: Cascade relation (already handled above),
+  // so only the DutyPlanVersion/DutyPlan rows themselves need explicit
+  // cleanup here — after DutySchedule (Restrict on planVersionId) is
+  // gone, before Organization/Region (Restrict on DutyPlan) are deleted.
+  if (tracked.dutyPlanVersionIds.length > 0) {
+    await e2ePrisma.dutyPlanVersion.deleteMany({
+      where: { id: { in: tracked.dutyPlanVersionIds } },
+    });
+  }
+  if (tracked.dutyPlanIds.length > 0) {
+    await e2ePrisma.dutyPlan.deleteMany({ where: { id: { in: tracked.dutyPlanIds } } });
   }
   if (tracked.pharmacyIds.length > 0) {
     await e2ePrisma.auditLog.deleteMany({
