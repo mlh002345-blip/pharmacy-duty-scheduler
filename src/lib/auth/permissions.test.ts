@@ -16,6 +16,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "exportSchedule",
   "manageUsers",
   "importPharmacies",
+  "managePlanConfiguration",
 ];
 
 // The full role × permission matrix, as an explicit, reviewable table
@@ -38,6 +39,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     exportSchedule: false,
     manageUsers: false,
     importPharmacies: false,
+    managePlanConfiguration: false,
   },
   ADMIN: {
     manageSetupData: true,
@@ -50,6 +52,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     exportSchedule: true,
     manageUsers: true,
     importPharmacies: true,
+    managePlanConfiguration: true,
   },
   STAFF: {
     manageSetupData: true,
@@ -62,6 +65,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     exportSchedule: true,
     manageUsers: false,
     importPharmacies: false,
+    managePlanConfiguration: true,
   },
   VIEWER: {
     manageSetupData: false,
@@ -74,6 +78,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     exportSchedule: true,
     manageUsers: false,
     importPharmacies: false,
+    managePlanConfiguration: false,
   },
 };
 
