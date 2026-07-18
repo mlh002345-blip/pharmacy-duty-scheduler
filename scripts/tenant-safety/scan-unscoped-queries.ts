@@ -33,6 +33,9 @@ const TENANT_MODELS = [
   "rotationPool",
   "rotationPoolMembership",
   "rotationState",
+  // Duty Rules V2 Phase 8: owned directly (organizationId/regionId
+  // columns), see commit-complete-draft.ts.
+  "dutyGenerationRun",
 ];
 
 // Every Prisma method that can read/write rows and therefore needs a tenant

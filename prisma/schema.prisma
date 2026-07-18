@@ -40,6 +40,7 @@ model Organization {
   dutyPlans                 DutyPlan[]
   rotationPools             RotationPool[]
   pharmacyImportBatches     PharmacyImportBatch[]
+  dutyGenerationRuns        DutyGenerationRun[]
 
   @@index([isActive])
 }
@@ -102,6 +103,7 @@ model Region {
   pharmacyImportRegionCandidates PharmacyImportRegionCandidate[]
   dutyPlans             DutyPlan[]
   rotationPools         RotationPool[]
+  dutyGenerationRuns    DutyGenerationRun[]
 
   // Region names may repeat across organizations, but not within one.
   @@unique([organizationId, name])
@@ -219,6 +221,11 @@ model DutySchedule {
 
   assignments DutyAssignment[]
   warnings    DutyScheduleWarning[]
+  // Duty Rules V2 Phase 8 (additive, nullable relation): at most one
+  // atomic-commit provenance record, present only for schedules created
+  // via commit-complete-draft.ts. NULL/absent for every V1-generated or
+  // pre-Phase-8 schedule.
+  generationRun DutyGenerationRun?
 
   @@unique([year, month, regionId])
   @@index([regionId])
@@ -250,6 +257,29 @@ model DutyAssignment {
   shiftDefinition   ShiftDefinition? @relation(fields: [shiftDefinitionId], references: [id], onDelete: Restrict)
   slotKey           String?
 
+  // Duty Rules V2 Phase 8 (additive, nullable): assignment provenance
+  // for rows created by commit-complete-draft.ts, restating facts
+  // Phase 6/7 already computed (never re-derived here). NULL for every
+  // V1 row and for any V2 row created outside the Phase 8 commit
+  // service — see docs/architecture/DUTY_RULES_V2_ATOMIC_DRAFT_PERSISTENCE.md.
+  // `weight` above (existing column) already carries what Phase 7 calls
+  // dutyWeight, and `shiftDefinitionId`/`slotKey` above (existing
+  // columns) already carry Phase 7's shiftId/slotKey — none are
+  // duplicated here.
+  draftAssignmentKey   String?
+  membershipId         String?
+  membership           RotationPoolMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  selectionOrdinal     Int?
+  origin               AssignmentOrigin?
+  strategyId           String?
+  strategyType         String?
+  fallbackUsed         Boolean?
+  selectedRank         Int?
+  decisiveCriterion    String?
+
+  generationRunId String?
+  generationRun   DutyGenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: Cascade)
+
   auditLogs AuditLog[]
 
   // Uniqueness lives in TWO PostgreSQL partial unique indexes created by
@@ -267,11 +297,31 @@ model DutyAssignment {
   // A plain composite unique containing nullable shiftDefinitionId would
   // NOT work: PostgreSQL treats NULLs as distinct, silently disabling
   // the legacy guarantee.
+  //
+  // The two Phase 8 composite uniques below are scoped BY generationRunId
+  // (also nullable) for the identical reason: PostgreSQL never enforces
+  // uniqueness across rows where any indexed column is NULL, so V1 rows
+  // and any row outside a Phase 8 commit (generationRunId NULL) are
+  // structurally exempt and can never collide with each other or with a
+  // real run's rows.
+  //   - no duplicate draftAssignmentKey inside one generation run (also
+  //     rules out inserting the exact same Phase 7 assignment twice).
+  //   - no duplicate selectionOrdinal inside one persisted slot of one
+  //     generation run.
+  @@unique([generationRunId, draftAssignmentKey])
+  @@unique([generationRunId, slotKey, selectionOrdinal])
   @@index([dutyScheduleId, pharmacyId, date])
   @@index([shiftDefinitionId])
   @@index([dutyScheduleId])
   @@index([pharmacyId])
   @@index([date])
+  @@index([generationRunId])
+  @@index([membershipId])
+}
+
+enum AssignmentOrigin {
+  STRICT
+  RELAXED
 }
 
 model DutyScheduleWarning {
@@ -284,6 +334,111 @@ model DutyScheduleWarning {
   schedule   DutySchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
 
   @@index([scheduleId])
+}
+
+enum DutyGenerationRunStatus {
+  // The only status this phase ever writes: one successful atomic
+  // commit-complete-draft.ts transaction. A future approval/publication
+  // phase may introduce additional statuses (e.g. a superseded marker)
+  // — this enum is deliberately left open for that, not collapsed to a
+  // boolean, but nothing in this phase produces any value but COMMITTED.
+  COMMITTED
+}
+
+// Duty Rules V2 — Phase 8: one immutable, append-only provenance record
+// of a single successful atomic commit of a Phase 7 CompleteDraftSchedule
+// into a DRAFT DutySchedule (see commit-complete-draft.ts and
+// docs/architecture/DUTY_RULES_V2_ATOMIC_DRAFT_PERSISTENCE.md). Never
+// updated after creation. completeDraftFingerprint is globally unique —
+// that uniqueness constraint IS the idempotency key: two commit attempts
+// carrying byte-identical CompleteDraftSchedule content can never create
+// two rows (the second resolves as IDEMPOTENT_REPLAY against the first).
+//
+// dutyScheduleId is a 1:1 (@unique) Cascade relation: one generation run
+// belongs to exactly one persisted schedule, and deleting that schedule
+// (the existing deleteDutyScheduleAction path) cleans up its generation
+// run automatically, exactly like DutyScheduleWarning above.
+// organizationId/regionId/planId/planVersionId are stored redundantly
+// (not solely derivable through the dutySchedule relation) so tenant-
+// scoped audit/history queries never require a join back through
+// DutySchedule -> Region -> Organization, and so tenant mismatches are
+// checkable directly against this row.
+//
+// Stores NO executable content, no environment values, no secrets —
+// only hashes/counts/ids and `manifest`, which is the already-computed,
+// plain descriptive DraftGenerationManifest JSON document (never
+// interpreted as code, never containing a raw Prisma error).
+model DutyGenerationRun {
+  id        String                  @id @default(cuid())
+  status    DutyGenerationRunStatus @default(COMMITTED)
+  createdAt DateTime                @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
+
+  planId String
+  plan   DutyPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  planVersionId String
+  planVersion   DutyPlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Restrict)
+
+  dutyScheduleId String       @unique
+  dutySchedule   DutySchedule @relation(fields: [dutyScheduleId], references: [id], onDelete: Cascade)
+
+  generationMode String
+  periodStart    DateTime
+  periodEnd      DateTime
+
+  // Phase 2-6 provenance, copied verbatim from
+  // CompleteDraftSchedule.provenance (EngineRunProvenance).
+  configurationFingerprint String
+  runtimeInputHash         String
+  ruleSetFingerprint       String
+  strategySetFingerprint   String
+  // Phase 4-6 result fingerprint this draft was assembled from
+  // (CompleteDraftSchedule.manifest.sourceResultFingerprint).
+  upstreamResultFingerprint String
+  // Deterministic aggregate over the distinct per-assignment
+  // sourceProvenance.membershipSnapshotHash values present in the draft
+  // (sha256Canonical of the sorted, deduplicated set) — CompleteDraftSchedule
+  // has no single top-level membership snapshot hash because a draft can
+  // span more than one rotation pool. See commit-complete-draft.ts.
+  membershipSnapshotHash String
+  // Deterministic aggregate over every assignment's own restated Phase 6
+  // facts (slotKey, candidateKey, selectionOrdinal, provisionalRank,
+  // origin, strategyId, strategyType), sha256Canonical-hashed — again
+  // computed here because CompleteDraftSchedule has no single top-level
+  // field for it. See commit-complete-draft.ts.
+  provisionalSelectionFingerprint String
+  // CompleteDraftSchedule.completeDraftFingerprint verbatim — the
+  // idempotency key (see @unique below).
+  completeDraftFingerprint String @unique
+
+  // CompleteDraftSchedule.engineVersion / .selectionEngineVersion,
+  // verbatim.
+  engineVersion          Int
+  selectionEngineVersion Int
+  // Phase 8's OWN contract version: which version of the Phase 7
+  // CompleteDraftSchedule SHAPE this commit service validated against.
+  // NOT a Phase 7 field — Phase 7 versions itself via engineVersion/
+  // selectionEngineVersion above, both persisted verbatim. See
+  // DRAFT_ENGINE_VERSION in commit-complete-draft.ts.
+  draftEngineVersion Int
+
+  // The already-computed DraftGenerationManifest, stored verbatim as
+  // plain descriptive JSON (never interpreted as code) so the full
+  // generation summary (counts, blockingDiagnosticCodes, assignmentKeys,
+  // etc.) survives independent of the DutyAssignment rows below.
+  manifest Json
+
+  assignments DutyAssignment[]
+
+  @@index([organizationId, regionId])
+  @@index([planVersionId])
+  @@index([dutyScheduleId])
 }
 
 enum AuditAction {
@@ -690,6 +845,7 @@ model DutyPlan {
   region   Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
 
   versions DutyPlanVersion[]
+  dutyGenerationRuns DutyGenerationRun[]
 
   @@index([organizationId])
   @@index([regionId])
@@ -717,9 +873,10 @@ model DutyPlanVersion {
   planId String
   plan   DutyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
 
-  dayTypeRules     DayTypeRule[]
-  shiftDefinitions ShiftDefinition[]
-  dutySchedules    DutySchedule[]
+  dayTypeRules       DayTypeRule[]
+  shiftDefinitions   ShiftDefinition[]
+  dutySchedules      DutySchedule[]
+  dutyGenerationRuns DutyGenerationRun[]
 
   @@unique([planId, versionNumber])
   @@index([planId, status])
@@ -855,6 +1012,7 @@ model RotationPoolMembership {
   pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Restrict)
 
   rotationStatesAsCursor RotationState[]
+  dutyAssignments        DutyAssignment[]
 
   @@unique([poolId, pharmacyId, joinedAt])
   @@index([poolId, leftAt])
