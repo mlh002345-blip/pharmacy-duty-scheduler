@@ -853,6 +853,16 @@ enum DutyDayType {
   HOLIDAY_EVE
 }
 
+enum HolidayEveWeightSource {
+  CONFIGURED
+  UNDERLYING_WEEKDAY
+}
+
+enum HolidayOverlapResolutionMode {
+  NATIVE_PRECEDENCE
+  V1_LAST_INPUT_WINS
+}
+
 enum RotationStrategy {
   SEQUENTIAL
   FAIRNESS_SCORE
@@ -919,6 +929,23 @@ model DutyPlanVersion {
   dutyGenerationRuns DutyGenerationRun[]
   dutyDraftPreviews  DutyDraftPreview[]
 
+  // Duty Rules V2 — Phase 12 (additive, all nullable-or-defaulted so every
+  // pre-Phase-12 plan version keeps behaving exactly as before): the
+  // version's OWN scheduling policy, independent of any V1 DutyRule.
+  // minDaysBetweenDuties is the one field with NO sane default (unlike V1
+  // where every region always had a configured value) — null means "not
+  // yet configured natively," which is exactly the signal
+  // assemble-v2-engine-input.ts's mode-selection logic uses to fall back
+  // to V1-compatibility mode. The other four fields DO have defaults
+  // matching EngineSchedulingPolicy's own documented "when omitted"
+  // behavior (see engine-input.ts), so they're safe to default rather
+  // than force every chamber to make a redundant choice.
+  minDaysBetweenDuties             Int?
+  relaxMinIntervalWhenInsufficient Boolean                      @default(true)
+  sameDaySecondAssignmentAllowed   Boolean                      @default(false)
+  holidayEveWeightSource           HolidayEveWeightSource       @default(CONFIGURED)
+  holidayOverlapResolutionMode     HolidayOverlapResolutionMode @default(NATIVE_PRECEDENCE)
+
   @@unique([planId, versionNumber])
   @@index([planId, status])
   @@index([validFrom])
@@ -940,6 +967,14 @@ model DayTypeRule {
   customDayCategory String?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
+
+  // Duty Rules V2 — Phase 12 (additive, nullable): this day type's own
+  // weight, independent of any V1 DutyRule. Null = not yet configured —
+  // required (and validated) only when isServed is true AND the owning
+  // version is being generated in native-policy mode (see
+  // assemble-v2-engine-input.ts); never required for isServed:false rows,
+  // never required at all while the version stays in V1-compatibility mode.
+  weight Float?
 
   planVersionId String
   planVersion   DutyPlanVersion @relation(fields: [planVersionId], references: [id], onDelete: Cascade)

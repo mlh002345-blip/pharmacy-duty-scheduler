@@ -65,7 +65,7 @@ describe("setDayTypeRules", () => {
     expect(result).toEqual({ ok: true, count: 1 });
     expect(prismaMock.dayTypeRule.update).toHaveBeenCalledWith({
       where: { id: "rule-sat" },
-      data: { isServed: false },
+      data: { isServed: false, weight: null },
     });
     expect(prismaMock.dayTypeRule.create).not.toHaveBeenCalled();
     expect(prismaMock.dayTypeRule.deleteMany).not.toHaveBeenCalled();
@@ -130,5 +130,79 @@ describe("setDayTypeRules", () => {
 
     expect(result).toEqual({ ok: false, code: "DUPLICATE_DAY_TYPE", message: expect.any(String) });
     expect(prismaMock.dutyPlanVersion.findFirst).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------
+  // Duty Rules V2 — Phase 12: weight field
+  // -------------------------------------------------------------------
+
+  it("persists a valid weight on create", async () => {
+    prismaMock.dutyPlanVersion.findFirst.mockResolvedValue(draftVersion());
+
+    const result = await setDayTypeRules({
+      organizationId: "org-1",
+      versionId: "version-1",
+      rules: [{ dayType: "SATURDAY", isServed: true, weight: 1.5 }],
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ ok: true, count: 1 });
+    expect(prismaMock.dayTypeRule.create).toHaveBeenCalledWith({
+      data: {
+        planVersionId: "version-1",
+        dayType: "SATURDAY",
+        isServed: true,
+        customDayCategory: null,
+        weight: 1.5,
+      },
+    });
+  });
+
+  it("accepts weight: null as an unconfigured value", async () => {
+    prismaMock.dutyPlanVersion.findFirst.mockResolvedValue(draftVersion());
+
+    const result = await setDayTypeRules({
+      organizationId: "org-1",
+      versionId: "version-1",
+      rules: [{ dayType: "SATURDAY", isServed: true, weight: null }],
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ ok: true, count: 1 });
+    expect(prismaMock.dayTypeRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ weight: null }) })
+    );
+  });
+
+  it.each([0, -1, NaN])("rejects an invalid weight (%s) with INVALID_WEIGHT", async (badWeight) => {
+    const result = await setDayTypeRules({
+      organizationId: "org-1",
+      versionId: "version-1",
+      rules: [{ dayType: "SATURDAY", isServed: true, weight: badWeight }],
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ ok: false, code: "INVALID_WEIGHT", message: expect.any(String) });
+    expect(prismaMock.dutyPlanVersion.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("preserves weight across an update that only changes isServed", async () => {
+    prismaMock.dutyPlanVersion.findFirst.mockResolvedValue(draftVersion());
+    prismaMock.dayTypeRule.findMany.mockResolvedValue([
+      { id: "rule-sat", dayType: "SATURDAY", customDayCategory: null },
+    ]);
+
+    const result = await setDayTypeRules({
+      organizationId: "org-1",
+      versionId: "version-1",
+      rules: [{ dayType: "SATURDAY", isServed: false, weight: 2.25 }],
+      userId: "user-1",
+    });
+
+    expect(result).toEqual({ ok: true, count: 1 });
+    expect(prismaMock.dayTypeRule.update).toHaveBeenCalledWith({
+      where: { id: "rule-sat" },
+      data: { isServed: false, weight: 2.25 },
+    });
   });
 });

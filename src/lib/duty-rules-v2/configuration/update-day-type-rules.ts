@@ -24,6 +24,18 @@ export type DayTypeRuleInput = {
    *  extensibility field) — accepted here so the service itself doesn't
    *  hard-block a future caller that does supply it. */
   customDayCategory?: string | null;
+  /** Duty Rules V2 — Phase 12: this day type's own weight, independent
+   *  of any V1 DutyRule. null (or omitted — undefined is treated the
+   *  same as null) = "not yet configured." Since this is a
+   *  declarative-replace service (the input array is the full desired
+   *  state), a caller that cares about weight must pass it on every
+   *  call; omitting the field is only appropriate for callers that
+   *  genuinely have no weight concept (e.g. earlier-phase test fixtures)
+   *  and are fine with null. Allowed on isServed:false rows too — an
+   *  admin may toggle a day off and back on without losing a
+   *  previously-entered weight; it's simply unused while isServed is
+   *  false. */
+  weight?: number | null;
 };
 
 export type SetDayTypeRulesInput = {
@@ -38,7 +50,8 @@ export type SetDayTypeRulesSuccess = { ok: true; count: number };
 export type SetDayTypeRulesErrorCode =
   | PlanVersionGuardFailure["code"]
   | "INVALID_INPUT"
-  | "DUPLICATE_DAY_TYPE";
+  | "DUPLICATE_DAY_TYPE"
+  | "INVALID_WEIGHT";
 
 export type SetDayTypeRulesFailure = {
   ok: false;
@@ -62,6 +75,13 @@ export async function setDayTypeRules(input: SetDayTypeRulesInput): Promise<SetD
   for (const rule of input.rules) {
     if (!(BUILTIN_DAY_TYPES as readonly string[]).includes(rule.dayType)) {
       return fail("INVALID_INPUT", "Geçersiz gün tipi.");
+    }
+    if (
+      rule.weight !== null &&
+      rule.weight !== undefined &&
+      (!Number.isFinite(rule.weight) || rule.weight <= 0)
+    ) {
+      return fail("INVALID_WEIGHT", "Gün tipi ağırlığı pozitif bir sayı olmalıdır.");
     }
   }
   const keys = input.rules.map((r) => ruleKey(r.dayType, r.customDayCategory ?? null));
@@ -95,7 +115,7 @@ export async function setDayTypeRules(input: SetDayTypeRulesInput): Promise<SetD
       if (existingId) {
         await tx.dayTypeRule.update({
           where: { id: existingId },
-          data: { isServed: rule.isServed },
+          data: { isServed: rule.isServed, weight: rule.weight ?? null },
         });
       } else {
         await tx.dayTypeRule.create({
@@ -104,6 +124,7 @@ export async function setDayTypeRules(input: SetDayTypeRulesInput): Promise<SetD
             dayType: rule.dayType,
             isServed: rule.isServed,
             customDayCategory: rule.customDayCategory ?? null,
+            weight: rule.weight ?? null,
           },
         });
       }

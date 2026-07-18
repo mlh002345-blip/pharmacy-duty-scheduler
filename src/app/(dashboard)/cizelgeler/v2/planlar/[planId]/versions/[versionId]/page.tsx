@@ -17,6 +17,7 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { checkPlanVersionActivationReadiness } from "@/lib/duty-rules-v2/configuration/validate-plan-version-completeness";
 import { BUILTIN_DAY_TYPES, type BuiltinDayType } from "@/lib/duty-rules-v2/domain/loaded-plan";
 import { DayTypeRulesForm } from "./day-type-rules-form";
+import { PolicyForm } from "./policy-form";
 import { ShiftDefinitionsForm } from "./shift-definitions-form";
 import { SlotRequirementsForm } from "./slot-requirements-form";
 import { RotationPoolsSection } from "./rotation-pools-section";
@@ -64,8 +65,13 @@ export default async function PlanVersionEditorPage({
       validTo: true,
       plan: { select: { id: true, name: true, regionId: true, region: { select: { name: true } } } },
       dayTypeRules: {
-        select: { id: true, dayType: true, isServed: true },
+        select: { id: true, dayType: true, isServed: true, weight: true },
       },
+      minDaysBetweenDuties: true,
+      relaxMinIntervalWhenInsufficient: true,
+      sameDaySecondAssignmentAllowed: true,
+      holidayEveWeightSource: true,
+      holidayOverlapResolutionMode: true,
       shiftDefinitions: {
         select: {
           id: true,
@@ -145,6 +151,9 @@ export default async function PlanVersionEditorPage({
           <Badge variant={version.status === "ACTIVE" ? "success" : version.status === "RETIRED" ? "secondary" : "outline"}>
             {STATUS_LABEL[version.status] ?? version.status}
           </Badge>
+          <Badge variant="outline">
+            {version.minDaysBetweenDuties === null ? "V1 Uyumluluk Modu" : "Yerel V2 Politikası"}
+          </Badge>
         </div>
         <p className="text-muted-foreground text-sm">{version.plan.region.name}</p>
         {!isDraft && (
@@ -169,6 +178,7 @@ export default async function PlanVersionEditorPage({
               initialRules={version.dayTypeRules.map((r) => ({
                 dayType: r.dayType as BuiltinDayType,
                 isServed: r.isServed,
+                weight: r.weight,
               }))}
             />
           ) : (
@@ -178,9 +188,65 @@ export default async function PlanVersionEditorPage({
                 return (
                   <li key={dayType}>
                     {DAY_TYPE_LABELS[dayType]}: {rule?.isServed ? "Nöbet var" : "Nöbet yok"}
+                    {rule?.weight !== null && rule?.weight !== undefined
+                      ? ` (Ağırlık: ${rule.weight})`
+                      : ""}
                   </li>
                 );
               })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Politika</CardTitle>
+          <CardDescription>
+            Bu sürümün kendi nöbet politikası — boş bırakılırsa V1 uyumluluk modu kullanılır.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {editable ? (
+            <PolicyForm
+              planId={planId}
+              versionId={versionId}
+              initialPolicy={{
+                minDaysBetweenDuties: version.minDaysBetweenDuties,
+                relaxMinIntervalWhenInsufficient: version.relaxMinIntervalWhenInsufficient,
+                sameDaySecondAssignmentAllowed: version.sameDaySecondAssignmentAllowed,
+                holidayEveWeightSource: version.holidayEveWeightSource,
+                holidayOverlapResolutionMode: version.holidayOverlapResolutionMode,
+              }}
+            />
+          ) : (
+            <ul className="flex flex-col gap-1 text-sm">
+              <li>
+                Asgari Nöbet Aralığı:{" "}
+                {version.minDaysBetweenDuties === null
+                  ? "Yapılandırılmadı"
+                  : `${version.minDaysBetweenDuties} gün`}
+              </li>
+              <li>
+                Yetersiz eczane olduğunda asgari aralığı gevşet:{" "}
+                {version.relaxMinIntervalWhenInsufficient ? "Evet" : "Hayır"}
+              </li>
+              <li>
+                Aynı gün ikinci atamaya izin ver:{" "}
+                {version.sameDaySecondAssignmentAllowed ? "Evet" : "Hayır"}
+              </li>
+              <li>
+                Bayram Arifesi Ağırlık Kaynağı:{" "}
+                {version.holidayEveWeightSource === "CONFIGURED"
+                  ? "Yapılandırılmış değer"
+                  : "Haftaiçi/haftasonu ağırlığı"}
+              </li>
+              <li>
+                Bayram Çakışması Çözüm Modu:{" "}
+                {version.holidayOverlapResolutionMode === "NATIVE_PRECEDENCE"
+                  ? "Dini bayram önceliklidir"
+                  : "Son girilen bayram kazanır (V1 uyumlu)"}
+              </li>
             </ul>
           )}
         </CardContent>
