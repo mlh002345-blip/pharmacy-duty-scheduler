@@ -1,34 +1,43 @@
-// Duty Rules V2 — Phase 10: Admin UI integration glue code.
+// Duty Rules V2 — Phase 12: Admin UI integration glue code for NATIVE
+// policy mode.
 //
-// This module is NOT part of the Phase 2-9 engine/persistence pipeline —
-// it is the ONLY supported way, in this phase, to build a real
-// DutyEngineInput from persisted data for the admin "V2 Taslak Oluştur"
-// flow. It always runs in V1-COMPATIBILITY mode: the scheduling policy
-// is derived verbatim from the region's existing DutyRule (weights,
-// minimum interval), exactly as V1's generate-and-save-duty-schedule.ts
-// derives its own policy — Duty Rules V2's own persisted rule/strategy
-// configuration surface (Phase 5/6 catalogues beyond the compatibility
-// projection) is a future phase, not exposed here.
+// The sibling of assemble-v1-compatibility-engine-input.ts (Phase 10).
+// That module always derives EngineSchedulingPolicy from the region's V1
+// DutyRule row, which means a region with zero V1 history can never
+// generate a V2 draft. This module derives the policy from the plan
+// version's OWN persisted columns (DutyPlanVersion.minDaysBetweenDuties/
+// relaxMinIntervalWhenInsufficient/sameDaySecondAssignmentAllowed/
+// holidayEveWeightSource/holidayOverlapResolutionMode) and its own
+// DayTypeRule.weight values instead — no DutyRule lookup at all.
 //
-// IMPORTANT LIMITATION (see CLAUDE.md — build step by step, no UI for
-// out-of-scope features): this function requires the region to already
-// have an ACTIVE DutyPlanVersion (bootstrapped some other way — see
-// scripts/duty-rules-v2-demo/seed-bilecik-and-run-demo.ts for the only
-// bootstrap path that exists today). There is deliberately NO admin UI
-// in this phase for creating/activating a plan version — every region
-// without one simply returns NO_ACTIVE_PLAN_VERSION until a future phase
-// adds that management UI.
+// Everything else (tenant-scoped region/pharmacy validation, active-plan-
+// version lookup, duplicate-schedule guard, the five runtime facts) is
+// identical in spirit to the V1-compatibility assembler, and shares the
+// exact same queries via fetch-engine-runtime-facts.ts.
 
 import { prisma } from "@/lib/prisma";
 import { loadDutyPlanVersion } from "../load-duty-plan-version";
 import { DutyPlanLoaderError } from "../errors";
 import type { DutyEngineInput, EngineSchedulingPolicy } from "../engine/domain/engine-input";
+// buildCompatibilityRules / buildV1CompatibilitySelectionStrategy live
+// under rules/ and selection/ respectively (both protected, unmodified
+// here). Despite their "V1" naming, neither is actually V1-specific:
+// buildCompatibilityRules(policy) only ever reads an already-built
+// EngineSchedulingPolicy (whatever shape it has, native or compatibility)
+// and projects it into ConfiguredRuleDefinitions; it has no DutyRule
+// dependency and no V1-only branch. buildV1CompatibilitySelectionStrategy
+// only consumes organizationId + regionId to scope a selection strategy —
+// again nothing V1-specific. Both are reused as-is for native-policy mode;
+// the "V1" in their names refers to the SEMANTICS they encode (the
+// existing V1-equivalent constraint set), not a restriction on which
+// policy source may drive them.
 import { buildCompatibilityRules } from "../rules/build-compatibility-rules";
 import { buildV1CompatibilitySelectionStrategy } from "../selection/build-v1-compatibility-strategy";
 import { parseDateKey } from "../../scheduling/date-tr";
 import { fetchEngineRuntimeFacts } from "./fetch-engine-runtime-facts";
+import type { BuiltinDayType } from "../domain/loaded-plan";
 
-export type AssembleEngineInputParams = {
+export type AssembleNativeEngineInputParams = {
   organizationId: string;
   regionId: string;
   /** "YYYY-MM-DD" */
@@ -37,38 +46,49 @@ export type AssembleEngineInputParams = {
   periodEnd: string;
 };
 
-export type AssembleEngineInputErrorCode =
+export type AssembleNativeEngineInputErrorCode =
   | "REGION_NOT_FOUND"
-  | "NO_DUTY_RULE"
   | "NO_ACTIVE_PLAN_VERSION"
+  | "POLICY_NOT_CONFIGURED"
+  | "MISSING_DAY_TYPE_WEIGHT"
   | "NO_ACTIVE_PHARMACIES"
   | "INVALID_PERIOD"
   | "DUPLICATE_SCHEDULE_EXISTS";
 
-export type AssembleEngineInputResult =
+export type AssembleNativeEngineInputResult =
   | { ok: true; input: DutyEngineInput; planVersionId: string }
-  | { ok: false; code: AssembleEngineInputErrorCode; message: string };
+  | { ok: false; code: AssembleNativeEngineInputErrorCode; message: string };
 
 function fail(
-  code: AssembleEngineInputErrorCode,
+  code: AssembleNativeEngineInputErrorCode,
   message: string
-): AssembleEngineInputResult {
+): AssembleNativeEngineInputResult {
   return { ok: false, code, message };
 }
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+const DAY_TYPE_LABELS_TR: Record<BuiltinDayType, string> = {
+  WEEKDAY: "Hafta İçi",
+  SATURDAY: "Cumartesi",
+  SUNDAY: "Pazar",
+  OFFICIAL_HOLIDAY: "Resmi Bayram",
+  RELIGIOUS_HOLIDAY: "Dini Bayram",
+  HOLIDAY_EVE: "Bayram Arifesi",
+};
+
 /**
  * Builds a real, DB-backed DutyEngineInput for the region's ACTIVE V2
- * plan version, in V1-compatibility mode. Never trusts client-supplied
- * data beyond regionId/periodStart/periodEnd — organizationId is always
+ * plan version, in NATIVE-POLICY mode — i.e. the version's own persisted
+ * policy columns and day-type weights, with NO dependency on a V1
+ * DutyRule at all. Never trusts client-supplied data beyond
+ * regionId/periodStart/periodEnd — organizationId is always
  * session-derived by the caller (a server action), and every other fact
- * (dutyRule, holidays, unavailability, duty requests, historical
- * assignments, balance adjustments) is read fresh from the database.
+ * is read fresh from the database.
  */
-export async function assembleV1CompatibilityEngineInput(
-  params: AssembleEngineInputParams
-): Promise<AssembleEngineInputResult> {
+export async function assembleV2NativeEngineInput(
+  params: AssembleNativeEngineInputParams
+): Promise<AssembleNativeEngineInputResult> {
   const { organizationId, regionId, periodStart, periodEnd } = params;
 
   if (!ISO_DATE_PATTERN.test(periodStart) || !ISO_DATE_PATTERN.test(periodEnd)) {
@@ -82,19 +102,17 @@ export async function assembleV1CompatibilityEngineInput(
 
   // Tenant-scoped fetch: 404-equivalent for both "doesn't exist" and
   // "belongs to another organization" — same non-disclosure principle as
-  // load-duty-plan-version.ts's PLAN_VERSION_NOT_FOUND.
+  // load-duty-plan-version.ts's PLAN_VERSION_NOT_FOUND. Deliberately does
+  // NOT include dutyRule — a region with zero V1 history is fully
+  // supported here.
   const region = await prisma.region.findFirst({
     where: { id: regionId, organizationId },
     include: {
-      dutyRule: true,
       pharmacies: { where: { isActive: true }, select: { id: true } },
     },
   });
   if (!region) {
     return fail("REGION_NOT_FOUND", "Bölge bulunamadı.");
-  }
-  if (!region.dutyRule) {
-    return fail("NO_DUTY_RULE", "Bu bölge için tanımlı bir nöbet kuralı bulunamadı.");
   }
   if (region.pharmacies.length === 0) {
     return fail(
@@ -106,11 +124,32 @@ export async function assembleV1CompatibilityEngineInput(
   const activeVersion = await prisma.dutyPlanVersion.findFirst({
     where: { plan: { organizationId, regionId }, status: "ACTIVE" },
     orderBy: { versionNumber: "desc" },
+    include: {
+      dayTypeRules: { select: { dayType: true, isServed: true, weight: true } },
+    },
   });
   if (!activeVersion) {
     return fail(
       "NO_ACTIVE_PLAN_VERSION",
       "Bu bölge için etkin bir V2 nöbet planı bulunamadı. Önce bir plan sürümü etkinleştirilmelidir."
+    );
+  }
+
+  if (activeVersion.minDaysBetweenDuties === null) {
+    return fail(
+      "POLICY_NOT_CONFIGURED",
+      "Bu plan sürümü için nöbet politikası (asgari nöbet aralığı ve gün tipi ağırlıkları) henüz yapılandırılmamış."
+    );
+  }
+
+  const missingWeightRule = activeVersion.dayTypeRules.find(
+    (r) => r.isServed && r.weight === null
+  );
+  if (missingWeightRule) {
+    const label = DAY_TYPE_LABELS_TR[missingWeightRule.dayType as BuiltinDayType];
+    return fail(
+      "MISSING_DAY_TYPE_WEIGHT",
+      `"${label}" gün tipi nöbet tutuyor ancak bir ağırlık değeri tanımlanmamış.`
     );
   }
 
@@ -154,27 +193,23 @@ export async function assembleV1CompatibilityEngineInput(
     throw error;
   }
 
-  // Phase 6 corrective HOLIDAY_EVE weight: V1 has no eve concept at all,
-  // so UNDERLYING_WEEKDAY mode resolves an eve date's weight from its
-  // actual calendar weekday instead — the only mode that reproduces V1
-  // byte-for-byte. Because of that, the HOLIDAY_EVE entry in
-  // dayTypeWeights below is never actually read for weighting purposes;
-  // it is populated with the weekday weight only so the policy schema's
-  // one-entry-per-day-type expectation is satisfied, per
-  // engine-input.ts:82-91's documented reasoning.
+  // dayTypeWeights: one entry per isServed:true row (all of which are
+  // guaranteed non-null at this point by the MISSING_DAY_TYPE_WEIGHT
+  // check above). DayTypeRule rows are already unique per
+  // (planVersionId, dayType, customDayCategory), so using `dayType`
+  // directly as dayTypeKey is naturally duplicate-free — mirrors how
+  // assembleV1CompatibilityEngineInput keys its own dayTypeWeights.
+  const dayTypeWeights = activeVersion.dayTypeRules
+    .filter((r) => r.isServed)
+    .map((r) => ({ dayTypeKey: r.dayType as string, weight: r.weight as number }));
+
   const policy: EngineSchedulingPolicy = {
-    minDaysBetweenDuties: region.dutyRule.minDaysBetweenDuties,
-    relaxMinIntervalWhenInsufficient: true,
-    dayTypeWeights: [
-      { dayTypeKey: "WEEKDAY", weight: region.dutyRule.weekdayWeight },
-      { dayTypeKey: "SATURDAY", weight: region.dutyRule.saturdayWeight },
-      { dayTypeKey: "SUNDAY", weight: region.dutyRule.sundayWeight },
-      { dayTypeKey: "OFFICIAL_HOLIDAY", weight: region.dutyRule.officialHolidayWeight },
-      { dayTypeKey: "RELIGIOUS_HOLIDAY", weight: region.dutyRule.religiousHolidayWeight },
-      { dayTypeKey: "HOLIDAY_EVE", weight: region.dutyRule.weekdayWeight },
-    ],
-    sameDaySecondAssignmentAllowed: false,
-    holidayEveWeightSource: "UNDERLYING_WEEKDAY",
+    minDaysBetweenDuties: activeVersion.minDaysBetweenDuties,
+    relaxMinIntervalWhenInsufficient: activeVersion.relaxMinIntervalWhenInsufficient,
+    dayTypeWeights,
+    sameDaySecondAssignmentAllowed: activeVersion.sameDaySecondAssignmentAllowed,
+    holidayEveWeightSource: activeVersion.holidayEveWeightSource,
+    holidayOverlapResolutionMode: activeVersion.holidayOverlapResolutionMode,
   };
 
   const pharmacyIds = region.pharmacies.map((p) => p.id);

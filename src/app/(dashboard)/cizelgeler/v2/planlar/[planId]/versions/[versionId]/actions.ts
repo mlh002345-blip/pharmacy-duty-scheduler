@@ -12,6 +12,7 @@ import { redirectWithMessage } from "@/lib/flash-redirect";
 import { type ActionState } from "@/lib/action-state";
 import { BUILTIN_DAY_TYPES } from "@/lib/duty-rules-v2/domain/loaded-plan";
 import { setDayTypeRules } from "@/lib/duty-rules-v2/configuration/update-day-type-rules";
+import { setPlanVersionPolicy } from "@/lib/duty-rules-v2/configuration/update-plan-version-policy";
 import { setShiftDefinitions } from "@/lib/duty-rules-v2/configuration/update-shift-definitions";
 import { setSlotRequirements } from "@/lib/duty-rules-v2/configuration/update-slot-requirements";
 import { createRotationPool } from "@/lib/duty-rules-v2/configuration/create-rotation-pool";
@@ -36,6 +37,7 @@ const dayTypeRulesSchema = z.array(
   z.object({
     dayType: z.enum(BUILTIN_DAY_TYPES),
     isServed: z.boolean(),
+    weight: z.number().finite().positive().nullable(),
   })
 );
 
@@ -73,6 +75,64 @@ export async function updateDayTypeRulesAction(
 
   revalidatePath(versionPath(planId, versionId));
   return { success: true, message: "Gün tipleri güncellendi." };
+}
+
+// ---------------------------------------------------------------------------
+// Politika (Duty Rules V2 — Phase 12)
+// ---------------------------------------------------------------------------
+
+const planVersionPolicySchema = z.object({
+  // Empty string from the number input's "unconfigured" state maps to
+  // null — an explicit, honest empty state, never coerced to 0 (0 is a
+  // legitimate "no interval restriction" value, semantically distinct
+  // from "not configured").
+  minDaysBetweenDuties: z
+    .union([z.literal(""), z.coerce.number().int().min(0)])
+    .transform((v) => (v === "" ? null : v)),
+  relaxMinIntervalWhenInsufficient: z.boolean(),
+  sameDaySecondAssignmentAllowed: z.boolean(),
+  holidayEveWeightSource: z.enum(["CONFIGURED", "UNDERLYING_WEEKDAY"]),
+  holidayOverlapResolutionMode: z.enum(["NATIVE_PRECEDENCE", "V1_LAST_INPUT_WINS"]),
+});
+
+export async function updatePlanVersionPolicyAction(
+  planId: string,
+  versionId: string,
+  _prevState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const guard = await requireOrganizationRole("managePlanConfiguration");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
+  const rawMinDays = formData.get("minDaysBetweenDuties");
+  const parsed = planVersionPolicySchema.safeParse({
+    minDaysBetweenDuties: typeof rawMinDays === "string" ? rawMinDays : "",
+    relaxMinIntervalWhenInsufficient: formData.get("relaxMinIntervalWhenInsufficient") === "on",
+    sameDaySecondAssignmentAllowed: formData.get("sameDaySecondAssignmentAllowed") === "on",
+    holidayEveWeightSource: formData.get("holidayEveWeightSource"),
+    holidayOverlapResolutionMode: formData.get("holidayOverlapResolutionMode"),
+  });
+  if (!parsed.success) {
+    return { success: false, message: GENERIC_ERROR_MESSAGE };
+  }
+
+  const result = await setPlanVersionPolicy({
+    organizationId: user.organizationId,
+    versionId,
+    minDaysBetweenDuties: parsed.data.minDaysBetweenDuties,
+    relaxMinIntervalWhenInsufficient: parsed.data.relaxMinIntervalWhenInsufficient,
+    sameDaySecondAssignmentAllowed: parsed.data.sameDaySecondAssignmentAllowed,
+    holidayEveWeightSource: parsed.data.holidayEveWeightSource,
+    holidayOverlapResolutionMode: parsed.data.holidayOverlapResolutionMode,
+    userId: user.id,
+  });
+  if (!result.ok) {
+    return { success: false, message: result.message };
+  }
+
+  revalidatePath(versionPath(planId, versionId));
+  return { success: true, message: "Nöbet politikası güncellendi." };
 }
 
 // ---------------------------------------------------------------------------

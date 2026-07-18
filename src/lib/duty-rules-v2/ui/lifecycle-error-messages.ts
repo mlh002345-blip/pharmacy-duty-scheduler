@@ -11,6 +11,7 @@ import type { CommitCompleteDraftErrorCode } from "../persistence/commit-complet
 import type { ApproveGeneratedDraftErrorCode } from "../persistence/approve-generated-draft";
 import type { PublishApprovedScheduleErrorCode } from "../persistence/publish-approved-schedule";
 import type { AssembleEngineInputErrorCode } from "./assemble-v1-compatibility-engine-input";
+import type { AssembleNativeEngineInputErrorCode } from "./assemble-v2-native-engine-input";
 
 export const COMMIT_DRAFT_ERROR_MESSAGES: Record<CommitCompleteDraftErrorCode, string> = {
   DRAFT_NOT_COMMIT_ELIGIBLE: "Taslak kaydedilmeye uygun değil (eksik veya geçersiz).",
@@ -57,6 +58,25 @@ export const ASSEMBLE_ENGINE_INPUT_ERROR_FIELD: Record<AssembleEngineInputErrorC
   REGION_NOT_FOUND: "regionId",
   NO_DUTY_RULE: "regionId",
   NO_ACTIVE_PLAN_VERSION: "regionId",
+  NO_ACTIVE_PHARMACIES: "regionId",
+  INVALID_PERIOD: "periodEnd",
+  DUPLICATE_SCHEDULE_EXISTS: "periodStart",
+};
+
+// Duty Rules V2 — Phase 12: the native-policy assembler's own error
+// codes, kept as a separate map (rather than unified with the one above)
+// because the two error-code enums are only partially overlapping and a
+// unified Record type would have to accept the union of both codes for
+// every entry — a separate map is simpler and keeps each mode's field
+// mapping independently reviewable.
+export const ASSEMBLE_NATIVE_ENGINE_INPUT_ERROR_FIELD: Record<
+  AssembleNativeEngineInputErrorCode,
+  string
+> = {
+  REGION_NOT_FOUND: "regionId",
+  NO_ACTIVE_PLAN_VERSION: "regionId",
+  POLICY_NOT_CONFIGURED: "regionId",
+  MISSING_DAY_TYPE_WEIGHT: "regionId",
   NO_ACTIVE_PHARMACIES: "regionId",
   INVALID_PERIOD: "periodEnd",
   DUPLICATE_SCHEDULE_EXISTS: "periodStart",

@@ -77,13 +77,17 @@ test.describe("Duty Rules V2 plan configuration UI (real browser, real Postgres)
     await expect(activateButton).toBeDisabled();
 
     // Gün Tipleri: enable Saturday only.
+    // Duty Rules V2 — Phase 12 added a "Politika" section below with a
+    // "Bayram Arifesi Ağırlık Kaynağı" select, whose accessible name now
+    // contains "Bayram Arifesi" as a substring — exact matching keeps
+    // this loop scoped to the day-type checkboxes only.
     for (const label of ["Hafta İçi", "Pazar", "Resmi Bayram", "Dini Bayram", "Bayram Arifesi"]) {
-      const checkbox = page.getByLabel(label);
+      const checkbox = page.getByLabel(label, { exact: true });
       if (await checkbox.isChecked()) {
         await checkbox.uncheck();
       }
     }
-    await page.getByLabel("Cumartesi").check();
+    await page.getByLabel("Cumartesi", { exact: true }).check();
     // A server action bound to revalidatePath triggers a fresh RSC
     // render that can race with (and clear) the client component's own
     // transient success flash — waiting for the flash to appear first
@@ -109,15 +113,15 @@ test.describe("Duty Rules V2 plan configuration UI (real browser, real Postgres)
     await page.reload();
     await expect(page.getByText("E2E Rotasyon Havuzu")).toBeVisible();
 
-    await page.getByLabel("Eczane").selectOption({ label: pharmacyA.name });
-    await page.getByLabel("Katılım Tarihi").fill("2026-01-01");
+    await page.getByLabel("Eczane", { exact: true }).selectOption({ label: pharmacyA.name });
+    await page.getByLabel("Katılım Tarihi", { exact: true }).fill("2026-01-01");
     await page.getByRole("button", { name: "Eczane Ekle" }).click();
     await expect(page.getByText("Eczane havuza eklendi.")).toBeVisible();
     await page.reload();
     await expect(page.getByRole("cell", { name: pharmacyA.name })).toBeVisible();
 
-    await page.getByLabel("Eczane").selectOption({ label: pharmacyB.name });
-    await page.getByLabel("Katılım Tarihi").fill("2026-01-01");
+    await page.getByLabel("Eczane", { exact: true }).selectOption({ label: pharmacyB.name });
+    await page.getByLabel("Katılım Tarihi", { exact: true }).fill("2026-01-01");
     await page.getByRole("button", { name: "Eczane Ekle" }).click();
     await expect(page.getByText("Eczane havuza eklendi.")).toBeVisible();
     await page.reload();

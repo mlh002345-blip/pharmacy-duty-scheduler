@@ -115,16 +115,21 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/(dashboard)/cizelgeler/actions.ts:98": "[parent-scoped query] dutySchedule.findUnique by the compound (year, month, regionId) key — regionId was already verified against organizationId a few lines above via the region findFirst.",
   "src/lib/balance/duty-balance.ts:164": "[parent-scoped query] getOpeningBalanceByPharmacy's historicalDutyRecord groupBy is scoped by the regionId parameter, which the sole caller (generate-and-save-duty-schedule.ts) has already validated against organizationId.",
   "src/lib/balance/duty-balance.ts:173": "[parent-scoped query] getOpeningBalanceByPharmacy's dutyBalanceAdjustment groupBy, same caller-validated regionId as above.",
-  // Duty Rules V2 Phase 10: assembleV1CompatibilityEngineInput validates
-  // regionId against organizationId via a single region.findFirst near
-  // the top of the function (an organizationId-scoped call, so not
-  // itself flagged); every query below is scoped by pharmacyIds derived
-  // exclusively from that same org-validated region's active pharmacies,
-  // or by the region's own dutyRule/id — never client-supplied directly.
-  "src/lib/duty-rules-v2/ui/assemble-v1-compatibility-engine-input.ts:195": "[parent-scoped query] unavailability scoped by pharmacyIds derived from the already-org-validated region's own active pharmacies.",
-  "src/lib/duty-rules-v2/ui/assemble-v1-compatibility-engine-input.ts:204": "[parent-scoped query] dutyRequest (APPROVED-only) scoped by the same org-validated pharmacyIds.",
-  "src/lib/duty-rules-v2/ui/assemble-v1-compatibility-engine-input.ts:220": "[parent-scoped query] dutyAssignment (historical, date < periodStart) scoped by the same org-validated pharmacyIds.",
-  "src/lib/duty-rules-v2/ui/assemble-v1-compatibility-engine-input.ts:228": "[parent-scoped query] dutyBalanceAdjustment scoped by the same org-validated pharmacyIds.",
+  // Duty Rules V2 Phase 12: the shared runtime-fact helper extracted from
+  // assemble-v1-compatibility-engine-input.ts (Phase 10) — both callers
+  // (that file's assembleV1CompatibilityEngineInput and the new
+  // assemble-v2-native-engine-input.ts's assembleV2NativeEngineInput)
+  // validate regionId against organizationId via their own region
+  // lookup BEFORE calling this helper, then pass only the resulting
+  // org-validated pharmacyIds in. Every query below is scoped by those
+  // pharmacyIds — never client-supplied directly. (Superseded the
+  // previous per-line entries under assemble-v1-compatibility-engine-
+  // input.ts, which pointed at these exact queries before they were
+  // extracted here.)
+  "src/lib/duty-rules-v2/ui/fetch-engine-runtime-facts.ts:57": "[parent-scoped query] unavailability scoped by pharmacyIds, which every caller has already derived from an org-validated region's own active pharmacies.",
+  "src/lib/duty-rules-v2/ui/fetch-engine-runtime-facts.ts:66": "[parent-scoped query] dutyRequest (APPROVED-only) scoped by the same caller-validated pharmacyIds.",
+  "src/lib/duty-rules-v2/ui/fetch-engine-runtime-facts.ts:82": "[parent-scoped query] dutyAssignment (historical, date < periodStart) scoped by the same caller-validated pharmacyIds.",
+  "src/lib/duty-rules-v2/ui/fetch-engine-runtime-facts.ts:90": "[parent-scoped query] dutyBalanceAdjustment scoped by the same caller-validated pharmacyIds.",
 };
 
 type Finding = { file: string; line: number; snippet: string };
