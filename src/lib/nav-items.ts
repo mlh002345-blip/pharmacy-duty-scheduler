@@ -14,6 +14,7 @@ import {
   Users,
   ShieldCheck,
   Settings2,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -28,6 +29,7 @@ export type NavItem = {
 
 export const navItems: NavItem[] = [
   { label: "Panel", href: "/", icon: LayoutDashboard },
+  { label: "Kullanım Kılavuzu", href: "/kilavuz", icon: BookOpen },
   { label: "Eczaneler", href: "/eczaneler", icon: Building2 },
   { label: "Nöbet Bölgeleri", href: "/bolgeler", icon: MapPin },
   { label: "Nöbet Kuralları", href: "/kurallar", icon: ListChecks },
