@@ -73,9 +73,14 @@ export default async function DutyPlanConfigurationListPage({
           </p>
         </div>
         {canManage && (
-          <Button asChild>
-            <Link href="/cizelgeler/v2/planlar/yeni">Yeni Plan Oluştur</Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/cizelgeler/v2/planlar/v1-tasi">V1&apos;den Taşı</Link>
+            </Button>
+            <Button asChild>
+              <Link href="/cizelgeler/v2/planlar/yeni">Yeni Plan Oluştur</Link>
+            </Button>
+          </div>
         )}
       </div>
 
