@@ -285,7 +285,7 @@ export default async function CizelgelerPage({
                           label="PDF"
                           size="sm"
                         />
-                        {schedule.status === "DRAFT" && canDelete && (
+                        {schedule.status !== "PUBLISHED" && canDelete && (
                           <DeleteButton
                             action={deleteDutyScheduleAction.bind(null, schedule.id)}
                             confirmMessage={`${schedule.region.name} ${getTurkishMonthName(schedule.month)} ${schedule.year} çizelgesini silmek istediğinize emin misiniz?`}

@@ -181,6 +181,72 @@ describe("deleteDutyScheduleAction (real Postgres)", () => {
     await prisma.dutyPlan.deleteMany({ where: { id: plan.id } });
   });
 
+  it("deletes an APPROVED V2 schedule (the UI now allows this — only PUBLISHED is refused)", async () => {
+    const region = await createTestRegion(tracked);
+    const pharmacy = await createTestPharmacy(tracked, region.id);
+    const admin = await createTestUser(tracked, { role: "ADMIN", organizationId: region.organizationId });
+    const token = await createTestSessionToken(admin.id);
+    setIntegrationTestSessionToken(token);
+
+    const plan = await prisma.dutyPlan.create({
+      data: { name: "Onaylı Test Planı", organizationId: region.organizationId, regionId: region.id },
+    });
+    const planVersion = await prisma.dutyPlanVersion.create({
+      data: { planId: plan.id, versionNumber: 1, status: "ACTIVE", validFrom: new Date("2028-08-01T00:00:00.000Z"), activatedAt: new Date() },
+    });
+
+    const schedule = await prisma.dutySchedule.create({
+      data: { month: 8, year: 2028, regionId: region.id, status: "APPROVED", planVersionId: planVersion.id },
+    });
+    tracked.dutyScheduleIds.push(schedule.id);
+
+    const generationRun = await prisma.dutyGenerationRun.create({
+      data: {
+        status: "COMMITTED",
+        organizationId: region.organizationId,
+        regionId: region.id,
+        planId: plan.id,
+        planVersionId: planVersion.id,
+        dutyScheduleId: schedule.id,
+        generationMode: "PREVIEW",
+        periodStart: new Date("2028-08-01T00:00:00.000Z"),
+        periodEnd: new Date("2028-08-01T00:00:00.000Z"),
+        configurationFingerprint: "test-config",
+        runtimeInputHash: "test-runtime",
+        ruleSetFingerprint: "test-ruleset",
+        strategySetFingerprint: "test-strategyset",
+        upstreamResultFingerprint: "test-upstream",
+        membershipSnapshotHash: "test-membership",
+        provisionalSelectionFingerprint: "test-provisional",
+        completeDraftFingerprint: `test-fingerprint-${schedule.id}`,
+        engineVersion: 1,
+        selectionEngineVersion: 1,
+        draftEngineVersion: 1,
+        manifest: { counts: { totalAssignments: 1 } },
+        approvedAt: new Date(),
+        approvedById: admin.id,
+      },
+    });
+    await prisma.dutyAssignment.create({
+      data: {
+        dutyScheduleId: schedule.id,
+        date: new Date(Date.UTC(2028, 7, 1)),
+        pharmacyId: pharmacy.id,
+        weight: 1,
+        generationRunId: generationRun.id,
+      },
+    });
+
+    await expect(deleteDutyScheduleAction(schedule.id)).rejects.toThrow(IntegrationRedirectSignal);
+
+    const remainingSchedule = await prisma.dutySchedule.findUnique({ where: { id: schedule.id } });
+    expect(remainingSchedule).toBeNull();
+
+    await prisma.auditLog.deleteMany({ where: { entity: "DutyPlan", entityId: plan.id } });
+    await prisma.dutyPlanVersion.deleteMany({ where: { id: planVersion.id } });
+    await prisma.dutyPlan.deleteMany({ where: { id: plan.id } });
+  });
+
   it("rejects deleting a schedule belonging to another organization", async () => {
     const regionA = await createTestRegion(tracked);
     const regionB = await createTestRegion(tracked);
