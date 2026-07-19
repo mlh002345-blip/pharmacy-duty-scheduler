@@ -100,6 +100,9 @@ pilot kullanımdan önce mutlaka değiştirilmeli veya silinmelidir.
 
 Kısa bir tanıtım için bkz. [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
 Detaylı test adımları için bkz. [`docs/QA_CHECKLIST.md`](docs/QA_CHECKLIST.md).
+Bir oda yetkilisinin sıfırdan kurulum yapıp ilk çizelgeyi kendi başına
+oluşturması için bkz.
+[`docs/KULLANICI_KILAVUZU.md`](docs/KULLANICI_KILAVUZU.md).
 
 ## Barındırma (Hosted Demo / Pilot) Dağıtımı
 
