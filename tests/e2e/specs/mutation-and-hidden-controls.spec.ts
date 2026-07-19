@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 import {
+  createE2EOrganization,
   createE2ESession,
   createE2EUser,
   createE2ERegion,
@@ -136,6 +137,51 @@ test.describe("server-side mutation authorization", () => {
 
     const regionStillExists = await e2ePrisma.region.findUnique({ where: { id: region.id } });
     expect(regionStillExists).not.toBeNull();
+  });
+
+  test("STAFF (lacking deleteSchedule) sees no delete control on a DRAFT schedule's detail page", async ({
+    page,
+    context,
+    baseURL,
+  }) => {
+    const organization = await createE2EOrganization(tracked);
+    const staff = await createE2EUser(tracked, { role: "STAFF", organizationId: organization.id });
+    const token = await createE2ESession(tracked, staff.id);
+    await addSessionCookie(context, token, baseURL!);
+
+    const region = await createE2ERegion(tracked, { organizationId: organization.id });
+    const schedule = await createE2EDutySchedule(tracked, region.id, { status: "DRAFT" });
+
+    await page.goto(`/cizelgeler/${schedule.id}`);
+    await expect(page.getByText("Günlük Atamalar")).toBeVisible(); // sanity: real page, not a 404
+    await expect(page.getByRole("button", { name: /^Sil$/ })).toHaveCount(0);
+
+    const stillThere = await e2ePrisma.dutySchedule.findUnique({ where: { id: schedule.id } });
+    expect(stillThere).not.toBeNull();
+  });
+
+  test("ADMIN can delete a DRAFT schedule directly from its detail page", async ({
+    page,
+    context,
+    baseURL,
+  }) => {
+    const organization = await createE2EOrganization(tracked);
+    const admin = await createE2EUser(tracked, { role: "ADMIN", organizationId: organization.id });
+    const token = await createE2ESession(tracked, admin.id);
+    await addSessionCookie(context, token, baseURL!);
+
+    const region = await createE2ERegion(tracked, { organizationId: organization.id });
+    const schedule = await createE2EDutySchedule(tracked, region.id, { status: "DRAFT" });
+
+    await page.goto(`/cizelgeler/${schedule.id}`);
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: /^Sil$/ }).click();
+
+    await expect(page).toHaveURL(/\/cizelgeler(\?|$)/);
+    await expect(page.getByText("Nöbet çizelgesi silindi.")).toBeVisible();
+
+    const deleted = await e2ePrisma.dutySchedule.findUnique({ where: { id: schedule.id } });
+    expect(deleted).toBeNull();
   });
 
   test("anonymous GET to a protected export route redirects to /giris and downloads nothing", async ({
