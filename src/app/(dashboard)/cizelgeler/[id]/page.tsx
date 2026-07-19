@@ -562,7 +562,13 @@ export default async function CizelgeDetayPage({
                   <TableCell className="text-right">
                     {canEditAssignment ? (
                       <Button variant="outline" size="sm" asChild>
-                        <Link href={`/cizelgeler/${schedule.id}/atama/${assignment.id}/duzenle`}>
+                        <Link
+                          href={
+                            schedule.generationRun
+                              ? `/cizelgeler/${schedule.id}/atama/${assignment.id}/v2-duzenle`
+                              : `/cizelgeler/${schedule.id}/atama/${assignment.id}/duzenle`
+                          }
+                        >
                           Düzenle
                         </Link>
                       </Button>

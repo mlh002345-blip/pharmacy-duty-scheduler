@@ -130,6 +130,10 @@ const ALLOWLIST: Record<string, string> = {
   "src/lib/duty-rules-v2/ui/fetch-engine-runtime-facts.ts:66": "[parent-scoped query] dutyRequest (APPROVED-only) scoped by the same caller-validated pharmacyIds.",
   "src/lib/duty-rules-v2/ui/fetch-engine-runtime-facts.ts:82": "[parent-scoped query] dutyAssignment (historical, date < periodStart) scoped by the same caller-validated pharmacyIds.",
   "src/lib/duty-rules-v2/ui/fetch-engine-runtime-facts.ts:90": "[parent-scoped query] dutyBalanceAdjustment scoped by the same caller-validated pharmacyIds.",
+  // Duty Rules V2 Phase 13: manual assignment editing.
+  "src/app/(dashboard)/cizelgeler/[id]/atama/[assignmentId]/v2-duzenle/page.tsx:67": "[parent-scoped query] dutyRequest scoped by date range only for a pool-membership candidate list already derived from an org-validated assignment/schedule a few lines above — mirrors the identical pattern already allowlisted for the V1 edit page.",
+  "src/app/(dashboard)/cizelgeler/[id]/atama/v2-assignment-actions.ts:144": "[parent-scoped query] dutyRequest scoped by candidatePharmacyId, which was already verified against organizationId a few lines above (the cross-tenant relation validation on the client-supplied pharmacyId) — same pattern as assignment-actions.ts:115.",
+  "src/lib/duty-rules-v2/persistence-edit/resolve-min-interval-policy.ts:18": "[parent-scoped query] dutySchedule.findUnique by id only — its sole caller (editV2DutyAssignmentAction) has already tenant-validated this exact dutyScheduleId via the assignment's own org-scoped lookup before calling this helper; this module never receives an organizationId to scope with directly.",
 };
 
 type Finding = { file: string; line: number; snippet: string };
