@@ -325,7 +325,7 @@ export default async function CizelgeDetayPage({
               Çizelgeyi Yayınla
             </ConfirmSubmitForm>
           )}
-          {schedule.status === "DRAFT" && canDelete && (
+          {schedule.status !== "PUBLISHED" && canDelete && (
             <DeleteButton
               action={deleteDutyScheduleAction.bind(null, schedule.id)}
               confirmMessage={`${schedule.region.name} ${getTurkishMonthName(schedule.month)} ${schedule.year} çizelgesini silmek istediğinize emin misiniz?`}

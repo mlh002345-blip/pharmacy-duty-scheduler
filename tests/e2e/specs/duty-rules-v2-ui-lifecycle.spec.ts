@@ -195,4 +195,33 @@ test.describe("Duty Rules V2 admin UI lifecycle (real browser, real Postgres)", 
     // V1's own publish button is untouched by the V2 gating change.
     await expect(page.getByRole("button", { name: "Yayınla" })).toBeVisible();
   });
+
+  test("ADMIN can delete an APPROVED (not yet published) V2 schedule — abandoning it, not just publishing", async ({
+    context,
+    page,
+    baseURL,
+  }) => {
+    const org = await createE2EOrganization(tracked);
+    const region = await createE2ERegion(tracked, { organizationId: org.id });
+    const admin = await createE2EUser(tracked, { role: "ADMIN", organizationId: org.id });
+    const token = await createE2ESession(tracked, admin.id);
+    const { schedule } = await createE2EV2GeneratedSchedule(tracked, {
+      organizationId: org.id,
+      regionId: region.id,
+      scheduleStatus: "APPROVED",
+    });
+
+    await addSessionCookie(context, token, baseURL!);
+    await page.goto(`/cizelgeler/${schedule.id}`);
+
+    await expect(page.getByRole("button", { name: "Çizelgeyi Yayınla" })).toBeVisible();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Sil" }).click();
+
+    await expect(page).toHaveURL(/\/cizelgeler(\?|$)/);
+    await expect(page.getByText("Nöbet çizelgesi silindi.")).toBeVisible();
+
+    const deleted = await e2ePrisma.dutySchedule.findUnique({ where: { id: schedule.id } });
+    expect(deleted).toBeNull();
+  });
 });
