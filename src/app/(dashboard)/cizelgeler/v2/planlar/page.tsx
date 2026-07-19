@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/layout/empty-state";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListBanner } from "@/components/layout/list-banner";
+import { DeleteButton } from "@/components/layout/delete-button";
 import { prisma } from "@/lib/prisma";
 import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
+import { deletePlanVersionAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -152,11 +154,19 @@ export default async function DutyPlanConfigurationListPage({
                           {version.validTo ? ` – ${version.validTo.toLocaleDateString("tr-TR")}` : ""}
                         </span>
                       </div>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/cizelgeler/v2/planlar/${plan.id}/versions/${version.id}`}>
-                          {version.status === "DRAFT" ? "Düzenle" : "Görüntüle"}
-                        </Link>
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/cizelgeler/v2/planlar/${plan.id}/versions/${version.id}`}>
+                            {version.status === "DRAFT" ? "Düzenle" : "Görüntüle"}
+                          </Link>
+                        </Button>
+                        {version.status === "DRAFT" && canManage && (
+                          <DeleteButton
+                            action={deletePlanVersionAction.bind(null, version.id)}
+                            confirmMessage={`${plan.name} — Sürüm ${version.versionNumber} taslağını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`}
+                          />
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

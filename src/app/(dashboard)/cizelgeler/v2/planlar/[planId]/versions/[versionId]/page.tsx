@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ListBanner } from "@/components/layout/list-banner";
+import { DeleteButton } from "@/components/layout/delete-button";
 import {
   Table,
   TableBody,
@@ -22,6 +23,7 @@ import { ShiftDefinitionsForm } from "./shift-definitions-form";
 import { SlotRequirementsForm } from "./slot-requirements-form";
 import { RotationPoolsSection } from "./rotation-pools-section";
 import { ActivationSection } from "./activation-section";
+import { deletePlanVersionAction } from "../../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -143,23 +145,31 @@ export default async function PlanVersionEditorPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold">
-            {version.plan.name} — Sürüm {version.versionNumber}
-          </h1>
-          <Badge variant={version.status === "ACTIVE" ? "success" : version.status === "RETIRED" ? "secondary" : "outline"}>
-            {STATUS_LABEL[version.status] ?? version.status}
-          </Badge>
-          <Badge variant="outline">
-            {version.minDaysBetweenDuties === null ? "V1 Uyumluluk Modu" : "Yerel V2 Politikası"}
-          </Badge>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold">
+              {version.plan.name} — Sürüm {version.versionNumber}
+            </h1>
+            <Badge variant={version.status === "ACTIVE" ? "success" : version.status === "RETIRED" ? "secondary" : "outline"}>
+              {STATUS_LABEL[version.status] ?? version.status}
+            </Badge>
+            <Badge variant="outline">
+              {version.minDaysBetweenDuties === null ? "V1 Uyumluluk Modu" : "Yerel V2 Politikası"}
+            </Badge>
+          </div>
+          <p className="text-muted-foreground text-sm">{version.plan.region.name}</p>
+          {!isDraft && (
+            <p className="text-muted-foreground mt-1 text-sm">
+              Bu sürüm {STATUS_LABEL[version.status] ?? version.status} olduğu için düzenlenemez.
+            </p>
+          )}
         </div>
-        <p className="text-muted-foreground text-sm">{version.plan.region.name}</p>
-        {!isDraft && (
-          <p className="text-muted-foreground mt-1 text-sm">
-            Bu sürüm {STATUS_LABEL[version.status] ?? version.status} olduğu için düzenlenemez.
-          </p>
+        {editable && (
+          <DeleteButton
+            action={deletePlanVersionAction.bind(null, versionId)}
+            confirmMessage={`${version.plan.name} — Sürüm ${version.versionNumber} taslağını silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`}
+          />
         )}
       </div>
 
