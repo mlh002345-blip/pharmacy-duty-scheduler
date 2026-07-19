@@ -18,6 +18,7 @@ import { setSlotRequirements } from "@/lib/duty-rules-v2/configuration/update-sl
 import { createRotationPool } from "@/lib/duty-rules-v2/configuration/create-rotation-pool";
 import {
   addPoolMembership,
+  addPoolMembershipsByServiceArea,
   endPoolMembership,
 } from "@/lib/duty-rules-v2/configuration/update-pool-membership";
 import { activatePlanVersion } from "@/lib/duty-rules-v2/configuration/activate-plan-version";
@@ -341,6 +342,52 @@ export async function addPoolMembershipAction(
 
   revalidatePath(versionPath(planId, versionId));
   return { success: true, message: "Eczane havuza eklendi." };
+}
+
+const addMembershipsByServiceAreaSchema = z.object({
+  poolId: z.string().min(1),
+  serviceAreaId: z.string().min(1),
+  joinedAt: z.string().min(1),
+});
+
+export async function addPoolMembershipsByServiceAreaAction(
+  planId: string,
+  versionId: string,
+  _prevState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const guard = await requireOrganizationRole("managePlanConfiguration");
+  if (!guard.user) return guard.state;
+  const { user } = guard;
+
+  const parsed = addMembershipsByServiceAreaSchema.safeParse({
+    poolId: formData.get("poolId"),
+    serviceAreaId: formData.get("serviceAreaId"),
+    joinedAt: formData.get("joinedAt"),
+  });
+  if (!parsed.success) {
+    return { success: false, message: GENERIC_ERROR_MESSAGE };
+  }
+
+  const result = await addPoolMembershipsByServiceArea({
+    organizationId: user.organizationId,
+    poolId: parsed.data.poolId,
+    serviceAreaId: parsed.data.serviceAreaId,
+    joinedAt: parsed.data.joinedAt,
+    userId: user.id,
+  });
+  if (!result.ok) {
+    return { success: false, message: result.message };
+  }
+
+  revalidatePath(versionPath(planId, versionId));
+  return {
+    success: true,
+    message:
+      result.addedCount === 0
+        ? "Bu hizmet alanında eklenecek yeni eczane bulunamadı."
+        : `${result.addedCount} eczane havuza eklendi.${result.skippedCount > 0 ? ` (${result.skippedCount} eczane zaten üyeydi.)` : ""}`,
+  };
 }
 
 export async function endPoolMembershipAction(planId: string, versionId: string, membershipId: string) {

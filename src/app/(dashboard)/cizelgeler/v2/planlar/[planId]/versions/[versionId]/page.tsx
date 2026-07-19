@@ -96,7 +96,7 @@ export default async function PlanVersionEditorPage({
   const isDraft = version.status === "DRAFT";
   const editable = isDraft && canManage;
 
-  const [slots, pools, activePharmacies, readiness] = await Promise.all([
+  const [slots, pools, activePharmacies, readiness, serviceAreas] = await Promise.all([
     prisma.slotRequirement.findMany({
       where: { dayTypeRule: { planVersionId: versionId } },
       select: {
@@ -138,6 +138,11 @@ export default async function PlanVersionEditorPage({
       organizationId: user.organizationId,
       regionId,
       versionId,
+    }),
+    prisma.serviceArea.findMany({
+      where: { regionId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -351,6 +356,7 @@ export default async function PlanVersionEditorPage({
             planId={planId}
             versionId={versionId}
             regionId={regionId}
+            serviceAreas={serviceAreas}
             pools={pools.map((p) => ({
               id: p.id,
               name: p.name,

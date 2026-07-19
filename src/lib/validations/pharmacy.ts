@@ -14,6 +14,9 @@ export const pharmacySchema = z.object({
   city: z.string().trim().min(1, "İl zorunludur."),
   district: z.string().trim().min(1, "İlçe zorunludur."),
   regionId: z.string().trim().min(1, "Nöbet bölgesi seçiniz."),
+  // Boş string = etiketsiz (opsiyonel) — createPharmacyAction/
+  // updatePharmacyAction bunu null'a çevirir.
+  serviceAreaId: z.union([z.literal(""), z.string().trim().min(1)]).optional(),
   mapUrl: z.union([z.literal(""), safeHttpUrlSchema()]).optional(),
   isActive: z.coerce.boolean().default(true),
 });

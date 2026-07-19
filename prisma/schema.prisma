@@ -109,10 +109,33 @@ model Region {
   rotationPools         RotationPool[]
   dutyGenerationRuns    DutyGenerationRun[]
   dutyDraftPreviews     DutyDraftPreview[]
+  serviceAreas          ServiceArea[]
 
   // Region names may repeat across organizations, but not within one.
   @@unique([organizationId, name])
   @@index([organizationId])
+}
+
+// A named sub-grouping of pharmacies WITHIN one region — e.g. "Üniversite
+// Yakını" inside a chamber's "Merkez" region — used to tag pharmacies by
+// proximity/neighborhood so a V2 rotation pool can be bulk-filled from the
+// tag instead of adding pharmacies one at a time. Purely a labeling/
+// convenience layer: it never drives scheduling on its own (a
+// SlotRequirement still references a RotationPool, never a ServiceArea
+// directly) — see rotation-pools-section.tsx's "Hizmet Alanına Göre Ekle".
+model ServiceArea {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id], onDelete: Cascade)
+
+  pharmacies Pharmacy[]
+
+  @@unique([regionId, name])
+  @@index([regionId])
 }
 
 model Pharmacy {
@@ -138,6 +161,13 @@ model Pharmacy {
 
   regionId String
   region   Region @relation(fields: [regionId], references: [id], onDelete: Restrict)
+
+  // Konum bazlı nöbet gruplaması (opsiyonel): bir bölge içinde eczaneleri
+  // "Üniversite Yakını" gibi alt-alanlara etiketlemek için. Tek başına
+  // çizelgelemeyi etkilemez — V2 rotasyon havuzlarını bu etikete göre
+  // toplu doldurmak için bir kısayoldur (bkz. ServiceArea modeli).
+  serviceAreaId String?
+  serviceArea   ServiceArea? @relation(fields: [serviceAreaId], references: [id], onDelete: SetNull)
 
   unavailabilities       Unavailability[]
   dutyAssignments        DutyAssignment[]

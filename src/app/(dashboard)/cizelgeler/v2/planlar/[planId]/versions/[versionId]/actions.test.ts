@@ -27,6 +27,7 @@ vi.mock("@/lib/duty-rules-v2/configuration/create-rotation-pool", () => ({
 }));
 vi.mock("@/lib/duty-rules-v2/configuration/update-pool-membership", () => ({
   addPoolMembership: vi.fn(),
+  addPoolMembershipsByServiceArea: vi.fn(),
   endPoolMembership: vi.fn(),
 }));
 vi.mock("@/lib/duty-rules-v2/configuration/activate-plan-version", () => ({

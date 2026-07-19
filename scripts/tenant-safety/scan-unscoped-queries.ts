@@ -8,6 +8,9 @@ const TENANT_MODELS = [
   "user",
   "region",
   "pharmacy",
+  // Owned through its parent Region (regionId -> region.organizationId) —
+  // see prisma/schema.prisma's ServiceArea comment.
+  "serviceArea",
   "dutyRule",
   "dutySchedule",
   "dutyAssignment",

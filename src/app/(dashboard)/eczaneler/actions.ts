@@ -18,6 +18,11 @@ const REGION_NOT_FOUND_STATE: ActionState = {
   message: "Seçilen bölge bulunamadı.",
   errors: { regionId: ["Seçilen bölge bulunamadı."] },
 };
+const SERVICE_AREA_NOT_FOUND_STATE: ActionState = {
+  success: false,
+  message: "Seçilen hizmet alanı bu bölgeye ait değil.",
+  errors: { serviceAreaId: ["Seçilen hizmet alanı bu bölgeye ait değil."] },
+};
 
 function parsePharmacyForm(formData: FormData) {
   return pharmacySchema.safeParse({
@@ -28,6 +33,10 @@ function parsePharmacyForm(formData: FormData) {
     city: formData.get("city"),
     district: formData.get("district"),
     regionId: formData.get("regionId"),
+    // A caller that never renders/sets this field (an unset FormData entry
+    // is null, not undefined) must be treated the same as an explicit "" —
+    // both mean untagged — rather than failing schema validation.
+    serviceAreaId: formData.get("serviceAreaId") ?? "",
     mapUrl: formData.get("mapUrl"),
     isActive: formData.get("isActive") === "on",
   });
@@ -39,6 +48,17 @@ function parsePharmacyForm(formData: FormData) {
 // A from submitting Organization B's real regionId.
 async function findOwnedRegion(regionId: string, organizationId: string) {
   return prisma.region.findFirst({ where: { id: regionId, organizationId } });
+}
+
+// A client-supplied serviceAreaId is only trusted after confirming it
+// belongs to BOTH the caller's own organization AND the exact region the
+// pharmacy is being placed in — a service area from a different region
+// (even within the same organization) is never accepted, since
+// ServiceArea is a sub-grouping of one specific region, not the org.
+async function findOwnedServiceArea(serviceAreaId: string, regionId: string, organizationId: string) {
+  return prisma.serviceArea.findFirst({
+    where: { id: serviceAreaId, regionId, region: { organizationId } },
+  });
 }
 
 export async function createPharmacyAction(
@@ -58,14 +78,25 @@ export async function createPharmacyAction(
   if (!region) {
     return REGION_NOT_FOUND_STATE;
   }
+  if (parsed.data.serviceAreaId) {
+    const serviceArea = await findOwnedServiceArea(
+      parsed.data.serviceAreaId,
+      parsed.data.regionId,
+      user.organizationId
+    );
+    if (!serviceArea) {
+      return SERVICE_AREA_NOT_FOUND_STATE;
+    }
+  }
 
-  const { mapUrl, ...rest } = parsed.data;
+  const { mapUrl, serviceAreaId, ...rest } = parsed.data;
   await prisma.$transaction(async (tx) => {
     const created = await tx.pharmacy.create({
       data: {
         ...rest,
         normalizedName: normalizeText(rest.name),
         mapUrl: mapUrl || null,
+        serviceAreaId: serviceAreaId || null,
         // Herkese açık nöbet talep formu bağlantısı için eczaneye özel token.
         requestToken: randomBytes(16).toString("hex"),
       },
@@ -113,12 +144,27 @@ export async function updatePharmacyAction(
   if (!region) {
     return REGION_NOT_FOUND_STATE;
   }
+  if (parsed.data.serviceAreaId) {
+    const serviceArea = await findOwnedServiceArea(
+      parsed.data.serviceAreaId,
+      parsed.data.regionId,
+      user.organizationId
+    );
+    if (!serviceArea) {
+      return SERVICE_AREA_NOT_FOUND_STATE;
+    }
+  }
 
-  const { mapUrl, ...rest } = parsed.data;
+  const { mapUrl, serviceAreaId, ...rest } = parsed.data;
   await prisma.$transaction(async (tx) => {
     const updated = await tx.pharmacy.update({
       where: { id },
-      data: { ...rest, normalizedName: normalizeText(rest.name), mapUrl: mapUrl || null },
+      data: {
+        ...rest,
+        normalizedName: normalizeText(rest.name),
+        mapUrl: mapUrl || null,
+        serviceAreaId: serviceAreaId || null,
+      },
     });
     await writeAuditLog(tx, {
       organizationId: user.organizationId,

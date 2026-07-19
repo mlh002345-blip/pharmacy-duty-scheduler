@@ -14,7 +14,8 @@ işe yaradığını değil, "şimdi ne tıklıyorum" sorusunu cevaplar.
 6. [Dışa Aktarma ve Vatandaş Ekranı](#6-dışa-aktarma-ve-vatandaş-ekranı)
 7. [Sık Kullanılan Diğer Ekranlar](#7-sık-kullanılan-diğer-ekranlar)
 8. [V2: Gelişmiş Nöbet Planları — Ne Zaman Gerekir?](#8-v2-gelişmiş-nöbet-planları--ne-zaman-gerekir)
-9. [Sorun Giderme](#9-sorun-giderme)
+9. [Konum Bazlı Nöbet](#9-konum-bazlı-nöbet)
+10. [Sorun Giderme](#10-sorun-giderme)
 
 ---
 
@@ -213,7 +214,51 @@ eczanelerin nöbet sırası kalıcı olarak ilerler, bu yüzden yayınlamadan
 
 ---
 
-## 9. Sorun Giderme
+## 9. Konum Bazlı Nöbet
+
+Bazı odalarda nöbet, bölge içinde de konuma göre ayrışır — ör. "üniversite
+hastanesi yakınındaki eczaneler kendi aralarında ayrı bir nöbet listesi
+tutsun". Bunu sağlamanın iki yolu vardır.
+
+### 9.1 Ayrı Bölge (tamamen bağımsız nöbet listesi gerekiyorsa)
+
+Konuma özgü grup kendi kuralına, kendi çizelgesine ve kendi nöbet
+dengesine sahip **tamamen bağımsız** bir nöbet listesi olacaksa, en basit
+çözüm o konum için ayrı bir **Nöbet Bölgesi** açmaktır (bkz.
+[2.1 Nöbet Bölgesi Oluşturma](#21-nöbet-bölgesi-oluşturma)). O bölgedeki
+eczaneleri oraya taşıyın, bölgeye kendi nöbet kuralını tanımlayın —
+sistem zaten her bölgeyi birbirinden bağımsız çizelgeler. Ek bir
+yapılandırma gerekmez, mevcut akışın aynısıdır.
+
+### 9.2 Hizmet Alanı (aynı bölge içinde etiketleme, hızlı gruplama için)
+
+Konuma özgü grup **aynı bölgenin** bir parçası kalacaksa (aynı kural, aynı
+nöbet dengesi hesabı) ama yalnızca eczaneleri konuma göre etiketlemek ve
+bu etiketle hızlıca gruplamak istiyorsanız, **Hizmet Alanı** kullanılır:
+
+- **Nöbet Bölgeleri** → ilgili bölgenin **Düzenle** butonu → **Hizmet
+  Alanları** bölümünden yeni bir hizmet alanı adı girip **Ekle**'ye basın
+  (ör. "Üniversite Yakını").
+- **Eczaneler** → eczaneyi **Düzenle** → **Hizmet Alanı** açılır
+  menüsünden ilgili etiketi seçin. Menü yalnızca eczanenin bağlı olduğu
+  bölgenin hizmet alanlarını listeler; etiket tamamen opsiyoneldir.
+- Eczane listesinde her satırda hangi hizmet alanına etiketli olduğu
+  görünür.
+- Bir hizmet alanı silindiğinde etiketli eczaneler **silinmez**,
+  yalnızca etiketleri kalkar.
+
+Hizmet Alanı tek başına çizelge oluşturmayı etkilemez — nöbet sırasını
+veya ağırlıkları değiştirmez, salt bir etiketleme katmanıdır. Asıl işe
+yaradığı yer **V2 Plan Yapılandırma**'daki rotasyon havuzlarıdır (bkz.
+[Bölüm 8](#8-v2-gelişmiş-nöbet-planları--ne-zaman-gerekir)): bir
+rotasyon havuzunu tek tek eczane seçerek doldurmak yerine, havuzun
+düzenleme ekranındaki **"Hizmet Alanına Göre Ekle"** ile o etikete sahip
+tüm aktif eczaneleri tek tıkla havuza ekleyebilirsiniz (zaten havuzda
+olanlar ve pasif eczaneler otomatik atlanır).
+
+---
+
+## 10. Sorun Giderme
 
 **"Bu bölge için tanımlı bir nöbet kuralı bulunmuyor" hatası** — 2.3
 adımını tamamlamadan çizelge oluşturmaya çalıştınız. Önce
