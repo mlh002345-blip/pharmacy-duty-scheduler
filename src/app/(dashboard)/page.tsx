@@ -25,6 +25,7 @@ import { hasPermission } from "@/lib/auth/permissions";
 import { getTurkishMonthName, todayAtUtcMidnight } from "@/lib/scheduling/date-tr";
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
 import { getDataHealthReport } from "@/lib/health/data-health";
+import { DUTY_REQUEST_TYPE_LABELS } from "@/lib/duty-requests/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,31 @@ export default async function PanelPage() {
     }),
     prisma.historicalDutyRecord.count({ where: { batch: { organizationId: user.organizationId } } }),
   ]);
+
+  // Bekleyen talepler yalnızca aşağıdaki kurulum listesinde tek satır
+  // olarak görünmüyor — eczacının doğrudan gönderdiği bir mazeret/tercih
+  // fark edilmeden kaybolmasın diye panelin en üstünde ayrıca uyarı olarak
+  // gösterilir (bkz. kullanıcı talebi: "sisteme girince uyarı olarak
+  // görünsün mazeret var diye").
+  const pendingDutyRequests =
+    pendingDutyRequestCount > 0
+      ? await prisma.dutyRequest.findMany({
+          where: { status: "PENDING", pharmacy: { region: { organizationId: user.organizationId } } },
+          select: { requestType: true, createdAt: true, pharmacy: { select: { name: true } } },
+          orderBy: { createdAt: "asc" },
+          take: 3,
+        })
+      : [];
+  const emergencyPendingCount =
+    pendingDutyRequestCount > 0
+      ? await prisma.dutyRequest.count({
+          where: {
+            status: "PENDING",
+            requestType: "EMERGENCY_EXCUSE",
+            pharmacy: { region: { organizationId: user.organizationId } },
+          },
+        })
+      : 0;
 
   // Veri kontrolü yapıldı mı? — /veri-kontrol ile aynı sağlık raporunu
   // yeniden kullanır; oda ölçeğindeki veri hacminde ("düzine" seviyesinde
@@ -242,6 +268,45 @@ export default async function PanelPage() {
           </div>
         </div>
       </div>
+
+      {/* Bekleyen nöbet talepleri uyarısı */}
+      {pendingDutyRequestCount > 0 && (
+        <Link
+          href="/nobet-talepleri"
+          className={`hover-lift flex items-start gap-3 rounded-xl border p-4 text-sm ${
+            emergencyPendingCount > 0
+              ? "border-destructive/40 bg-destructive/5"
+              : "border-amber-300/60 bg-amber-50"
+          }`}
+        >
+          <AlertTriangle
+            className={`mt-0.5 size-5 shrink-0 ${
+              emergencyPendingCount > 0 ? "text-destructive" : "text-amber-600"
+            }`}
+          />
+          <div className="flex-1">
+            <p className={`font-semibold ${emergencyPendingCount > 0 ? "text-destructive" : "text-amber-900"}`}>
+              {pendingDutyRequestCount === 1
+                ? "İncelenmemiş 1 nöbet talebi var"
+                : `İncelenmemiş ${pendingDutyRequestCount} nöbet talebi var`}
+              {emergencyPendingCount > 0 &&
+                ` (${emergencyPendingCount} tanesi acil mazeret)`}
+            </p>
+            <p className={`mt-0.5 ${emergencyPendingCount > 0 ? "text-destructive/80" : "text-amber-800"}`}>
+              {pendingDutyRequests
+                .map(
+                  (request) =>
+                    `${request.pharmacy.name} — ${DUTY_REQUEST_TYPE_LABELS[request.requestType]}`
+                )
+                .join(", ")}
+              {pendingDutyRequestCount > pendingDutyRequests.length && " ve diğerleri"}
+            </p>
+          </div>
+          <ArrowRight
+            className={`mt-0.5 size-4 shrink-0 ${emergencyPendingCount > 0 ? "text-destructive" : "text-amber-600"}`}
+          />
+        </Link>
+      )}
 
       {/* Metrik kartları */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
