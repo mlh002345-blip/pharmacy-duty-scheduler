@@ -29,17 +29,43 @@ function versionPath(planId: string, versionId: string) {
   return `/cizelgeler/v2/planlar/${planId}/versions/${versionId}`;
 }
 
+// One plan version realistically holds, at most, a few dozen day types /
+// shifts / slot requirements — 100 KB is already generous headroom (a
+// deliberately configured version with hundreds of rows still fits
+// comfortably under this). Rejecting an oversized raw string BEFORE
+// calling JSON.parse bounds the parse-time cost itself; the zod schemas
+// below additionally cap array length, so a payload that IS under 100 KB
+// but crams in many tiny/deeply-nested elements is still rejected before
+// any DB call.
+const MAX_CONFIGURATION_JSON_FIELD_LENGTH = 100_000;
+const PARSE_FAILED = Symbol("PARSE_FAILED");
+
+function parseConfigurationJsonField(raw: FormDataEntryValue | null): unknown | typeof PARSE_FAILED {
+  if (typeof raw !== "string" || raw.length > MAX_CONFIGURATION_JSON_FIELD_LENGTH) {
+    return PARSE_FAILED;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return PARSE_FAILED;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Gün Tipleri
 // ---------------------------------------------------------------------------
 
-const dayTypeRulesSchema = z.array(
-  z.object({
-    dayType: z.enum(BUILTIN_DAY_TYPES),
-    isServed: z.boolean(),
-    weight: z.number().finite().positive().nullable(),
-  })
-);
+const dayTypeRulesSchema = z
+  .array(
+    z.object({
+      dayType: z.enum(BUILTIN_DAY_TYPES),
+      isServed: z.boolean(),
+      weight: z.number().finite().positive().nullable(),
+    })
+  )
+  // BUILTIN_DAY_TYPES itself is a short, fixed list — this cap is
+  // deliberately generous headroom, not a tight fit to its current size.
+  .max(100);
 
 export async function updateDayTypeRulesAction(
   planId: string,
@@ -51,11 +77,8 @@ export async function updateDayTypeRulesAction(
   if (!guard.user) return guard.state;
   const { user } = guard;
 
-  const raw = formData.get("rulesJson");
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(typeof raw === "string" ? raw : "[]");
-  } catch {
+  const parsedJson = parseConfigurationJsonField(formData.get("rulesJson"));
+  if (parsedJson === PARSE_FAILED) {
     return { success: false, message: GENERIC_ERROR_MESSAGE };
   }
   const parsed = dayTypeRulesSchema.safeParse(parsedJson);
@@ -139,17 +162,19 @@ export async function updatePlanVersionPolicyAction(
 // Vardiyalar
 // ---------------------------------------------------------------------------
 
-const shiftDefinitionsSchema = z.array(
-  z.object({
-    id: z.string().optional(),
-    name: z.string().min(1),
-    startMinute: z.number().int().min(0).max(1439),
-    endMinute: z.number().int().min(0).max(1439),
-    spansMidnight: z.boolean(),
-    defaultWeight: z.number().positive(),
-    sortOrder: z.number().int(),
-  })
-);
+const shiftDefinitionsSchema = z
+  .array(
+    z.object({
+      id: z.string().optional(),
+      name: z.string().min(1),
+      startMinute: z.number().int().min(0).max(1439),
+      endMinute: z.number().int().min(0).max(1439),
+      spansMidnight: z.boolean(),
+      defaultWeight: z.number().positive(),
+      sortOrder: z.number().int(),
+    })
+  )
+  .max(200);
 
 export async function updateShiftDefinitionsAction(
   planId: string,
@@ -161,11 +186,8 @@ export async function updateShiftDefinitionsAction(
   if (!guard.user) return guard.state;
   const { user } = guard;
 
-  const raw = formData.get("shiftsJson");
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(typeof raw === "string" ? raw : "[]");
-  } catch {
+  const parsedJson = parseConfigurationJsonField(formData.get("shiftsJson"));
+  if (parsedJson === PARSE_FAILED) {
     return { success: false, message: GENERIC_ERROR_MESSAGE };
   }
   const parsed = shiftDefinitionsSchema.safeParse(parsedJson);
@@ -191,17 +213,19 @@ export async function updateShiftDefinitionsAction(
 // Slot Gereksinimleri
 // ---------------------------------------------------------------------------
 
-const slotRequirementsSchema = z.array(
-  z.object({
-    id: z.string().optional(),
-    name: z.string().nullable().optional(),
-    dayTypeRuleId: z.string().min(1),
-    shiftDefinitionId: z.string().min(1),
-    rotationPoolId: z.string().nullable(),
-    requiredCount: z.number().int().min(1),
-    sortOrder: z.number().int(),
-  })
-);
+const slotRequirementsSchema = z
+  .array(
+    z.object({
+      id: z.string().optional(),
+      name: z.string().nullable().optional(),
+      dayTypeRuleId: z.string().min(1),
+      shiftDefinitionId: z.string().min(1),
+      rotationPoolId: z.string().nullable(),
+      requiredCount: z.number().int().min(1),
+      sortOrder: z.number().int(),
+    })
+  )
+  .max(1000);
 
 export async function updateSlotRequirementsAction(
   planId: string,
@@ -213,11 +237,8 @@ export async function updateSlotRequirementsAction(
   if (!guard.user) return guard.state;
   const { user } = guard;
 
-  const raw = formData.get("slotsJson");
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(typeof raw === "string" ? raw : "[]");
-  } catch {
+  const parsedJson = parseConfigurationJsonField(formData.get("slotsJson"));
+  if (parsedJson === PARSE_FAILED) {
     return { success: false, message: GENERIC_ERROR_MESSAGE };
   }
   const parsed = slotRequirementsSchema.safeParse(parsedJson);

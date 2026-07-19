@@ -43,7 +43,7 @@ export async function commitV2DraftAction(previewId: string) {
     );
   }
 
-  await markDraftPreviewConsumed(previewId);
+  await markDraftPreviewConsumed({ previewId, organizationId: user.organizationId });
   revalidatePath("/cizelgeler");
 
   redirectWithMessage(

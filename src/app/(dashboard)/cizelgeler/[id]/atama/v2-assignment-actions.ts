@@ -192,6 +192,7 @@ export async function editV2DutyAssignmentAction(
 
   const intervalPolicy = await resolveMinIntervalPolicy({
     dutyScheduleId: assignment.dutyScheduleId,
+    organizationId: user.organizationId,
   });
   if (intervalPolicy && !confirmOverride) {
     const otherAssignments = await prisma.dutyAssignment.findMany({

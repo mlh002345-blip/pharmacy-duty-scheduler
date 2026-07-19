@@ -50,7 +50,10 @@ describe("commitV2DraftAction", () => {
     await expect(commitV2DraftAction("preview-1")).rejects.toThrow(
       "REDIRECT:/cizelgeler/schedule-1?success="
     );
-    expect(markDraftPreviewConsumed).toHaveBeenCalledWith("preview-1");
+    expect(markDraftPreviewConsumed).toHaveBeenCalledWith({
+      previewId: "preview-1",
+      organizationId: "org-1",
+    });
   });
 
   it("redirects with an error flash and never consumes the preview when commit fails", async () => {
