@@ -121,6 +121,106 @@ export async function addPoolMembership(
 }
 
 // ---------------------------------------------------------------------------
+// addPoolMembershipsByServiceArea
+// ---------------------------------------------------------------------------
+//
+// Bulk-fill shortcut for the "konum bazlı nöbet" workflow: instead of
+// adding each pharmacy in a neighborhood/proximity group one at a time,
+// an admin tags pharmacies with a ServiceArea (see bolgeler/[id]/duzenle)
+// and fills a whole pool from that tag in one action. Deliberately reuses
+// addPoolMembership per pharmacy (same tenant/region checks, same
+// duplicate-membership handling) rather than re-implementing membership
+// creation — an already-open membership is silently skipped, not an error,
+// since re-running this after adding one pharmacy manually is expected.
+
+export type AddPoolMembershipsByServiceAreaInput = {
+  organizationId: string;
+  poolId: string;
+  serviceAreaId: string;
+  /** "YYYY-MM-DD" */
+  joinedAt: string;
+  userId: string;
+};
+
+export type AddPoolMembershipsByServiceAreaSuccess = {
+  ok: true;
+  addedCount: number;
+  skippedCount: number;
+};
+
+export type AddPoolMembershipsByServiceAreaErrorCode =
+  | "POOL_NOT_FOUND"
+  | "SERVICE_AREA_NOT_FOUND"
+  | "INVALID_INPUT";
+
+export type AddPoolMembershipsByServiceAreaFailure = {
+  ok: false;
+  code: AddPoolMembershipsByServiceAreaErrorCode;
+  message: string;
+};
+
+export type AddPoolMembershipsByServiceAreaResult =
+  | AddPoolMembershipsByServiceAreaSuccess
+  | AddPoolMembershipsByServiceAreaFailure;
+
+function failBulkAdd(
+  code: AddPoolMembershipsByServiceAreaErrorCode,
+  message: string
+): AddPoolMembershipsByServiceAreaFailure {
+  return { ok: false, code, message };
+}
+
+export async function addPoolMembershipsByServiceArea(
+  input: AddPoolMembershipsByServiceAreaInput
+): Promise<AddPoolMembershipsByServiceAreaResult> {
+  const { organizationId, poolId, serviceAreaId, userId } = input;
+
+  if (!ISO_DATE_PATTERN.test(input.joinedAt)) {
+    return failBulkAdd("INVALID_INPUT", "Katılım tarihi geçersiz.");
+  }
+
+  const pool = await prisma.rotationPool.findFirst({
+    where: { id: poolId, organizationId },
+    select: { id: true },
+  });
+  if (!pool) {
+    return failBulkAdd("POOL_NOT_FOUND", "Rotasyon havuzu bulunamadı.");
+  }
+
+  const serviceArea = await prisma.serviceArea.findFirst({
+    where: { id: serviceAreaId, region: { organizationId } },
+    select: { id: true },
+  });
+  if (!serviceArea) {
+    return failBulkAdd("SERVICE_AREA_NOT_FOUND", "Hizmet alanı bulunamadı.");
+  }
+
+  const pharmacies = await prisma.pharmacy.findMany({
+    where: { serviceAreaId, isActive: true },
+    select: { id: true },
+  });
+
+  let addedCount = 0;
+  let skippedCount = 0;
+  for (const pharmacy of pharmacies) {
+    const result = await addPoolMembership({
+      organizationId,
+      poolId,
+      pharmacyId: pharmacy.id,
+      joinedAt: input.joinedAt,
+      userId,
+    });
+    if (result.ok) {
+      addedCount += 1;
+    } else {
+      skippedCount += 1;
+    }
+  }
+
+  return { ok: true, addedCount, skippedCount };
+}
+
+// ---------------------------------------------------------------------------
 // endPoolMembership
 // ---------------------------------------------------------------------------
 

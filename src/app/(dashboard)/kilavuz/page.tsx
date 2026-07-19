@@ -22,7 +22,8 @@ const SECTIONS = [
   { id: "disa-aktarma", label: "6. Dışa Aktarma ve Vatandaş Ekranı" },
   { id: "diger-ekranlar", label: "7. Sık Kullanılan Diğer Ekranlar" },
   { id: "v2", label: "8. Gelişmiş Nöbet Planları (V2)" },
-  { id: "sorun-giderme", label: "9. Sorun Giderme" },
+  { id: "konum-bazli", label: "9. Konum Bazlı Nöbet" },
+  { id: "sorun-giderme", label: "10. Sorun Giderme" },
 ];
 
 function Section({
@@ -409,7 +410,71 @@ export default async function KilavuzPage() {
         </P>
       </Section>
 
-      <Section id="sorun-giderme" title="9. Sorun Giderme">
+      <Section id="konum-bazli" title="9. Konum Bazlı Nöbet">
+        <P>
+          Bazı odalarda nöbet, bölge içinde de konuma göre ayrışır — ör.
+          &quot;üniversite hastanesi yakınındaki eczaneler kendi aralarında ayrı bir
+          nöbet listesi tutsun&quot;. Bunu sağlamanın iki yolu vardır.
+        </P>
+
+        <h3 className="mt-2 font-semibold">
+          9.1 Ayrı Bölge (tamamen bağımsız nöbet listesi gerekiyorsa)
+        </h3>
+        <P>
+          Konuma özgü grup kendi kuralına, kendi çizelgesine ve kendi nöbet dengesine
+          sahip <strong>tamamen bağımsız</strong> bir nöbet listesi olacaksa, en basit
+          çözüm o konum için ayrı bir <strong>Nöbet Bölgesi</strong> açmaktır (bkz.{" "}
+          <Link href="#ilk-kurulum" className="text-primary underline">
+            2.1 Nöbet Bölgesi Oluşturma
+          </Link>
+          ). O bölgedeki eczaneleri oraya taşıyın, bölgeye kendi nöbet kuralını
+          tanımlayın — sistem zaten her bölgeyi birbirinden bağımsız çizelgeler. Ek bir
+          yapılandırma gerekmez, mevcut akışın aynısıdır.
+        </P>
+
+        <h3 className="mt-2 font-semibold">
+          9.2 Hizmet Alanı (aynı bölge içinde etiketleme, hızlı gruplama için)
+        </h3>
+        <P>
+          Konuma özgü grup <strong>aynı bölgenin</strong> bir parçası kalacaksa (aynı
+          kural, aynı nöbet dengesi hesabı) ama yalnızca eczaneleri konuma göre
+          etiketlemek ve bu etiketle hızlıca gruplamak istiyorsanız,{" "}
+          <strong>Hizmet Alanı</strong> kullanılır:
+        </P>
+        <Steps>
+          <Step>
+            <strong>Nöbet Bölgeleri</strong> → ilgili bölgenin <strong>Düzenle</strong>{" "}
+            butonu → <strong>Hizmet Alanları</strong> bölümünden yeni bir hizmet alanı
+            adı girip <strong>Ekle</strong>&apos;ye basın (ör. &quot;Üniversite
+            Yakını&quot;).
+          </Step>
+          <Step>
+            <strong>Eczaneler</strong> → eczaneyi <strong>Düzenle</strong> →{" "}
+            <strong>Hizmet Alanı</strong> açılır menüsünden ilgili etiketi seçin. Menü
+            yalnızca eczanenin bağlı olduğu bölgenin hizmet alanlarını listeler; etiket
+            tamamen opsiyoneldir.
+          </Step>
+          <Step>Eczane listesinde her satırda hangi hizmet alanına etiketli olduğu görünür.</Step>
+          <Step>
+            Bir hizmet alanı silindiğinde etiketli eczaneler <strong>silinmez</strong>,
+            yalnızca etiketleri kalkar.
+          </Step>
+        </Steps>
+        <P>
+          Hizmet Alanı tek başına çizelge oluşturmayı etkilemez — nöbet sırasını veya
+          ağırlıkları değiştirmez, salt bir etiketleme katmanıdır. Asıl işe yaradığı yer{" "}
+          <strong>V2 Plan Yapılandırma</strong>&apos;daki rotasyon havuzlarıdır (bkz.{" "}
+          <Link href="#v2" className="text-primary underline">
+            Bölüm 8
+          </Link>
+          ): bir rotasyon havuzunu tek tek eczane seçerek doldurmak yerine, havuzun
+          düzenleme ekranındaki <strong>&quot;Hizmet Alanına Göre Ekle&quot;</strong> ile
+          o etikete sahip tüm aktif eczaneleri tek tıkla havuza ekleyebilirsiniz (zaten
+          havuzda olanlar ve pasif eczaneler otomatik atlanır).
+        </P>
+      </Section>
+
+      <Section id="sorun-giderme" title="10. Sorun Giderme">
         <P>
           <strong>&quot;Bu bölge için tanımlı bir nöbet kuralı bulunmuyor&quot; hatası</strong>{" "}
           — 2.3 adımını tamamlamadan çizelge oluşturmaya çalıştınız. Önce{" "}

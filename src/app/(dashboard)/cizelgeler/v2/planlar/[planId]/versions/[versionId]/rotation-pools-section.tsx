@@ -19,7 +19,12 @@ import {
 import { ConfirmSubmitForm } from "@/components/layout/confirm-submit-form";
 import { initialActionState } from "@/lib/action-state";
 import type { RotationStrategyValue } from "@/lib/duty-rules-v2/domain/loaded-plan";
-import { createRotationPoolAction, addPoolMembershipAction, endPoolMembershipAction } from "./actions";
+import {
+  createRotationPoolAction,
+  addPoolMembershipAction,
+  addPoolMembershipsByServiceAreaAction,
+  endPoolMembershipAction,
+} from "./actions";
 
 const STRATEGY_LABELS: Record<RotationStrategyValue, string> = {
   SEQUENTIAL: "Sıralı",
@@ -47,6 +52,7 @@ export function RotationPoolsSection({
   regionId,
   pools,
   activePharmacies,
+  serviceAreas,
   editable,
 }: {
   planId: string;
@@ -54,6 +60,7 @@ export function RotationPoolsSection({
   regionId: string;
   pools: Pool[];
   activePharmacies: { id: string; name: string }[];
+  serviceAreas: { id: string; name: string }[];
   editable: boolean;
 }) {
   const createAction = createRotationPoolAction.bind(null, planId, versionId, regionId);
@@ -64,6 +71,12 @@ export function RotationPoolsSection({
 
   const addMembershipAction = addPoolMembershipAction.bind(null, planId, versionId);
   const [addState, addFormAction, addPending] = useActionState(addMembershipAction, initialActionState);
+
+  const addByAreaAction = addPoolMembershipsByServiceAreaAction.bind(null, planId, versionId);
+  const [addByAreaState, addByAreaFormAction, addByAreaPending] = useActionState(
+    addByAreaAction,
+    initialActionState
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -158,6 +171,54 @@ export function RotationPoolsSection({
               )}
               {addState.success && addState.message && (
                 <p className="text-sm text-emerald-700">{addState.message}</p>
+              )}
+
+              {editable && serviceAreas.length > 0 && (
+                <form action={addByAreaFormAction} className="flex flex-wrap items-end gap-2 border-t pt-3">
+                  <input type="hidden" name="poolId" value={pool.id} />
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor={`serviceAreaId-${pool.id}`} className="text-xs">
+                      Hizmet Alanına Göre Ekle
+                    </Label>
+                    <Select
+                      id={`serviceAreaId-${pool.id}`}
+                      name="serviceAreaId"
+                      defaultValue=""
+                      required
+                      className="h-8 w-48"
+                    >
+                      <option value="">Seçiniz</option>
+                      {serviceAreas.map((area) => (
+                        <option key={area.id} value={area.id}>
+                          {area.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor={`serviceAreaJoinedAt-${pool.id}`} className="text-xs">
+                      Katılım Tarihi
+                    </Label>
+                    <Input
+                      id={`serviceAreaJoinedAt-${pool.id}`}
+                      type="date"
+                      name="joinedAt"
+                      required
+                      className="h-8"
+                    />
+                  </div>
+                  <Button type="submit" size="sm" variant="outline" disabled={addByAreaPending}>
+                    Toplu Ekle
+                  </Button>
+                </form>
+              )}
+              {!addByAreaState.success && addByAreaState.message && (
+                <p role="alert" className="text-destructive text-sm">
+                  {addByAreaState.message}
+                </p>
+              )}
+              {addByAreaState.success && addByAreaState.message && (
+                <p className="text-sm text-emerald-700">{addByAreaState.message}</p>
               )}
             </CardContent>
           </Card>

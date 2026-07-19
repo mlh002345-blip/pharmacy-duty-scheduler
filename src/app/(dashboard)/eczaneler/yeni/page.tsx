@@ -6,10 +6,17 @@ import { createPharmacyAction } from "../actions";
 
 export default async function YeniEczanePage() {
   const user = await requireOrganizationRoleOrRedirect("manageSetupData", "/eczaneler");
-  const regions = await prisma.region.findMany({
-    where: { organizationId: user.organizationId },
-    orderBy: { name: "asc" },
-  });
+  const [regions, serviceAreas] = await Promise.all([
+    prisma.region.findMany({
+      where: { organizationId: user.organizationId },
+      orderBy: { name: "asc" },
+    }),
+    prisma.serviceArea.findMany({
+      where: { region: { organizationId: user.organizationId } },
+      select: { id: true, name: true, regionId: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -19,7 +26,7 @@ export default async function YeniEczanePage() {
           <CardTitle>Eczane Bilgileri</CardTitle>
         </CardHeader>
         <CardContent>
-          <PharmacyForm action={createPharmacyAction} regions={regions} />
+          <PharmacyForm action={createPharmacyAction} regions={regions} serviceAreas={serviceAreas} />
         </CardContent>
       </Card>
     </div>

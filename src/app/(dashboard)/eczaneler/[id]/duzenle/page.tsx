@@ -16,9 +16,14 @@ export default async function EczaneDuzenlePage({
   // Pharmacy has no direct organizationId column — ownership is derived
   // through region.organizationId. A cross-organization id must produce
   // the same notFound() as a truly-missing id, never another tenant's data.
-  const [pharmacy, regions] = await Promise.all([
+  const [pharmacy, regions, serviceAreas] = await Promise.all([
     prisma.pharmacy.findFirst({ where: { id, region: { organizationId: user.organizationId } } }),
     prisma.region.findMany({ where: { organizationId: user.organizationId }, orderBy: { name: "asc" } }),
+    prisma.serviceArea.findMany({
+      where: { region: { organizationId: user.organizationId } },
+      select: { id: true, name: true, regionId: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
   if (!pharmacy) notFound();
 
@@ -32,7 +37,7 @@ export default async function EczaneDuzenlePage({
           <CardTitle>Eczane Bilgileri</CardTitle>
         </CardHeader>
         <CardContent>
-          <PharmacyForm action={action} pharmacy={pharmacy} regions={regions} />
+          <PharmacyForm action={action} pharmacy={pharmacy} regions={regions} serviceAreas={serviceAreas} />
         </CardContent>
       </Card>
 

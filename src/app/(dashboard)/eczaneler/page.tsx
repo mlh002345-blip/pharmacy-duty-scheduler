@@ -76,6 +76,7 @@ export default async function EczanelerPage({
         phone: true,
         isActive: true,
         region: { select: { name: true } },
+        serviceArea: { select: { name: true } },
       },
       orderBy: { name: "asc" },
       skip: (page - 1) * DEFAULT_PAGE_SIZE,
@@ -173,6 +174,7 @@ export default async function EczanelerPage({
                 <TableHead>Eczane Adı</TableHead>
                 <TableHead>Eczacı</TableHead>
                 <TableHead>Bölge</TableHead>
+                <TableHead>Hizmet Alanı</TableHead>
                 <TableHead>Telefon</TableHead>
                 <TableHead>Durum</TableHead>
                 <TableHead className="text-right">İşlemler</TableHead>
@@ -184,6 +186,13 @@ export default async function EczanelerPage({
                   <TableCell className="font-medium">{pharmacy.name}</TableCell>
                   <TableCell>{pharmacy.pharmacistName}</TableCell>
                   <TableCell>{pharmacy.region.name}</TableCell>
+                  <TableCell>
+                    {pharmacy.serviceArea ? (
+                      pharmacy.serviceArea.name
+                    ) : (
+                      <span className="text-muted-foreground/50">-</span>
+                    )}
+                  </TableCell>
                   <TableCell>{pharmacy.phone}</TableCell>
                   <TableCell>
                     <Badge variant={pharmacy.isActive ? "success" : "secondary"}>
@@ -215,7 +224,7 @@ export default async function EczanelerPage({
               ))}
               {pharmacies.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground py-8 text-center">
+                  <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
                     {totalCount === 0
                       ? "Henüz eczane kaydı bulunmuyor."
                       : "Filtreye uygun eczane bulunamadı."}

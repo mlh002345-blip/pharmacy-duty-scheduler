@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import type { Pharmacy, Region } from "@prisma/client";
 
@@ -13,16 +13,22 @@ import { type ActionState, initialActionState, fieldError } from "@/lib/action-s
 
 type PharmacyAction = (state: ActionState, formData: FormData) => Promise<ActionState>;
 
+type ServiceAreaOption = { id: string; name: string; regionId: string };
+
 export function PharmacyForm({
   action,
   pharmacy,
   regions,
+  serviceAreas,
 }: {
   action: PharmacyAction;
   pharmacy?: Pharmacy;
   regions: Region[];
+  serviceAreas: ServiceAreaOption[];
 }) {
   const [state, formAction, isPending] = useActionState(action, initialActionState);
+  const [regionId, setRegionId] = useState(pharmacy?.regionId ?? "");
+  const areasInRegion = serviceAreas.filter((area) => area.regionId === regionId);
 
   return (
     <form action={formAction} className="flex max-w-2xl flex-col gap-4">
@@ -52,7 +58,13 @@ export function PharmacyForm({
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="regionId">Nöbet Bölgesi</Label>
-          <Select id="regionId" name="regionId" defaultValue={pharmacy?.regionId} required>
+          <Select
+            id="regionId"
+            name="regionId"
+            value={regionId}
+            onChange={(e) => setRegionId(e.target.value)}
+            required
+          >
             <option value="">Seçiniz</option>
             {regions.map((region) => (
               <option key={region.id} value={region.id}>
@@ -61,6 +73,24 @@ export function PharmacyForm({
             ))}
           </Select>
           <FieldError message={fieldError(state, "regionId")} />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="serviceAreaId">Hizmet Alanı (opsiyonel)</Label>
+          <Select
+            id="serviceAreaId"
+            name="serviceAreaId"
+            defaultValue={pharmacy?.serviceAreaId ?? ""}
+            disabled={!regionId}
+          >
+            <option value="">Etiketsiz</option>
+            {areasInRegion.map((area) => (
+              <option key={area.id} value={area.id}>
+                {area.name}
+              </option>
+            ))}
+          </Select>
+          <FieldError message={fieldError(state, "serviceAreaId")} />
         </div>
 
         <div className="flex flex-col gap-1.5">

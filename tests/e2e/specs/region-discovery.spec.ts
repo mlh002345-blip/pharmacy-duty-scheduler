@@ -64,8 +64,11 @@ test.describe("automatic region discovery (real browser, real Postgres)", () => 
     await page.goto("/bolgeler/yeni");
     await expect(page.locator('input[name="name"]')).toBeVisible();
     await expect(page.locator('input[name="district"]')).toBeVisible();
+    // The edit page also renders the region's Service Area manager, which
+    // has its own input[name="name"] (hizmet alanı adı) — scope by id to
+    // target only the region name field.
     await page.goto(`/bolgeler/${region.id}/duzenle`);
-    await expect(page.locator('input[name="name"]')).toHaveValue(region.name);
+    await expect(page.locator("#name")).toHaveValue(region.name);
 
     // Passivate via the real bound action, then reactivate.
     await page.goto("/bolgeler");
