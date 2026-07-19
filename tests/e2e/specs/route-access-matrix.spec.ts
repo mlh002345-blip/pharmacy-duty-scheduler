@@ -24,6 +24,7 @@ const AUTHENTICATED_ROUTES = [
   "/gecmis-nobetler",
   "/cizelgeler",
   "/veri-kontrol",
+  "/kilavuz",
 ];
 
 test.describe("role-based route access matrix", () => {
