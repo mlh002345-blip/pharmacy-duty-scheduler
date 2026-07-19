@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { ListBanner } from "@/components/layout/list-banner";
 import { SubmitButton } from "@/components/layout/submit-button";
+import { DeleteButton } from "@/components/layout/delete-button";
 import { ExportButton } from "@/components/layout/export-button";
 import { prisma } from "@/lib/prisma";
 import {
@@ -37,7 +38,11 @@ import {
   meanOf,
 } from "@/lib/balance/balance-status";
 import { ConfirmSubmitForm } from "@/components/layout/confirm-submit-form";
-import { publishDutyScheduleAction, unpublishDutyScheduleAction } from "../actions";
+import {
+  deleteDutyScheduleAction,
+  publishDutyScheduleAction,
+  unpublishDutyScheduleAction,
+} from "../actions";
 import { approveV2DraftAction, publishV2ScheduleAction } from "./v2-lifecycle-actions";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +79,7 @@ export default async function CizelgeDetayPage({
   const user = await requireOrganizationMember();
   const canPublish = hasPermission(user.role, "publishSchedule");
   const canEditAssignment = hasPermission(user.role, "editAssignment");
+  const canDelete = hasPermission(user.role, "deleteSchedule");
 
   const schedule = await prisma.dutySchedule.findFirst({
     where: { id, region: { organizationId: user.organizationId } },
@@ -318,6 +324,12 @@ export default async function CizelgeDetayPage({
             >
               Çizelgeyi Yayınla
             </ConfirmSubmitForm>
+          )}
+          {schedule.status === "DRAFT" && canDelete && (
+            <DeleteButton
+              action={deleteDutyScheduleAction.bind(null, schedule.id)}
+              confirmMessage={`${schedule.region.name} ${getTurkishMonthName(schedule.month)} ${schedule.year} çizelgesini silmek istediğinize emin misiniz?`}
+            />
           )}
         </div>
       </div>
