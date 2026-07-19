@@ -268,5 +268,69 @@ test.describe("Duty Rules V2 plan configuration UI (real browser, real Postgres)
     await expect(page.getByRole("button", { name: "Gün Tiplerini Kaydet" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Vardiyaları Kaydet" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Slot Gereksinimlerini Kaydet" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Sil" })).toHaveCount(0);
+  });
+
+  test("ADMIN deletes a DRAFT plan version from the version editor page, deleting the now-empty plan too", async ({
+    context,
+    page,
+    baseURL,
+  }) => {
+    const org = await createE2EOrganization(tracked);
+    const region = await createE2ERegion(tracked, { organizationId: org.id });
+    const admin = await createE2EUser(tracked, { role: "ADMIN", organizationId: org.id });
+    const token = await createE2ESession(tracked, admin.id);
+
+    const plan = await e2ePrisma.dutyPlan.create({
+      data: { name: "Silinecek Taslak Plan", organizationId: org.id, regionId: region.id },
+    });
+    const version = await e2ePrisma.dutyPlanVersion.create({
+      data: { planId: plan.id, versionNumber: 1, status: "DRAFT", validFrom: new Date("2026-08-01") },
+    });
+
+    await addSessionCookie(context, token, baseURL!);
+    await page.goto(`/cizelgeler/v2/planlar/${plan.id}/versions/${version.id}`);
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Sil" }).click();
+
+    await expect(page).toHaveURL(/\/cizelgeler\/v2\/planlar(\?|$)/);
+    await expect(page.getByText("Plan sürümü ve boş kalan plan silindi.")).toBeVisible();
+
+    const deletedVersion = await e2ePrisma.dutyPlanVersion.findUnique({ where: { id: version.id } });
+    expect(deletedVersion).toBeNull();
+    const deletedPlan = await e2ePrisma.dutyPlan.findUnique({ where: { id: plan.id } });
+    expect(deletedPlan).toBeNull();
+  });
+
+  test("ADMIN deletes a DRAFT plan version directly from the plan list page", async ({
+    context,
+    page,
+    baseURL,
+  }) => {
+    const org = await createE2EOrganization(tracked);
+    const region = await createE2ERegion(tracked, { organizationId: org.id });
+    const admin = await createE2EUser(tracked, { role: "ADMIN", organizationId: org.id });
+    const token = await createE2ESession(tracked, admin.id);
+
+    const plan = await e2ePrisma.dutyPlan.create({
+      data: { name: "Liste Sayfasından Silinecek Plan", organizationId: org.id, regionId: region.id },
+    });
+    const version = await e2ePrisma.dutyPlanVersion.create({
+      data: { planId: plan.id, versionNumber: 1, status: "DRAFT", validFrom: new Date("2026-08-01") },
+    });
+
+    await addSessionCookie(context, token, baseURL!);
+    await page.goto("/cizelgeler/v2/planlar");
+    await expect(page.getByText("Liste Sayfasından Silinecek Plan")).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Sil" }).click();
+
+    await expect(page.getByText("Plan sürümü ve boş kalan plan silindi.")).toBeVisible();
+    await expect(page.getByText("Liste Sayfasından Silinecek Plan")).toHaveCount(0);
+
+    const deletedVersion = await e2ePrisma.dutyPlanVersion.findUnique({ where: { id: version.id } });
+    expect(deletedVersion).toBeNull();
   });
 });
