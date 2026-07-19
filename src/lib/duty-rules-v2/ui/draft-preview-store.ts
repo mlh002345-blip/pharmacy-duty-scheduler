@@ -128,9 +128,28 @@ export async function loadDraftPreview(
   };
 }
 
-export async function markDraftPreviewConsumed(previewId: string): Promise<void> {
-  await prisma.dutyDraftPreview.update({
-    where: { id: previewId },
+export type MarkDraftPreviewConsumedParams = {
+  previewId: string;
+  organizationId: string;
+};
+
+/**
+ * Tenant-scoped: takes organizationId and filters by it in the same
+ * `where` clause, matching every other write in this module and the
+ * codebase's conditional-updateMany idiom (see commit-complete-draft.ts /
+ * approve-generated-draft.ts). The current sole caller
+ * (commitV2DraftAction) only ever reaches this after loadDraftPreview has
+ * already tenant-validated the same previewId, so this is defense-in-
+ * depth today, not a live gap — but a bare `update({where:{id}})` here
+ * would have been a silent trust-the-caller landmine for any future call
+ * site that doesn't pre-validate. updateMany + count check ensures a
+ * cross-tenant or already-raced id can never be marked consumed.
+ */
+export async function markDraftPreviewConsumed(
+  params: MarkDraftPreviewConsumedParams
+): Promise<void> {
+  await prisma.dutyDraftPreview.updateMany({
+    where: { id: params.previewId, organizationId: params.organizationId },
     data: { consumedAt: new Date() },
   });
 }

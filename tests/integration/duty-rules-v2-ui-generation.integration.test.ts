@@ -266,7 +266,7 @@ describe("Duty Rules V2 UI integration (real Postgres)", () => {
     );
     expect(loaded.draft.assignments.length).toBe(engineResult.completeDraftSchedule.assignments.length);
 
-    await markDraftPreviewConsumed(previewId);
+    await markDraftPreviewConsumed({ previewId, organizationId: organization.id });
     const afterConsume = await loadDraftPreview({ previewId, organizationId: organization.id });
     expect(afterConsume.ok).toBe(false);
     if (afterConsume.ok) return;
@@ -374,7 +374,7 @@ describe("Duty Rules V2 UI integration (real Postgres)", () => {
     if (!commitResult.ok) return;
     cleanupIds.scheduleIds.push(commitResult.dutyScheduleId);
     expect(commitResult.scheduleStatus).toBe("DRAFT");
-    await markDraftPreviewConsumed(previewId);
+    await markDraftPreviewConsumed({ previewId, organizationId: organization.id });
 
     const rotationAfterCommit = await prisma.rotationState.findFirstOrThrow({ where: { poolId: pool.id } });
     expect(rotationAfterCommit.currentRound).toBe(rotationBefore.currentRound);

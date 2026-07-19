@@ -9,14 +9,23 @@
 
 import { prisma } from "@/lib/prisma";
 
-export type ResolveMinIntervalPolicyParams = { dutyScheduleId: string };
+export type ResolveMinIntervalPolicyParams = {
+  dutyScheduleId: string;
+  /** Trusted, session-derived tenant context. The sole current caller
+   *  (editV2DutyAssignmentAction) already tenant-scopes the assignment
+   *  fetch this dutyScheduleId is derived from, so this is
+   *  defense-in-depth, not a live gap — but required here (rather than
+   *  trusted implicitly) so this function is never a bare-id landmine for
+   *  any future, unvalidated call site. */
+  organizationId: string;
+};
 export type ResolveMinIntervalPolicyResult = { minDaysBetweenDuties: number } | null;
 
 export async function resolveMinIntervalPolicy(
   params: ResolveMinIntervalPolicyParams
 ): Promise<ResolveMinIntervalPolicyResult> {
-  const schedule = await prisma.dutySchedule.findUnique({
-    where: { id: params.dutyScheduleId },
+  const schedule = await prisma.dutySchedule.findFirst({
+    where: { id: params.dutyScheduleId, region: { organizationId: params.organizationId } },
     select: {
       generationRun: {
         select: { planVersion: { select: { minDaysBetweenDuties: true } } },
