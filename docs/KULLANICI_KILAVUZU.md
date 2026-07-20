@@ -178,6 +178,13 @@ sırasında karşılaşabileceğiniz hataları önceden görmenizi sağlar.
 Aynı bölge + ay + yıl için ikinci bir çizelge oluşturulamaz — önce
 mevcut taslağı silmeniz ya da yayından kaldırmanız gerekir.
 
+**Ne kadar ileriye dönük çizelge oluşturabilirim?** Bir seferde en
+fazla, içinde bulunulan ay dahil 3 aylık bir dönem için çizelge
+oluşturulabilir (ör. Temmuz ayındaysanız Temmuz, Ağustos ve Eylül
+için üretim yapabilirsiniz; Ekim için henüz değil). Bir sonraki dönem
+yaklaştıkça yeniden deneyebilirsiniz. Bu sınır, tüm yılın tek seferde
+üretilip dışa aktarılmasını önlemek için bilinçli olarak konmuştur.
+
 ### Taslağı Silme
 
 Bir taslak çizelgeyi yanlışlıkla oluşturduysanız veya baştan almak

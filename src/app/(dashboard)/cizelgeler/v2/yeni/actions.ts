@@ -6,6 +6,11 @@ import { requireOrganizationRole } from "@/lib/auth/tenant";
 import { type ActionState, zodErrorState } from "@/lib/action-state";
 import { generateV2DraftSchema } from "@/lib/validations/duty-schedule-v2";
 import { prisma } from "@/lib/prisma";
+import { parseDateKey } from "@/lib/scheduling/date-tr";
+import {
+  GENERATION_HORIZON_EXCEEDED_MESSAGE,
+  isWithinGenerationHorizon,
+} from "@/lib/scheduling/generation-horizon";
 import { assembleV1CompatibilityEngineInput } from "@/lib/duty-rules-v2/ui/assemble-v1-compatibility-engine-input";
 import { assembleV2NativeEngineInput } from "@/lib/duty-rules-v2/ui/assemble-v2-native-engine-input";
 import { saveDraftPreview } from "@/lib/duty-rules-v2/ui/draft-preview-store";
@@ -39,6 +44,20 @@ export async function generateV2DraftPreviewAction(
     return zodErrorState(parsed.error, GENERIC_ERROR_MESSAGE);
   }
   const { regionId, periodStart, periodEnd } = parsed.data;
+
+  // Bir odanın tek oturumda ileriye dönük tüm dönemleri üretip sistemden
+  // ayrılmasını (abonelik modeliyle çelişen bir senaryo) önlemek için —
+  // bkz. src/lib/scheduling/generation-horizon.ts. periodStart zaten
+  // regex ile doğrulanmış bir ISO tarih olduğundan parseDateKey burada
+  // asla null dönmez.
+  const periodStartDate = parseDateKey(periodStart)!;
+  if (!isWithinGenerationHorizon(periodStartDate)) {
+    return {
+      success: false,
+      message: GENERIC_ERROR_MESSAGE,
+      errors: { periodStart: [GENERATION_HORIZON_EXCEEDED_MESSAGE] },
+    };
+  }
 
   // Duty Rules V2 — Phase 12 mode selection: a small, cheap read of the
   // region's ACTIVE plan version's own minDaysBetweenDuties column

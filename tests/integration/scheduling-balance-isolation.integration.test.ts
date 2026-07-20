@@ -73,9 +73,17 @@ describe("scheduling / duty-balance / historical-import isolation with identical
     const { regionA, regionB, pharmacyA, pharmacyB, tokenA } = await setupIdenticallyNamedOrganizations();
     setIntegrationTestSessionToken(tokenA);
 
+    // A month within the generation-horizon window (see
+    // src/lib/scheduling/generation-horizon.ts) — "next month" is always
+    // allowed (current + 1 <= current + MAX_GENERATION_MONTHS_AHEAD),
+    // regardless of when this test runs.
+    const nextMonthDate = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1));
+    const month = nextMonthDate.getUTCMonth() + 1;
+    const year = nextMonthDate.getUTCFullYear();
+
     const formData = new FormData();
-    formData.set("month", "9");
-    formData.set("year", "2031");
+    formData.set("month", String(month));
+    formData.set("year", String(year));
     formData.set("regionId", regionA.id);
 
     await expect(
@@ -83,7 +91,7 @@ describe("scheduling / duty-balance / historical-import isolation with identical
     ).rejects.toBeInstanceOf(IntegrationRedirectSignal);
 
     const schedule = await prisma.dutySchedule.findFirstOrThrow({
-      where: { regionId: regionA.id, month: 9, year: 2031 },
+      where: { regionId: regionA.id, month, year },
       include: { assignments: true },
     });
     tracked.dutyScheduleIds.push(schedule.id);
@@ -97,7 +105,7 @@ describe("scheduling / duty-balance / historical-import isolation with identical
     // Organization B's identically-named/identically-shaped region must
     // remain completely untouched by Organization A's generation.
     const scheduleForB = await prisma.dutySchedule.findFirst({
-      where: { regionId: regionB.id, month: 9, year: 2031 },
+      where: { regionId: regionB.id, month, year },
     });
     expect(scheduleForB).toBeNull();
   });

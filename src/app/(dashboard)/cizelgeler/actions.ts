@@ -17,6 +17,11 @@ import {
 } from "@/lib/scheduling/generate-and-save-duty-schedule";
 import { findScheduleConflicts } from "@/lib/scheduling/duty-assignment-edit";
 import { getSchedulePreCheck } from "@/lib/scheduling/schedule-precheck";
+import { dateAtUtcMidnight } from "@/lib/scheduling/date-tr";
+import {
+  GENERATION_HORIZON_EXCEEDED_MESSAGE,
+  isWithinGenerationHorizon,
+} from "@/lib/scheduling/generation-horizon";
 
 export async function createDutyScheduleAction(
   _prevState: ActionState,
@@ -37,6 +42,17 @@ export async function createDutyScheduleAction(
   }
 
   const { month, year, regionId } = parsed.data;
+
+  // Bir odanın tek oturumda ileriye dönük tüm ayları üretip sistemden
+  // ayrılmasını (abonelik modeliyle çelişen bir senaryo) önlemek için —
+  // bkz. src/lib/scheduling/generation-horizon.ts.
+  if (!isWithinGenerationHorizon(dateAtUtcMidnight(year, month, 1))) {
+    return {
+      success: false,
+      message: "Lütfen formdaki hataları düzeltin.",
+      errors: { month: [GENERATION_HORIZON_EXCEEDED_MESSAGE] },
+    };
+  }
 
   // Cross-tenant relation validation: regionId is client-supplied, only
   // trusted after confirming it belongs to the authenticated user's own

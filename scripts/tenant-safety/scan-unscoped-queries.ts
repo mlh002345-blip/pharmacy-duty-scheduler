@@ -140,6 +140,7 @@ const ALLOWLIST: Record<string, string> = {
   "src/app/(dashboard)/cizelgeler/[id]/atama/v2-assignment-actions.ts:144": "[parent-scoped query] dutyRequest scoped by candidatePharmacyId, which was already verified against organizationId a few lines above (the cross-tenant relation validation on the client-supplied pharmacyId) — same pattern as assignment-actions.ts:115.",
   "src/lib/duty-rules-v2/persistence-edit/resolve-min-interval-policy.ts:18": "[parent-scoped query] dutySchedule.findUnique by id only — its sole caller (editV2DutyAssignmentAction) has already tenant-validated this exact dutyScheduleId via the assignment's own org-scoped lookup before calling this helper; this module never receives an organizationId to scope with directly.",
   "src/app/kayit/actions.ts:85": "[pre-auth login path] pre-check for the new self-service organization's first-ADMIN email against the globally-unique User.email constraint, on a public unauthenticated signup route — no organizationId exists yet at this point, exactly like the platform-admin equivalent (src/app/platform/kurumlar/actions.ts:96).",
+  "src/app/(dashboard)/cizelgeler/actions.ts:114": "[parent-scoped query] dutySchedule.findUnique's compound key uses regionId, which was already validated against organizationId earlier in this same function (the region findFirst) — the generation-horizon check inserted above pushed this line outside the scanner's 40-line lookback window.",
 };
 
 type Finding = { file: string; line: number; snippet: string };

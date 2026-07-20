@@ -80,8 +80,10 @@ test.describe("Duty Rules V2 — V1'den Taşı migration UI (real browser, real 
     // Phase 10 connection: generate a real draft against the migrated region.
     await page.goto("/cizelgeler/v2/yeni");
     await page.getByLabel("Bölge").selectOption(region.id);
-    await page.getByLabel("Dönem Başlangıcı").fill("2031-08-01");
-    await page.getByLabel("Dönem Bitişi").fill("2031-08-08");
+    // Bir sonraki ay — üretim ufku sınırının (bkz.
+    // src/lib/scheduling/generation-horizon.ts) içinde kalır.
+    await page.getByLabel("Dönem Başlangıcı").fill("2026-08-01");
+    await page.getByLabel("Dönem Bitişi").fill("2026-08-08");
     await page.getByRole("button", { name: "V2 Taslak Oluştur" }).click();
 
     await expect(page).toHaveURL(/\/cizelgeler\/v2\/onizleme\//);
