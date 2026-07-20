@@ -77,6 +77,13 @@ model User {
   // acil durum bağlantıları (bkz. src/lib/auth/password-reset.ts).
   issuedPasswordResetTokens PasswordResetToken[] @relation("PasswordResetTokenIssuedBy")
 
+  // Yalnızca kendi kendine kayıt (/kayit) formundan gelen ilk Yönetici
+  // hesapları için doludur — KVKK Aydınlatma Metni ve Kullanım
+  // Şartları'nın kabul edildiği an, denetim/ispat amacıyla. Platform
+  // yöneticisi tarafından oluşturulan hesaplarda (kabul, sözleşme
+  // sürecinde ayrıca alınır) null kalır.
+  termsAcceptedAt DateTime?
+
   @@index([organizationId])
 }
 

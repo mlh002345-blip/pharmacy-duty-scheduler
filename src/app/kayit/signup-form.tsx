@@ -79,6 +79,27 @@ export function SelfServiceSignupForm() {
         <FieldError message={fieldError(state, "adminPasswordConfirmation")} />
       </div>
 
+      <div className="flex items-start gap-2 pt-1">
+        <input
+          id="termsAccepted"
+          name="termsAccepted"
+          type="checkbox"
+          required
+          className="mt-0.5 size-4"
+        />
+        <Label htmlFor="termsAccepted" className="text-muted-foreground text-xs leading-relaxed font-normal">
+          <Link href="/gizlilik-politikasi" target="_blank" className="text-primary underline-offset-2 hover:underline">
+            KVKK Aydınlatma Metni
+          </Link>
+          {"'ni ve "}
+          <Link href="/kullanim-sartlari" target="_blank" className="text-primary underline-offset-2 hover:underline">
+            Kullanım Şartları
+          </Link>
+          {"'nı okudum, kabul ediyorum."}
+        </Label>
+      </div>
+      <FieldError message={fieldError(state, "termsAccepted")} />
+
       {!state.success && state.message && (
         <p className="text-destructive text-sm">{state.message}</p>
       )}

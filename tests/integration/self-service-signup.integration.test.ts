@@ -21,6 +21,7 @@ function signupForm(overrides: Record<string, string> = {}): FormData {
     adminEmail: `signup-${id}@integration.test`,
     adminPassword: "GecerliSifre123!",
     adminPasswordConfirmation: "GecerliSifre123!",
+    termsAccepted: "on",
   };
   for (const [key, value] of Object.entries({ ...defaults, ...overrides })) {
     form.set(key, value);
@@ -71,6 +72,7 @@ describe("createSelfServiceOrganizationAction (real Postgres)", () => {
     expect(admin.role).toBe("ADMIN");
     expect(admin.isActive).toBe(true);
     expect(await verifyPassword("GecerliSifre123!", admin.passwordHash)).toBe(true);
+    expect(admin.termsAcceptedAt).not.toBeNull();
 
     const organization = await prisma.organization.findUniqueOrThrow({
       where: { id: admin.organizationId! },
@@ -123,6 +125,18 @@ describe("createSelfServiceOrganizationAction (real Postgres)", () => {
     const result = await createSelfServiceOrganizationAction({ success: false, message: "" }, form);
     expect(result.success).toBe(false);
     expect(result.errors?.adminPasswordConfirmation).toBeDefined();
+
+    const user = await prisma.user.findUnique({ where: { email: adminEmail } });
+    expect(user).toBeNull();
+  });
+
+  it("rejects a signup where the terms checkbox was not checked", async () => {
+    const form = signupForm({ termsAccepted: "off" });
+    const adminEmail = form.get("adminEmail") as string;
+
+    const result = await createSelfServiceOrganizationAction({ success: false, message: "" }, form);
+    expect(result.success).toBe(false);
+    expect(result.errors?.termsAccepted).toBeDefined();
 
     const user = await prisma.user.findUnique({ where: { email: adminEmail } });
     expect(user).toBeNull();
