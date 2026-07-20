@@ -139,4 +139,18 @@ describe("createDutyScheduleAction — concurrent duplicate submissions", () => 
     expect(state.errors?.regionId?.[0]).toContain("Pasif bir bölge");
     expect(generateAndSaveDutySchedule).not.toHaveBeenCalled();
   });
+
+  it("refuses to generate a schedule far beyond the generation horizon (the bulk-generate-then-churn scenario)", async () => {
+    const farFuture = new FormData();
+    farFuture.set("month", "1");
+    farFuture.set("year", "2028");
+    farFuture.set("regionId", "region-1");
+
+    const state = await createDutyScheduleAction({ success: false, message: "" }, farFuture);
+
+    expect(state.success).toBe(false);
+    expect(state.errors?.month?.[0]).toContain("bir seferde en fazla");
+    expect(prismaMock.region.findFirst).not.toHaveBeenCalled();
+    expect(generateAndSaveDutySchedule).not.toHaveBeenCalled();
+  });
 });

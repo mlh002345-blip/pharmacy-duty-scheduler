@@ -124,4 +124,15 @@ describe("generateV2DraftPreviewAction", () => {
     expect(result.success).toBe(false);
     expect(assembleV1CompatibilityEngineInput).not.toHaveBeenCalled();
   });
+
+  it("refuses a periodStart far beyond the generation horizon (the bulk-generate-then-churn scenario)", async () => {
+    const result = await generateV2DraftPreviewAction(
+      { success: false, message: "" },
+      makeFormData({ periodStart: "2028-01-01", periodEnd: "2028-01-31" })
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.errors?.periodStart?.[0]).toContain("bir seferde en fazla");
+    expect(assembleV1CompatibilityEngineInput).not.toHaveBeenCalled();
+  });
 });

@@ -332,6 +332,12 @@ export default async function KilavuzPage() {
           Aynı bölge + ay + yıl için ikinci bir çizelge oluşturulamaz — önce mevcut taslağı
           silmeniz ya da yayından kaldırmanız gerekir.
         </P>
+        <P>
+          <strong>Ne kadar ileriye dönük çizelge oluşturabilirim?</strong> Bir seferde en
+          fazla, içinde bulunulan ay dahil 3 aylık bir dönem için çizelge oluşturulabilir
+          (ör. Temmuz ayındaysanız Temmuz, Ağustos ve Eylül için üretim yapabilirsiniz;
+          Ekim için henüz değil). Bir sonraki dönem yaklaştıkça yeniden deneyebilirsiniz.
+        </P>
         <h3 className="mt-2 font-semibold">Taslağı Silme</h3>
         <P>
           Bir taslak çizelgeyi yanlışlıkla oluşturduysanız veya baştan almak istiyorsanız,
