@@ -41,8 +41,10 @@ adımları için bkz. [`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
       kuralları var; veritabanı genel internete açık değil
 - [ ] Veritabanı kullanıcısının yetkileri sadece bu uygulamanın
       şemasıyla sınırlı (gereksiz superuser yetkisi yok)
-- [ ] Düzenli otomatik yedekleme yapılandırıldı ve en az bir kez geri
-      yükleme testi yapıldı
+- [ ] Düzenli otomatik yedekleme yapılandırıldı (`npm run
+      db:backup:scheduled` bir cron/systemd timer'a bağlandı — bkz.
+      `docs/DEPLOYMENT.md` → "Otomatik Yedekleme") ve en az bir kez
+      `npm run db:recovery:rehearsal` ile geri yükleme testi yapıldı
 
 ## Seed ve Demo Verisi
 

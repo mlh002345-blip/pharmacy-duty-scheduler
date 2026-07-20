@@ -68,8 +68,8 @@ hyperscale bir sağlayıcıya ihtiyaç yok. Türkiye merkezli, KVKK uyumluluğu
   Türk sağlayıcıların çoğunda standart bir kurulum, ek bir engel yok.
 
 **Yedekleme:** Sağlayıcının otomatik snapshot/yedekleme ürünü tercih
-edilmeli; yoksa `pg_dump` ile düzenli, ayrı bir konuma (farklı bir
-sağlayıcı/bölge) yedekleme scripti kurulmalıdır — bkz.
+edilmeli; yoksa aşağıdaki "Otomatik Yedekleme" bölümündeki
+`npm run db:backup:scheduled` cron/systemd kurulumu kullanılmalı — bkz.
 `docs/SECURITY_CHECKLIST.md`.
 
 ### Fiyat Karşılaştırması (yaklaşık)
@@ -267,6 +267,80 @@ npm run start
 (Node tabanlı bir barındırma ortamında `next start` komutunu çalıştıran bir
 process manager — ör. systemd servisi, PM2, veya hosting sağlayıcınızın
 kendi runtime'ı — kullanın.)
+
+## 8. Otomatik Yedekleme
+
+`npm run db:backup:production` (bkz. `scripts/backup-restore/`) elle,
+tek seferlik çalıştırılan, denetlenen bir yedekleme aracıdır — gerçek
+pilot için bunun **günlük olarak kendiliğinden** çalışması gerekir.
+Bunun için `npm run db:backup:scheduled` (bkz.
+`scripts/backup-restore/scheduled-backup.ts`) kullanılır: aynı
+`pg_dump` mantığını (checksum + manifest ile) çağırır, ardından eski
+yedekleri temizler (varsayılan: 14 günden eski olanlar silinir; en son
+yedek, ne kadar eski olursa olsun **asla** silinmez — bkz.
+`scripts/backup-restore/retention.ts`) ve bir `backups/last-success.json`
+durum dosyası yazar.
+
+**Cron ile kurulum (örnek, her gün saat 03:00'te):**
+
+```bash
+crontab -e
+```
+
+```cron
+0 3 * * * cd /opt/nobet-yonetimi && DATABASE_URL="postgresql://..." BACKUP_RETENTION_DAYS=14 npm run db:backup:scheduled >> /var/log/nobet-yedekleme.log 2>&1
+```
+
+**systemd timer ile kurulum (alternatif):**
+
+```ini
+# /etc/systemd/system/nobet-yedekleme.service
+[Unit]
+Description=Nöbet Yönetimi - günlük veritabanı yedeği
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/nobet-yonetimi
+Environment=DATABASE_URL=postgresql://...
+Environment=BACKUP_RETENTION_DAYS=14
+ExecStart=/usr/bin/npm run db:backup:scheduled
+```
+
+```ini
+# /etc/systemd/system/nobet-yedekleme.timer
+[Unit]
+Description=Nöbet Yönetimi - günlük veritabanı yedeği (zamanlayıcı)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+systemctl enable --now nobet-yedekleme.timer
+```
+
+**Yedeklerin sunucu dışına kopyalanması (önerilir):** `backups/`
+dizini yedekleme sunucusuyla aynı fiziksel makinede olduğu için, o
+sunucu tamamen kaybedilirse (disk arızası, hesap silinmesi) yedekler
+de kaybolur. Basit bir çözüm: cron/timer'a, `scheduled-backup.ts`
+başarıyla tamamlandıktan sonra çalışacak ikinci bir adım olarak
+`rsync`/`scp` ile `backups/` dizinini ayrı bir sunucuya veya S3
+uyumlu bir nesne depolama alanına (birçok Türk sağlayıcı bunu sunar)
+kopyalayan bir komut eklemek. Örnek:
+
+```bash
+rsync -az --delete /opt/nobet-yonetimi/backups/ yedek-kullanici@ikinci-sunucu:/yedekler/nobet-yonetimi/
+```
+
+**Geri yükleme testi (zorunlu, en az bir kez):** Otomatik yedekleme,
+geri yüklenebildiği test edilmeden "yedekleme yapılıyor" sayılmaz.
+`npm run db:recovery:rehearsal` bunu uçtan uca (yedekle → geri yükle →
+doğrula) çalıştırır — bkz.
+[`docs/testing/BACKUP_RESTORE_REHEARSAL.md`](testing/BACKUP_RESTORE_REHEARSAL.md).
 
 ## Özet: Uçtan Uca Komut Sırası (Hosted Demo)
 
