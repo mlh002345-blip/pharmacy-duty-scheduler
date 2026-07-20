@@ -6,6 +6,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requirePlatformAdmin } from "@/lib/auth/platform";
 import { hashPassword } from "@/lib/auth/password";
+import { issueEmergencyPasswordResetToken } from "@/lib/auth/password-reset";
+import { getAppBaseUrl } from "@/lib/http/base-url";
 import {
   assertLastActiveOrganizationNotDeactivated,
   LastActiveOrganizationError,
@@ -274,4 +276,49 @@ export async function setOrganizationStatusAction(id: string, isActive: boolean)
     "success",
     isActive ? "Oda aktif yapıldı." : "Oda pasif yapıldı."
   );
+}
+
+// Bir odanın kilitlenmesi (tek Yöneticisi şifresini unuttu, kendi kendine
+// sıfırlama e-postası da ulaşmadı/kurulmadı) durumunda platform desteğinin
+// son çare olarak kullandığı, dar yetkili, tamamen denetlenen bir eylem.
+// Ham veritabanı erişimi asla gerekmez — SMTP'ye de ihtiyaç duymaz, üretilen
+// bağlantı doğrudan bu sayfada gösterilir; platform desteği bunu kendi
+// belirlediği (güvenli) bir kanaldan ilgili kişiye iletir. PLATFORM_ADMIN'in
+// organizasyon verisine dokunmasına izin veren TEK istisna budur (bkz.
+// docs/architecture/MULTI_TENANCY.md) — bilinçli olarak yalnızca şifre
+// sıfırlama bağlantısı üretimiyle sınırlıdır, hiçbir başka veriye erişim
+// sağlamaz.
+export async function issueEmergencyPasswordResetAction(
+  organizationId: string,
+  targetUserId: string,
+  _prevState: ActionState,
+  _formData: FormData
+): Promise<ActionState> {
+  const platformAdmin = await requirePlatformAdmin();
+
+  const targetUser = await prisma.user.findFirst({
+    where: { id: targetUserId, organizationId },
+    select: { id: true, name: true, email: true },
+  });
+  if (!targetUser) {
+    return { success: false, message: "Kullanıcı bulunamadı." };
+  }
+
+  const issued = await issueEmergencyPasswordResetToken(targetUser.id, platformAdmin.id);
+  const baseUrl = await getAppBaseUrl();
+  const link = `${baseUrl}/sifre-sifirla/${issued.token}`;
+
+  await writeAuditLog(prisma, {
+    organizationId,
+    userId: platformAdmin.id,
+    action: "UPDATE",
+    entity: "User",
+    entityId: targetUser.id,
+    after: { emergencyPasswordResetIssuedTo: targetUser.email, expiresAt: issued.expiresAt },
+  });
+
+  return {
+    success: true,
+    message: `${targetUser.name} (${targetUser.email}) için bağlantı: ${link} — 1 saat geçerlidir, yalnızca güvenli bir kanaldan iletin.`,
+  };
 }

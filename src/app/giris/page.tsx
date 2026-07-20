@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { CalendarRange, Cross, MapPin, ShieldCheck } from "lucide-react";
 
 import { getCurrentUser } from "@/lib/auth/session";
+import { ListBanner } from "@/components/layout/list-banner";
 import { LoginIllustration } from "@/components/visuals/login-illustration";
 import { LoginForm } from "./login-form";
 
@@ -20,7 +21,12 @@ const FEATURES = [
   },
 ];
 
-export default async function GirisPage() {
+export default async function GirisPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ success?: string; error?: string }>;
+}) {
+  const { success, error } = await searchParams;
   const user = await getCurrentUser();
   // An already-logged-in organization member goes to the dashboard;
   // PLATFORM_ADMIN (organizationId: null by design) goes to its own
@@ -49,6 +55,12 @@ export default async function GirisPage() {
           <p className="text-muted-foreground mt-1.5 text-sm">
             Nöbet yönetim panelinize erişmek için hesabınızla giriş yapın.
           </p>
+
+          {(success || error) && (
+            <div className="mt-6">
+              <ListBanner success={success} error={error} />
+            </div>
+          )}
 
           <div className="mt-8">
             <LoginForm />

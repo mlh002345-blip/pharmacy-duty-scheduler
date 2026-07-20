@@ -9,6 +9,7 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/prisma";
 import { setOrganizationStatusAction } from "../actions";
+import { EmergencyResetButton } from "./emergency-reset-button";
 
 export const dynamic = "force-dynamic";
 
@@ -104,24 +105,29 @@ export default async function KurumDetayPage({
       <Card>
         <CardHeader>
           <CardTitle>Yöneticiler</CardTitle>
-          <CardDescription>Bu odaya ait ADMIN rolündeki kullanıcılar.</CardDescription>
+          <CardDescription>
+            Bu odaya ait ADMIN rolündeki kullanıcılar. Odanın kendi kendine şifre
+            sıfırlaması çalışmıyorsa (ör. SMTP henüz kurulmadıysa), buradan bir acil durum
+            sıfırlama bağlantısı üretip güvenli bir kanaldan iletebilirsiniz.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {admins.length === 0 ? (
             <p className="text-muted-foreground text-sm">Bu odaya ait bir yönetici bulunmuyor.</p>
           ) : (
-            <ul className="flex flex-col gap-2">
+            <ul className="flex flex-col gap-3">
               {admins.map((admin) => (
-                <li key={admin.id} className="flex items-center justify-between text-sm">
+                <li key={admin.id} className="flex items-center justify-between gap-4 text-sm">
                   <span>
                     {admin.name}{" "}
                     <span className="text-muted-foreground">({admin.email})</span>
                   </span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
                     <span className="text-muted-foreground text-xs">{ROLE_LABELS.ADMIN}</span>
                     <Badge variant={admin.isActive ? "success" : "secondary"}>
                       {admin.isActive ? "Aktif" : "Pasif"}
                     </Badge>
+                    <EmergencyResetButton organizationId={organization.id} userId={admin.id} />
                   </div>
                 </li>
               ))}

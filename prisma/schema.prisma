@@ -70,8 +70,34 @@ model User {
   approvedGenerationRuns   DutyGenerationRun[] @relation("ApprovedGenerationRuns")
   publishedGenerationRuns  DutyGenerationRun[] @relation("PublishedGenerationRuns")
   dutyDraftPreviews        DutyDraftPreview[]
+  passwordResetTokens      PasswordResetToken[] @relation("PasswordResetTokenOwner")
+  // Yalnızca PLATFORM_ADMIN rolündeki kullanıcılar için doludur — bir
+  // organizasyonun kilitlenmiş (tek yöneticisi şifresini unutmuş) durumunu
+  // çözmek için, platform desteği tarafından uygulama içinden üretilen
+  // acil durum bağlantıları (bkz. src/lib/auth/password-reset.ts).
+  issuedPasswordResetTokens PasswordResetToken[] @relation("PasswordResetTokenIssuedBy")
 
   @@index([organizationId])
+}
+
+// Kendi kendine "şifremi unuttum" akışı ve platform desteğinin acil durum
+// sıfırlama bağlantısı, aynı bu tabloyu paylaşır — tek fark
+// issuedByPlatformAdminId alanının dolu olup olmamasıdır (denetlenebilirlik
+// için). Token tek kullanımlıktır (usedAt) ve kısa ömürlüdür (expiresAt).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  userId String
+  user   User   @relation("PasswordResetTokenOwner", fields: [userId], references: [id], onDelete: Cascade)
+
+  issuedByPlatformAdminId String?
+  issuedByPlatformAdmin   User?   @relation("PasswordResetTokenIssuedBy", fields: [issuedByPlatformAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
 }
 
 model Session {

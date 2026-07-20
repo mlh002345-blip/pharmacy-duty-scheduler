@@ -56,12 +56,17 @@ kullanıcı rolü vardır:
 Yeni bir kullanıcı eklemek için: **Kullanıcılar** → **Yeni Ekle**
 (yalnızca Yönetici görebilir).
 
-**Şifremi unuttum, ne yapmalıyım?** Sistemde kullanıcının kendi kendine
-şifre sıfırlayabildiği bir "şifremi unuttum" akışı yoktur. Bir
+**Şifremi unuttum, ne yapmalıyım?** Giriş ekranındaki **"Şifremi
+unuttum"** bağlantısına tıklayıp e-posta adresinizi girin — sistem
+kayıtlıysa size bir şifre sıfırlama bağlantısı gönderir (1 saat
+geçerlidir). Bu, sunucuda bir e-posta (SMTP) yapılandırması gerektirir;
+henüz yapılandırılmadıysa bağlantı gönderilmez. O durumda, bir
 **Yönetici**, **Kullanıcılar** → ilgili kullanıcının **Düzenle** butonu
 → **Yeni Şifre** alanına girip kaydederek şifreyi sıfırlayabilir.
-Sizin de erişiminiz yoksa, odanızdaki başka bir Yönetici'den bunu
-yapmasını isteyin.
+Odanızda hiçbir Yönetici giriş yapamıyorsa (ör. tek Yönetici şifresini
+unuttu ve e-posta da kurulu değil), sistem sağlayıcınızla iletişime
+geçin — bu son çare için platform desteği tarafında ayrı, denetlenen bir
+acil durum sıfırlama yolu bulunur.
 
 **Oturum ne kadar açık kalır?** Bir kez giriş yaptıktan sonra oturumunuz
 belirli bir süre (günler mertebesinde) açık kalır; tarayıcıyı kapatıp

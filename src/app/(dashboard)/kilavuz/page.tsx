@@ -174,11 +174,15 @@ export default async function KilavuzPage() {
           <strong>Yeni Ekle</strong> (yalnızca Yönetici görebilir).
         </P>
         <P>
-          <strong>Şifremi unuttum, ne yapmalıyım?</strong> Kendi kendine şifre
-          sıfırlama akışı yoktur. Bir <strong>Yönetici</strong>,{" "}
-          <strong>Kullanıcılar</strong> → ilgili kullanıcının{" "}
-          <strong>Düzenle</strong> butonu → <strong>Yeni Şifre</strong> alanına
-          girip kaydederek şifreyi sıfırlayabilir.
+          <strong>Şifremi unuttum, ne yapmalıyım?</strong> Giriş ekranındaki{" "}
+          <strong>&quot;Şifremi unuttum&quot;</strong> bağlantısına tıklayıp e-posta
+          adresinizi girin — sistem kayıtlıysa bir sıfırlama bağlantısı gönderir (1 saat
+          geçerlidir). Bu, sunucuda bir e-posta yapılandırması gerektirir;
+          yapılandırılmadıysa bir <strong>Yönetici</strong>, <strong>Kullanıcılar</strong>{" "}
+          → ilgili kullanıcının <strong>Düzenle</strong> butonu →{" "}
+          <strong>Yeni Şifre</strong> alanına girip kaydederek şifreyi sıfırlayabilir.
+          Odanızda hiçbir Yönetici giriş yapamıyorsa, sistem sağlayıcınızla iletişime
+          geçin.
         </P>
         <P>
           <strong>Oturum ne kadar açık kalır?</strong> Giriş yaptıktan sonra
