@@ -35,6 +35,48 @@ ortamı olarak "terfi ettirilmemelidir" — gerçek pilot için sıfırdan, temi
 bir veritabanıyla başlanmalıdır (bkz. aşağıdaki "Demo Seed'i Güvenli
 Çalıştırma" ve `docs/SECURITY_CHECKLIST.md`).
 
+## 0. Türkiye İçinde Barındırma (KVKK)
+
+Eczacı odaları kişisel veri (eczacı/eczane iletişim bilgileri, kullanıcı
+hesapları) işlediği için barındırma yeri KVKK açısından önemlidir. Bu
+bölüm, sunucu ve veritabanının **Türkiye sınırları içinde** kalmasını
+sağlayacak somut seçenekleri özetler — nihai sağlayıcı seçimi ve hesap
+açılışı proje sahibi tarafından yapılmalıdır (ödeme bilgisi gerektirir).
+
+**Küresel bulut sağlayıcıları (AWS/Google Cloud/Azure):** 2026 itibarıyla
+hiçbiri Türkiye'de tam bir bölge (region) işletmiyor. AWS'nin
+İstanbul'da bir Local Zone'u var (yalnızca EC2/S3/EBS gibi temel
+bilgi işlem hizmetleri; yönetilen PostgreSQL servisi RDS bu Local
+Zone'da sunulmuyor) — bu yüzden şu an bu proje için pratik bir seçenek
+değil. Google Cloud'un Turkcell ortaklığıyla planladığı tam bölge
+2028-2029'a işaret ediyor, henüz kullanılabilir değil.
+
+**Önerilen yaklaşım — Türk VDS/bulut sağlayıcısı:** Bu projenin
+gereksinimleri (Next.js + Node.js süreci, PostgreSQL veritabanı, wildcard
+SSL) standart bir Linux VDS üzerinde tamamen karşılanabiliyor; küresel
+hyperscale bir sağlayıcıya ihtiyaç yok. Türkiye merkezli, KVKK uyumluluğu
+öne çıkan, İstanbul/İzmir veri merkezli seçenekler: **Radore**, **Turhost**,
+**Natro** (üçü de VDS + yönetilen sunucu hizmeti sunuyor). Tipik kurulum:
+
+- VDS (root erişimli), Ubuntu/Debian
+- PostgreSQL aynı sunucuda veya sağlayıcının yönetilen PostgreSQL
+  ürünüyle (ör. Natro'nun PostgreSQL sunucu ürünü)
+- `next start` işlemini PM2 (veya systemd) ile ayakta tutmak, önünde
+  Nginx reverse proxy
+- Oda başına alt alan adı kararı (bkz. proje yol haritası) için Nginx +
+  Let's Encrypt **wildcard SSL** (`*.nobet.sizinsirket.com`) — bu
+  Türk sağlayıcıların çoğunda standart bir kurulum, ek bir engel yok.
+
+**Yedekleme:** Sağlayıcının otomatik snapshot/yedekleme ürünü tercih
+edilmeli; yoksa `pg_dump` ile düzenli, ayrı bir konuma (farklı bir
+sağlayıcı/bölge) yedekleme scripti kurulmalıdır — bkz.
+`docs/SECURITY_CHECKLIST.md`.
+
+**Sonraki adım:** Sağlayıcı/hesap seçimi ve ödeme, proje sahibinin kendi
+kararıdır. Hesap açıldığında bu bölüm, seçilen sağlayıcıya özgü kurulum
+adımlarıyla (DNS, wildcard sertifika, PM2/systemd servis dosyası)
+güncellenecektir.
+
 ## 1. PostgreSQL Hazırlığı
 
 `deploy/postgresql-demo` branch'inde `prisma/schema.prisma` zaten
