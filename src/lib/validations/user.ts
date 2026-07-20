@@ -61,3 +61,20 @@ export const updateUserSchema = z
   });
 
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+export const resetPasswordSchema = z
+  .object({
+    password: z.string().min(8, "Şifre en az 8 karakter olmalıdır."),
+    passwordConfirmation: z.string().min(1, "Şifre tekrarı zorunludur."),
+  })
+  .superRefine((data, ctx) => {
+    if (data.password !== data.passwordConfirmation) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Şifreler eşleşmiyor.",
+        path: ["passwordConfirmation"],
+      });
+    }
+  });
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
