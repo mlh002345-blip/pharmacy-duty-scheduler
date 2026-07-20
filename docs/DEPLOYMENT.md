@@ -72,6 +72,34 @@ edilmeli; yoksa `pg_dump` ile düzenli, ayrı bir konuma (farklı bir
 sağlayıcı/bölge) yedekleme scripti kurulmalıdır — bkz.
 `docs/SECURITY_CHECKLIST.md`.
 
+### Fiyat Karşılaştırması (yaklaşık)
+
+⚠️ **Bu tabloda listelenen fiyatlar, sağlayıcıların halka açık
+sitelerinden/karşılaştırma sitelerinden derlenen tahmini rakamlardır —
+kampanya/ilk dönem indirimi ile standart yenileme fiyatı genellikle
+farklıdır, KDV genelde dahil değildir, ve fiyatlar sık değişir. Hesap
+açmadan önce **mutlaka sağlayıcının kendi güncel fiyat sayfasından**
+doğrulayın; burada yalnızca bir büyüklük fikri vermek amaçlanmıştır.
+
+| Sağlayıcı | Paket | Özellikler | Aylık fiyat (yaklaşık) |
+|---|---|---|---|
+| Turhost | VPS TR (giriş seviyesi) | 1 vCPU, 1 GB RAM, 20 GB NVMe | ~226–362 TL (indirimli/standart) |
+| Turhost | VDS Plus 4 | 4 vCPU, 8 GB RAM, 200 GB SSD | ~1.152 TL (indirimli) |
+| Turhost | VDS Plus 6 | 6 vCPU, 16 GB RAM, 300 GB SSD | ~2.056–2.074 TL (indirimli) |
+| Natro | XCloud Mini | 1 vCPU, 1 GB RAM, 20 GB SSD | ~194 TL |
+| Natro | XCloud Pro | 4 vCPU, 8 GB RAM, 200 GB SSD | ~1.166 TL (ilk 3 ay) / ~2.566 TL (standart) |
+| Natro | PostgreSQL Server | Kaynak paketine göre değişken | Sitede paket bazlı fiyatlandırma — canlı kontrol gerekir |
+| Radore | Cloud Server | Kaynak paketine göre değişken | Genel pazar aralığı ~1.000–1.800 TL (4 vCPU/8 GB sınıfı) — Radore'un kendi fiyat sayfasında canlı liste yok, teklif/panel üzerinden görülüyor |
+
+**Bu proje için pratik okuma:** Bir hosted demo veya küçük ölçekli ilk
+pilot (birkaç oda, birkaç yüz eczane) için **4 vCPU / 8 GB RAM / 200 GB
+SSD** sınıfı tek bir VDS (Turhost VDS Plus 4 veya Natro XCloud Pro
+gibi, ~1.150–1.200 TL/ay bandı) hem Next.js sürecini hem de
+PostgreSQL'i aynı sunucuda rahatça çalıştırır; ayrı bir yönetilen
+veritabanı hizmetine ilk aşamada gerek yoktur. Wildcard SSL (Let's
+Encrypt, ücretsiz) ek maliyet getirmez. Domain kaydı (`.com.tr` veya
+`.com`) ayrı, yıllık ~150–400 TL civarında bir kalemdir.
+
 **Sonraki adım:** Sağlayıcı/hesap seçimi ve ödeme, proje sahibinin kendi
 kararıdır. Hesap açıldığında bu bölüm, seçilen sağlayıcıya özgü kurulum
 adımlarıyla (DNS, wildcard sertifika, PM2/systemd servis dosyası)
