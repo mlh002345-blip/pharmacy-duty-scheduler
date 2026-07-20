@@ -81,24 +81,31 @@ farklıdır, KDV genelde dahil değildir, ve fiyatlar sık değişir. Hesap
 açmadan önce **mutlaka sağlayıcının kendi güncel fiyat sayfasından**
 doğrulayın; burada yalnızca bir büyüklük fikri vermek amaçlanmıştır.
 
-| Sağlayıcı | Paket | Özellikler | Aylık fiyat (yaklaşık) |
-|---|---|---|---|
-| Turhost | VPS TR (giriş seviyesi) | 1 vCPU, 1 GB RAM, 20 GB NVMe | ~226–362 TL (indirimli/standart) |
-| Turhost | VDS Plus 4 | 4 vCPU, 8 GB RAM, 200 GB SSD | ~1.152 TL (indirimli) |
-| Turhost | VDS Plus 6 | 6 vCPU, 16 GB RAM, 300 GB SSD | ~2.056–2.074 TL (indirimli) |
-| Natro | XCloud Mini | 1 vCPU, 1 GB RAM, 20 GB SSD | ~194 TL |
-| Natro | XCloud Pro | 4 vCPU, 8 GB RAM, 200 GB SSD | ~1.166 TL (ilk 3 ay) / ~2.566 TL (standart) |
-| Natro | PostgreSQL Server | Kaynak paketine göre değişken | Sitede paket bazlı fiyatlandırma — canlı kontrol gerekir |
-| Radore | Cloud Server | Kaynak paketine göre değişken | Genel pazar aralığı ~1.000–1.800 TL (4 vCPU/8 GB sınıfı) — Radore'un kendi fiyat sayfasında canlı liste yok, teklif/panel üzerinden görülüyor |
+Turhost'un **"VPS TR"** hattı, "VPS Plus" hattından ayrı ve özellikle
+Türkiye'de barındırılıyor (KVKK için aradığımız bu) — turhost.com'daki
+canlı fiyat sayfasından doğrulanmış (2026-07-20) güncel rakamlar:
+
+| Sağlayıcı | Paket | Özellikler | İlk 3 ay | Standart (yenileme) |
+|---|---|---|---|---|
+| Turhost | VPS TR 1 | 1 vCPU, 1 GB RAM, 20 GB SSD | $4.99/ay | $16.68/ay |
+| Turhost | VPS TR 2 | 2 vCPU, 4 GB RAM, 40 GB SSD | $9.99/ay | $40.21/ay |
+| Turhost | VDS TR 4 | 4 vCPU, 8 GB RAM, 200 GB SSD | $24.99/ay | $72.79/ay |
+| Natro | XCloud Mini | 1 vCPU, 1 GB RAM, 20 GB SSD | — | ~194 TL/ay |
+| Natro | XCloud Pro | 4 vCPU, 8 GB RAM, 200 GB SSD | ~1.166 TL/ay | ~2.566 TL/ay |
+| Natro | PostgreSQL Server | Kaynak paketine göre değişken | Sitede paket bazlı fiyatlandırma — canlı kontrol gerekir | |
+| Radore | Cloud Server | Kaynak paketine göre değişken | Genel pazar aralığı ~1.000–1.800 TL (4 vCPU/8 GB sınıfı) — canlı fiyat listesi yok, teklif/panel üzerinden görülüyor | |
 
 **Bu proje için pratik okuma:** Bir hosted demo veya küçük ölçekli ilk
-pilot (birkaç oda, birkaç yüz eczane) için **4 vCPU / 8 GB RAM / 200 GB
-SSD** sınıfı tek bir VDS (Turhost VDS Plus 4 veya Natro XCloud Pro
-gibi, ~1.150–1.200 TL/ay bandı) hem Next.js sürecini hem de
-PostgreSQL'i aynı sunucuda rahatça çalıştırır; ayrı bir yönetilen
-veritabanı hizmetine ilk aşamada gerek yoktur. Wildcard SSL (Let's
-Encrypt, ücretsiz) ek maliyet getirmez. Domain kaydı (`.com.tr` veya
-`.com`) ayrı, yıllık ~150–400 TL civarında bir kalemdir.
+pilot (birkaç oda, birkaç yüz eczane) için **VPS TR 2** (2 vCPU/4 GB/
+40 GB, ~$10/ay indirimli, ~$40/ay standart) muhtemelen yeterlidir;
+kullanıcı sayısı arttıkça **VDS TR 4**'e (4 vCPU/8 GB/200 GB) geçilebilir.
+İkisi de Next.js sürecini ve PostgreSQL'i aynı sunucuda rahatça
+çalıştırır — ayrı bir yönetilen veritabanı hizmetine ilk aşamada gerek
+yoktur. **Dikkat:** standart (yenileme) fiyatı indirimli fiyatın
+3-4 katı olabiliyor — bütçe planlarken indirimli değil, standart
+fiyatı esas alın. Wildcard SSL (Let's Encrypt, ücretsiz) ek maliyet
+getirmez. Domain kaydı (`.com.tr` veya `.com`) ayrı, yıllık ~150–400 TL
+civarında bir kalemdir.
 
 **Sonraki adım:** Sağlayıcı/hesap seçimi ve ödeme, proje sahibinin kendi
 kararıdır. Hesap açıldığında bu bölüm, seçilen sağlayıcıya özgü kurulum
