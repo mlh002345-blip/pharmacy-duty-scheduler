@@ -25,6 +25,19 @@ const SECTIONS = [
   { id: "konum-bazli", label: "9. Konum Bazlı Nöbet" },
   { id: "hatirlatma", label: "10. Nöbet Hatırlatma E-postası" },
   { id: "sorun-giderme", label: "11. Sorun Giderme" },
+  { id: "sozluk", label: "12. Sözlük" },
+  { id: "sss", label: "13. Sık Sorulan Sorular" },
+];
+
+const QUICK_SUMMARY: { task: string; where: string }[] = [
+  { task: "Sisteme ilk kez giriş yapmak", where: "/giris" },
+  { task: "Nöbet çizelgesi oluşturmak", where: "Nöbet Çizelgeleri → Yeni Nöbet Çizelgesi Oluştur" },
+  { task: "Bir eczanenin nöbetini değiştirmek", where: "Çizelge detayı → ilgili günün satırında Düzenle" },
+  { task: "Çizelgeyi vatandaşa açmak", where: "Çizelge detayı → Yayınla" },
+  { task: "Çizelgeyi Excel/PDF olarak almak", where: "Çizelge detayı → Excel'e Aktar / PDF İndir" },
+  { task: "Eczanenin nöbet tutamayacağı tarihi kaydetmek", where: "Mazeretler → Yeni Mazeret" },
+  { task: "Yeni bir oda çalışanı eklemek", where: "Kullanıcılar → Yeni Ekle (yalnızca Yönetici)" },
+  { task: "Kurulumda eksik bir şey var mı kontrol etmek", where: "Veri Kontrol" },
 ];
 
 function Section({
@@ -89,6 +102,30 @@ export default async function KilavuzPage() {
       </div>
 
       <Card>
+        <CardHeader>
+          <CardTitle>Hızlı Özet</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Yapmak istediğiniz</TableHead>
+                <TableHead>Nereye gidin</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {QUICK_SUMMARY.map((row) => (
+                <TableRow key={row.task}>
+                  <TableCell>{row.task}</TableCell>
+                  <TableCell className="font-medium">{row.where}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardContent className="flex flex-wrap gap-2 py-4">
           {SECTIONS.map((section) => (
             <Link key={section.id} href={`#${section.id}`}>
@@ -135,6 +172,19 @@ export default async function KilavuzPage() {
         <P>
           Yeni bir kullanıcı eklemek için: <strong>Kullanıcılar</strong> →{" "}
           <strong>Yeni Ekle</strong> (yalnızca Yönetici görebilir).
+        </P>
+        <P>
+          <strong>Şifremi unuttum, ne yapmalıyım?</strong> Kendi kendine şifre
+          sıfırlama akışı yoktur. Bir <strong>Yönetici</strong>,{" "}
+          <strong>Kullanıcılar</strong> → ilgili kullanıcının{" "}
+          <strong>Düzenle</strong> butonu → <strong>Yeni Şifre</strong> alanına
+          girip kaydederek şifreyi sıfırlayabilir.
+        </P>
+        <P>
+          <strong>Oturum ne kadar açık kalır?</strong> Giriş yaptıktan sonra
+          oturumunuz günler mertebesinde açık kalır; tarayıcıyı kapatıp tekrar
+          açtığınızda yeniden giriş yapmanız gerekmez. Şifrenizi değiştirirseniz
+          diğer tüm oturumlar (başka cihazlar dahil) otomatik sonlandırılır.
         </P>
       </Section>
 
@@ -206,6 +256,15 @@ export default async function KilavuzPage() {
           Her bölgenin <strong>tam olarak bir</strong> nöbet kuralı olur; kural olmadan o
           bölge için çizelge oluşturulamaz.
         </P>
+        <Note>
+          <strong>Örnek:</strong> &quot;Merkez&quot; bölgesinde asgari nöbet aralığı 5
+          gün, Pazar ağırlığı 1.5, hafta içi ağırlığı 1 olarak girildi. A eczanesi bu ay
+          zaten 2 hafta içi nöbeti tuttu (toplam yük: 2), B eczanesi 1 Pazar nöbeti
+          tuttu (toplam yük: 1.5). Sistem bir sonraki günü atarken, asgari aralık
+          kuralını ihlal etmeyen eczaneler arasından toplam yükü en düşük olanı (bu
+          örnekte B&apos;yi) önceliklendirir — böylece zamanla tüm eczanelerin toplam
+          yükü birbirine yaklaşır.
+        </Note>
 
         <h3 className="mt-2 font-semibold">2.4 Tatil Günleri (opsiyonel ama önerilir)</h3>
         <P>
@@ -373,6 +432,17 @@ export default async function KilavuzPage() {
               <TableCell className="font-medium">Veri Kontrol</TableCell>
               <TableCell>Eksik/hatalı kurulum verilerini proaktif olarak listeler.</TableCell>
             </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Kullanıcılar</TableCell>
+              <TableCell>
+                Oda çalışanlarını ekleme, rol atama, pasif yapma, şifre sıfırlama
+                (yalnızca Yönetici).
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Kullanım Kılavuzu</TableCell>
+              <TableCell>Bu sayfa — sol menüden her zaman erişilebilir.</TableCell>
+            </TableRow>
           </TableBody>
         </Table>
       </Section>
@@ -531,9 +601,151 @@ export default async function KilavuzPage() {
           tarafından silinemez — önce yayından kaldırılmalıdır.
         </P>
         <P>
+          <strong>Giriş yapamıyorum, &quot;e-posta veya şifre hatalı&quot; diyor</strong> —
+          e-posta ve şifreyi tekrar kontrol edin (büyük/küçük harf duyarlıdır). Hesabınız
+          pasif yapılmışsa da aynı genel hata görünür; emin değilseniz odanızdaki bir
+          Yönetici&apos;ye sorun.
+        </P>
+        <P>
+          <strong>Art arda birkaç kez yanlış şifre girdim, artık giriş yapamıyorum</strong>{" "}
+          — sistem, kısa süreli çok sayıda başarısız girişten sonra o hesap/ağ için
+          girişleri geçici olarak yavaşlatır. Birkaç dakika bekleyip tekrar deneyin.
+        </P>
+        <P>
+          <strong>Excel içe aktarımda satırlar &quot;geçersiz&quot; olarak işaretlendi</strong>{" "}
+          — önizleme ekranındaki hata kodunu kontrol edin; genellikle zorunlu bir sütunun
+          boş bırakılmasından kaynaklanır. Yalnızca geçerli satırlar içe aktarılır,
+          geçersiz olanlar atlanır.
+        </P>
+        <P>
+          <strong>Nöbet hatırlatma e-postası gitmiyor</strong> — panel &quot;gönderildi&quot;
+          diyor ama eczaneye ulaşmıyorsa, sunucuda SMTP ayarları yapılandırılmamış
+          olabilir (bkz.{" "}
+          <Link href="#hatirlatma" className="text-primary underline">
+            Bölüm 10
+          </Link>
+          ). Sistem hata vermez, sadece gerçekte iletim yapmaz.
+        </P>
+        <P>
           <strong>Bir şey beklediğim gibi çalışmıyor</strong> — karşılaştığınız her sorunu,
           hangi sayfada olduğunuzu ve ne yapmaya çalıştığınızı belirterek iletin; hızlıca
           inceleyip düzeltiyoruz.
+        </P>
+      </Section>
+
+      <Section id="sozluk" title="12. Sözlük">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Terim</TableHead>
+              <TableHead>Anlamı</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow>
+              <TableCell className="font-medium">Taslak</TableCell>
+              <TableCell>
+                Henüz yayınlanmamış, yalnızca oda içinde görünen çizelge/plan durumu.
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Yayınlandı</TableCell>
+              <TableCell>Çizelgenin /vatandas genel sayfasında görünür olduğu durum.</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Onaylandı</TableCell>
+              <TableCell>
+                Yalnızca V2 planlarında: taslak tamamlanıp yayınlanmadan önceki ara durum.
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Ağırlık</TableCell>
+              <TableCell>
+                Bir gün türünün ne kadar &quot;yorucu&quot; sayıldığını belirten sayı.
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Asgari Nöbet Aralığı</TableCell>
+              <TableCell>
+                Aynı eczanenin iki nöbeti arasında geçmesi gereken en az gün sayısı.
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Nöbet Dengesi</TableCell>
+              <TableCell>
+                Her eczanenin toplam nöbet yükünün karşılaştırmalı görünümü.
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Hizmet Alanı</TableCell>
+              <TableCell>
+                Bir bölge içinde eczaneleri konuma göre etiketlemek için kullanılan
+                opsiyonel gruplama.
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Rotasyon Havuzu</TableCell>
+              <TableCell>Yalnızca V2 planlarında: sırayla nöbete girecek eczane listesi.</TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Manuel Atama</TableCell>
+              <TableCell>
+                Otomatik hesaplanan bir nöbetin elle değiştirilmiş hâli.
+              </TableCell>
+            </TableRow>
+            <TableRow>
+              <TableCell className="font-medium">Denetim Kaydı</TableCell>
+              <TableCell>
+                Sistemde yapılan her değişikliğin otomatik tutulan, silinemeyen kaydı.
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </Section>
+
+      <Section id="sss" title="13. Sık Sorulan Sorular">
+        <P>
+          <strong>Birden fazla oda çalışanı aynı anda sisteme girip çalışabilir mi?</strong>{" "}
+          Evet, her kullanıcının kendi hesabı ve oturumu vardır. Aynı nöbet gününü aynı
+          anda iki kişi düzenlemeye çalışırsa son kaydeden geçerli olur — büyük
+          değişiklikleri tek kişinin yapması önerilir.
+        </P>
+        <P>
+          <strong>Verilerim güvende mi, yedekleme var mı?</strong> Veritabanı yedekleme
+          politikası, sistemi barındıran altyapıya bağlıdır — odanızın barındırma
+          sağlayıcısıyla yedekleme sıklığını teyit edin.
+        </P>
+        <P>
+          <strong>Sistemi telefondan/tablet üzerinden kullanabilir miyim?</strong> Yönetim
+          paneli öncelikle masaüstü için tasarlanmıştır ama mobil tarayıcıda da açılır.
+          Eczanelerin nöbet talebi gönderdiği bağlantı ise özellikle mobil uyumlu, giriş
+          gerektirmeyen bir formdur.
+        </P>
+        <P>
+          <strong>Bir eczaneyi sistemden tamamen silebilir miyim?</strong> Yalnızca o
+          eczaneye ait hiçbir nöbet ataması yoksa. Geçmişte nöbet tutmuş bir eczane
+          silinemez — bunun yerine <strong>Pasif</strong> yapılır; pasif eczaneler yeni
+          çizelgelere dahil edilmez ama geçmiş kayıtları korunur.
+        </P>
+        <P>
+          <strong>Aynı bölgeye birden fazla nöbet kuralı tanımlayabilir miyim?</strong>{" "}
+          Hayır, her bölgenin tam olarak bir nöbet kuralı vardır. Farklı kombinasyonlar
+          gerekiyorsa ayrı bir bölge açın veya karmaşık senaryolar için V2 plan
+          yapılandırmasını kullanın (bkz.{" "}
+          <Link href="#v2" className="text-primary underline">
+            Bölüm 8
+          </Link>
+          ).
+        </P>
+        <P>
+          <strong>Yayınlanmış bir çizelgede hata fark ettim, ne yapmalıyım?</strong>{" "}
+          Standart (V1) çizelgelerde <strong>Yayından Kaldır</strong> ile geri taslağa
+          alıp düzeltip tekrar yayınlayabilirsiniz. V2 planlarında yayınlama geri
+          alınamaz — hatalı günü{" "}
+          <Link href="#manuel-duzenleme" className="text-primary underline">
+            Manuel Düzenleme
+          </Link>{" "}
+          ile doğrudan düzeltin.
         </P>
       </Section>
     </div>
