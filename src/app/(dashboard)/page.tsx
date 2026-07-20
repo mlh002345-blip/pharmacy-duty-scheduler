@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { StatCard } from "@/components/layout/stat-card";
+import { ListBanner } from "@/components/layout/list-banner";
 import { prisma } from "@/lib/prisma";
 import { requireOrganizationMember } from "@/lib/auth/tenant";
 import { hasPermission } from "@/lib/auth/permissions";
@@ -30,7 +31,12 @@ import { SendRemindersButton } from "./send-reminders-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function PanelPage() {
+export default async function PanelPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ success?: string; error?: string }>;
+}) {
+  const { success, error } = await searchParams;
   const user = await requireOrganizationMember();
   const canGenerate = hasPermission(user.role, "generateSchedule");
   const canManage = hasPermission(user.role, "manageSetupData");
@@ -240,6 +246,8 @@ export default async function PanelPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      {(success || error) && <ListBanner success={success} error={error} />}
+
       {/* Karşılama başlığı */}
       <div className="from-navy relative overflow-hidden rounded-2xl bg-gradient-to-br to-[oklch(0.34_0.05_230)] p-6 text-white shadow-lg sm:p-8">
         <div

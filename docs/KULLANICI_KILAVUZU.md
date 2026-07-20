@@ -44,6 +44,12 @@ gidebilirsiniz.
 
 ## 1. Giriş ve Roller
 
+**Odanız için hesabınız yoksa:** `/kayit` adresinden kendi kendinize
+kayıt olabilirsiniz — oda adı, il/bölge ve ilk Yönetici hesabınızın
+bilgilerini girmeniz yeterlidir; kayıt anında oda ve Yönetici hesabınız
+oluşturulur ve doğrudan panele giriş yaparsınız. Kayıt ücretsizdir;
+faturalama süreci ayrıca ve manuel olarak yürütülür.
+
 `/giris` adresinden e-posta ve şifre ile giriş yapılır. Sistemde üç
 kullanıcı rolü vardır:
 

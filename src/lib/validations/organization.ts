@@ -45,6 +45,36 @@ export const createOrganizationSchema = z.object({
 
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>;
 
+// Kendi kendine kayıt (self-service) formu için — createOrganizationSchema
+// ile aynı alanlar, artık halka açık bir formdan geldiği için şifre
+// tekrarı zorunlu ve isActive alanı yok (her zaman true — bkz.
+// src/app/kayit/actions.ts).
+export const selfServiceSignupSchema = z
+  .object({
+    name: organizationName,
+    province: organizationProvince,
+    slug: organizationSlugInput,
+    adminName: z.string().trim().min(1, "Yönetici adı soyadı zorunludur.").max(120),
+    adminEmail: z
+      .string()
+      .trim()
+      .min(1, "Yönetici e-postası zorunludur.")
+      .email("Geçerli bir e-posta giriniz."),
+    adminPassword: z.string().min(8, "Şifre en az 8 karakter olmalıdır."),
+    adminPasswordConfirmation: z.string().min(1, "Şifre tekrarı zorunludur."),
+  })
+  .superRefine((data, ctx) => {
+    if (data.adminPassword !== data.adminPasswordConfirmation) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Şifreler eşleşmiyor.",
+        path: ["adminPasswordConfirmation"],
+      });
+    }
+  });
+
+export type SelfServiceSignupInput = z.infer<typeof selfServiceSignupSchema>;
+
 export const updateOrganizationSchema = z.object({
   name: organizationName,
   province: organizationProvince,
