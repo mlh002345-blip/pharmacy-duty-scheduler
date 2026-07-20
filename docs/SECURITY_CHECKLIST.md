@@ -64,8 +64,12 @@ adımları için bkz. [`docs/DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## KVKK / Kişisel Veri
 
-- [ ] Eczacı/eczane iletişim bilgileri (isim, telefon, adres) ve kullanıcı
+- [x] Eczacı/eczane iletişim bilgileri (isim, telefon, adres) ve kullanıcı
       hesap bilgileri için KVKK kapsamında bir aydınlatma metni hazırlandı
+      (bkz. `/gizlilik-politikasi`) ve halka açık kayıt formunda
+      (`/kayit`) onay zorunlu hale getirildi; kabul zamanı
+      `User.termsAcceptedAt` alanında denetim amacıyla saklanıyor. Ayrıca
+      bkz. `/kullanim-sartlari` (hizmet şartları).
 - [ ] Veri saklama süresi ve silme talebi süreci tanımlandı
 - [ ] Kişisel verilere erişimi olan kullanıcı hesapları (ADMIN/STAFF)
       gözden geçirildi ve en az yetki ilkesine uygun şekilde sınırlandı

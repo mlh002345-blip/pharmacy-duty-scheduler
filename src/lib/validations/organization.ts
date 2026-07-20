@@ -62,6 +62,7 @@ export const selfServiceSignupSchema = z
       .email("Geçerli bir e-posta giriniz."),
     adminPassword: z.string().min(8, "Şifre en az 8 karakter olmalıdır."),
     adminPasswordConfirmation: z.string().min(1, "Şifre tekrarı zorunludur."),
+    termsAccepted: z.coerce.boolean(),
   })
   .superRefine((data, ctx) => {
     if (data.adminPassword !== data.adminPasswordConfirmation) {
@@ -69,6 +70,13 @@ export const selfServiceSignupSchema = z
         code: "custom",
         message: "Şifreler eşleşmiyor.",
         path: ["adminPasswordConfirmation"],
+      });
+    }
+    if (!data.termsAccepted) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Devam etmek için KVKK Aydınlatma Metni ve Kullanım Şartları'nı kabul etmelisiniz.",
+        path: ["termsAccepted"],
       });
     }
   });

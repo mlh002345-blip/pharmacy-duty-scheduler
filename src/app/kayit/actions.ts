@@ -60,6 +60,7 @@ export async function createSelfServiceOrganizationAction(
     adminEmail: formData.get("adminEmail"),
     adminPassword: formData.get("adminPassword"),
     adminPasswordConfirmation: formData.get("adminPasswordConfirmation"),
+    termsAccepted: formData.get("termsAccepted") === "on",
   });
   if (!parsed.success) {
     return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
@@ -108,6 +109,7 @@ export async function createSelfServiceOrganizationAction(
           role: "ADMIN",
           isActive: true,
           organizationId: organization.id,
+          termsAcceptedAt: new Date(),
         },
       });
 
