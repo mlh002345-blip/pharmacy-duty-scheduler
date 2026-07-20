@@ -37,6 +37,7 @@ function parsePharmacyForm(formData: FormData) {
     // is null, not undefined) must be treated the same as an explicit "" —
     // both mean untagged — rather than failing schema validation.
     serviceAreaId: formData.get("serviceAreaId") ?? "",
+    email: formData.get("email") ?? "",
     mapUrl: formData.get("mapUrl"),
     isActive: formData.get("isActive") === "on",
   });
@@ -89,7 +90,7 @@ export async function createPharmacyAction(
     }
   }
 
-  const { mapUrl, serviceAreaId, ...rest } = parsed.data;
+  const { mapUrl, serviceAreaId, email, ...rest } = parsed.data;
   await prisma.$transaction(async (tx) => {
     const created = await tx.pharmacy.create({
       data: {
@@ -97,6 +98,7 @@ export async function createPharmacyAction(
         normalizedName: normalizeText(rest.name),
         mapUrl: mapUrl || null,
         serviceAreaId: serviceAreaId || null,
+        email: email || null,
         // Herkese açık nöbet talep formu bağlantısı için eczaneye özel token.
         requestToken: randomBytes(16).toString("hex"),
       },
@@ -155,7 +157,7 @@ export async function updatePharmacyAction(
     }
   }
 
-  const { mapUrl, serviceAreaId, ...rest } = parsed.data;
+  const { mapUrl, serviceAreaId, email, ...rest } = parsed.data;
   await prisma.$transaction(async (tx) => {
     const updated = await tx.pharmacy.update({
       where: { id },
@@ -164,6 +166,7 @@ export async function updatePharmacyAction(
         normalizedName: normalizeText(rest.name),
         mapUrl: mapUrl || null,
         serviceAreaId: serviceAreaId || null,
+        email: email || null,
       },
     });
     await writeAuditLog(tx, {

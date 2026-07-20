@@ -23,7 +23,8 @@ const SECTIONS = [
   { id: "diger-ekranlar", label: "7. Sık Kullanılan Diğer Ekranlar" },
   { id: "v2", label: "8. Gelişmiş Nöbet Planları (V2)" },
   { id: "konum-bazli", label: "9. Konum Bazlı Nöbet" },
-  { id: "sorun-giderme", label: "10. Sorun Giderme" },
+  { id: "hatirlatma", label: "10. Nöbet Hatırlatma E-postası" },
+  { id: "sorun-giderme", label: "11. Sorun Giderme" },
 ];
 
 function Section({
@@ -474,7 +475,40 @@ export default async function KilavuzPage() {
         </P>
       </Section>
 
-      <Section id="sorun-giderme" title="10. Sorun Giderme">
+      <Section id="hatirlatma" title="10. Nöbet Hatırlatma E-postası">
+        <P>
+          Yarın nöbetçi olan eczanelere, eczane kaydında bir e-posta adresi tanımlıysa
+          hatırlatma gönderebilirsiniz.
+        </P>
+        <Steps>
+          <Step>
+            <strong>Eczaneler</strong> → eczaneyi <strong>Düzenle</strong> →{" "}
+            <strong>E-posta (opsiyonel)</strong> alanına eczanenin e-posta adresini
+            girin. Boş bırakılabilir; boşsa o eczaneye hatırlatma gönderilmez, hata da
+            üretmez.
+          </Step>
+          <Step>
+            Panelin ana sayfasındaki <strong>Nöbet Hatırlatmaları</strong> kartındaki{" "}
+            <strong>&quot;Yarının Nöbet Hatırlatmalarını Gönder&quot;</strong> butonuna
+            basın. Sistem; yarın <strong>yayınlanmış</strong> bir çizelgede nöbetçi
+            olan ve e-postası tanımlı her eczaneye bir hatırlatma e-postası gönderir.
+          </Step>
+          <Step>
+            Aynı nöbet ataması için ikinci kez gönderilmez — buton birden fazla kez
+            tıklansa da tekrar e-posta gitmez.
+          </Step>
+        </Steps>
+        <Note>
+          Bu gönderim <strong>manuel</strong>dir — sistemde otomatik/günlük bir
+          zamanlayıcı yoktur, butona her gün elle basılması gerekir. E-postanın fiilen
+          iletilebilmesi için sunucuda bir SMTP yapılandırması gereklidir;
+          yapılandırılmamışsa buton yine çalışır ve &quot;gönderildi&quot; sayısını
+          raporlar, ama gerçekte e-posta kutusuna hiçbir şey ulaşmaz.
+        </Note>
+        <P>Bu bölüm yalnızca Yönetici ve Oda Yetkilisi rollerine görünür.</P>
+      </Section>
+
+      <Section id="sorun-giderme" title="11. Sorun Giderme">
         <P>
           <strong>&quot;Bu bölge için tanımlı bir nöbet kuralı bulunmuyor&quot; hatası</strong>{" "}
           — 2.3 adımını tamamlamadan çizelge oluşturmaya çalıştınız. Önce{" "}

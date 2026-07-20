@@ -152,6 +152,10 @@ model Pharmacy {
   city           String
   district       String
   mapUrl         String?
+  // Opsiyonel — dolu olduğunda nöbet hatırlatma e-postası bu adrese
+  // gönderilir (bkz. src/lib/reminders/send-duty-reminders.ts). Boşsa
+  // eczane hatırlatma gönderiminden atlanır, hata üretmez.
+  email          String?
   // Herkese açık nöbet talep formu (/eczane-talep/[token]) için
   // tahmin edilemez, eczaneye özel bağlantı anahtarı.
   requestToken   String?  @unique
@@ -321,6 +325,13 @@ model DutyAssignment {
 
   generationRunId String?
   generationRun   DutyGenerationRun? @relation(fields: [generationRunId], references: [id], onDelete: Cascade)
+
+  // Nöbet hatırlatma e-postası ne zaman gönderildi (bkz.
+  // src/lib/reminders/send-duty-reminders.ts). NULL = henüz gönderilmedi.
+  // Aynı atama için tekrar tekrar gönderimi engellemek amacıyla bu alan
+  // set edildikten sonra bir daha gönderilmez — manuel "tekrar gönder"
+  // özelliği yok, kasıtlı olarak basit tutuldu.
+  reminderSentAt DateTime?
 
   auditLogs AuditLog[]
 

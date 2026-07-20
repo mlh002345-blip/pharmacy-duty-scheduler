@@ -57,6 +57,21 @@ export function PharmacyForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <Label htmlFor="email">E-posta (opsiyonel)</Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            placeholder="eczane@ornek.com"
+            defaultValue={pharmacy?.email ?? ""}
+          />
+          <p className="text-muted-foreground text-xs">
+            Dolu olduğunda nöbet hatırlatma e-postaları bu adrese gönderilir.
+          </p>
+          <FieldError message={fieldError(state, "email")} />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <Label htmlFor="regionId">Nöbet Bölgesi</Label>
           <Select
             id="regionId"

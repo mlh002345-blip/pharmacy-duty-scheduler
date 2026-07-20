@@ -11,6 +11,9 @@ export const pharmacySchema = z.object({
     .min(1, "Telefon numarası zorunludur.")
     .regex(/^[0-9+()\s-]+$/, "Geçerli bir telefon numarası giriniz."),
   address: z.string().trim().min(1, "Adres zorunludur."),
+  // Opsiyonel — dolu olduğunda nöbet hatırlatma e-postaları bu adrese
+  // gönderilir (bkz. src/lib/reminders/send-duty-reminders.ts).
+  email: z.union([z.literal(""), z.string().trim().email("Geçerli bir e-posta adresi giriniz.")]).optional(),
   city: z.string().trim().min(1, "İl zorunludur."),
   district: z.string().trim().min(1, "İlçe zorunludur."),
   regionId: z.string().trim().min(1, "Nöbet bölgesi seçiniz."),
