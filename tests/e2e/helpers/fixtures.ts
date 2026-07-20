@@ -361,6 +361,13 @@ export async function cleanupTrackedIds(tracked: TrackedIds): Promise<void> {
   await e2ePrisma.loginAttempt.deleteMany({
     where: { bucketType: "NETWORK", bucketKey: UNTRUSTED_NETWORK_BUCKET_KEY },
   });
+  // Same shared-bucket reasoning as the untrusted-network LoginAttempt
+  // cleanup above, but for the self-service signup rate limiter (see
+  // src/lib/auth/self-signup-rate-limit.ts) — every successful /kayit E2E
+  // signup across every spec file increments this same bucket.
+  await e2ePrisma.selfSignupAttempt.deleteMany({
+    where: { bucketKey: UNTRUSTED_NETWORK_BUCKET_KEY },
+  });
   if (tracked.userIds.length > 0) {
     await e2ePrisma.auditLog.deleteMany({
       where: {

@@ -48,6 +48,13 @@ export function LoginForm() {
       <Button type="submit" disabled={isPending} className="w-full">
         {isPending ? "Giriş yapılıyor..." : "Giriş Yap"}
       </Button>
+
+      <Link
+        href="/kayit"
+        className="text-muted-foreground text-center text-sm underline-offset-2 hover:underline"
+      >
+        Odanız için hesap oluşturun
+      </Link>
     </form>
   );
 }

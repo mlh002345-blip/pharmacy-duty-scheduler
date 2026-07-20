@@ -139,6 +139,13 @@ export default async function KilavuzPage() {
 
       <Section id="giris-ve-roller" title="1. Giriş ve Roller">
         <P>
+          <strong>Odanız için hesabınız yoksa:</strong> <code>/kayit</code> adresinden kendi
+          kendinize kayıt olabilirsiniz — oda adı, il/bölge ve ilk Yönetici hesabınızın
+          bilgilerini girmeniz yeterlidir; kayıt anında oda ve Yönetici hesabınız oluşturulur
+          ve doğrudan panele giriş yaparsınız. Kayıt ücretsizdir; faturalama süreci ayrıca ve
+          manuel olarak yürütülür.
+        </P>
+        <P>
           <code>/giris</code> adresinden e-posta ve şifre ile giriş yapılır. Sistemde üç
           kullanıcı rolü vardır:
         </P>

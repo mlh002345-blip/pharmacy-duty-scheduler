@@ -742,6 +742,19 @@ model LoginAttempt {
   @@index([windowStart])
 }
 
+// Kendi kendine kayıt (self-service) formunun kötüye kullanılmasını
+// (otomatik/toplu sahte oda açılmasını) önlemek için basit bir iz —
+// bkz. src/lib/auth/self-signup-rate-limit.ts. LoginAttempt'in aksine
+// pencereli engelleme yapmaz; yalnızca son bir saatteki başarılı kayıt
+// denemesi sayısını sayar, eşiği aşan bir istek reddedilir.
+model SelfSignupAttempt {
+  id        String   @id @default(cuid())
+  bucketKey String
+  createdAt DateTime @default(now())
+
+  @@index([bucketKey, createdAt])
+}
+
 enum PharmacyImportBatchStatus {
   PREVIEWED
   IMPORTED
