@@ -18,6 +18,7 @@
     "db:create-platform-admin": "tsx scripts/create-platform-admin.ts",
     "demo:duty-rules-v2-bilecik": "tsx scripts/duty-rules-v2-demo/seed-bilecik-and-run-demo.ts",
     "db:backup:production": "tsx scripts/backup-restore/backup-production-db.ts",
+    "db:backup:scheduled": "tsx scripts/backup-restore/scheduled-backup.ts",
     "db:restore:test": "tsx scripts/backup-restore/restore-backup-to-test.ts",
     "db:verify:restore": "tsx scripts/backup-restore/verify-restored-db.ts",
     "db:recovery:rehearsal": "tsx scripts/backup-restore/recovery-rehearsal.ts",
