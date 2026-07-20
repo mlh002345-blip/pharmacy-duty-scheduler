@@ -21,6 +21,11 @@ export type Permission =
   | "exportSchedule"
   | "manageUsers"
   | "importPharmacies"
+  // Yarının nöbetçi eczanelerine hatırlatma e-postası gönderme
+  // (bkz. src/lib/reminders/send-duty-reminders.ts). manageSetupData ile
+  // aynı roller — iletişim de günlük operasyonel bir iş, ayrı bir yetki
+  // sınıfı olarak değil, aynı gruplamada tutuldu.
+  | "sendReminders"
   // Duty Rules V2 — Phase 11: day-type/shift/slot/pool/membership CRUD on
   // DRAFT plan versions. Granted to ADMIN and STAFF, matching
   // manageSetupData's pattern. Activating a version (which retires any
@@ -49,6 +54,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "manageUsers",
     "importPharmacies",
     "managePlanConfiguration",
+    "sendReminders",
   ],
   STAFF: [
     "manageSetupData",
@@ -57,6 +63,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "publishSchedule",
     "exportSchedule",
     "managePlanConfiguration",
+    "sendReminders",
   ],
   VIEWER: ["exportSchedule"],
 };

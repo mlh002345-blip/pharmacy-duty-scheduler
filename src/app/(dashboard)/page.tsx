@@ -26,6 +26,7 @@ import { getTurkishMonthName, todayAtUtcMidnight } from "@/lib/scheduling/date-t
 import { DUTY_SCHEDULE_STATUS_LABELS } from "@/lib/scheduling/duty-schedule-labels";
 import { getDataHealthReport } from "@/lib/health/data-health";
 import { DUTY_REQUEST_TYPE_LABELS } from "@/lib/duty-requests/labels";
+import { SendRemindersButton } from "./send-reminders-button";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export default async function PanelPage() {
   const canGenerate = hasPermission(user.role, "generateSchedule");
   const canManage = hasPermission(user.role, "manageSetupData");
   const canViewAuditLog = hasPermission(user.role, "manageUsers");
+  const canSendReminders = hasPermission(user.role, "sendReminders");
   const organization = await prisma.organization.findUnique({
     where: { id: user.organizationId },
     select: { slug: true },
@@ -400,6 +402,21 @@ export default async function PanelPage() {
           )}
         </div>
       </div>
+
+      {canSendReminders && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Nöbet Hatırlatmaları</CardTitle>
+            <CardDescription>
+              Yarın nöbetçi olan, e-postası tanımlı eczanelere hatırlatma gönderin. Daha
+              önce gönderilmiş bir atamaya ikinci kez gönderilmez.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SendRemindersButton />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
         {/* Hızlı işlemler */}

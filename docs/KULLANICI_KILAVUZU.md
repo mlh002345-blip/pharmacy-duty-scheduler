@@ -15,7 +15,8 @@ işe yaradığını değil, "şimdi ne tıklıyorum" sorusunu cevaplar.
 7. [Sık Kullanılan Diğer Ekranlar](#7-sık-kullanılan-diğer-ekranlar)
 8. [V2: Gelişmiş Nöbet Planları — Ne Zaman Gerekir?](#8-v2-gelişmiş-nöbet-planları--ne-zaman-gerekir)
 9. [Konum Bazlı Nöbet](#9-konum-bazlı-nöbet)
-10. [Sorun Giderme](#10-sorun-giderme)
+10. [Nöbet Hatırlatma E-postası](#10-nöbet-hatırlatma-e-postası)
+11. [Sorun Giderme](#11-sorun-giderme)
 
 ---
 
@@ -258,7 +259,37 @@ olanlar ve pasif eczaneler otomatik atlanır).
 
 ---
 
-## 10. Sorun Giderme
+## 10. Nöbet Hatırlatma E-postası
+
+Yarın nöbetçi olan eczanelere, eczane kaydında bir e-posta adresi
+tanımlıysa hatırlatma gönderebilirsiniz.
+
+- **Eczaneler** → eczaneyi **Düzenle** → **E-posta (opsiyonel)** alanına
+  eczanenin e-posta adresini girin. Bu alan boş bırakılabilir; boşsa o
+  eczaneye hatırlatma gönderilmez, hata da üretmez.
+- Panelin ana sayfasında, **Nöbet Hatırlatmaları** kartındaki
+  **"Yarının Nöbet Hatırlatmalarını Gönder"** butonuna basın. Sistem;
+  yarın **yayınlanmış** bir çizelgede nöbetçi olan ve e-postası tanımlı
+  her eczaneye bir hatırlatma e-postası gönderir.
+- Aynı nöbet ataması için ikinci kez gönderilmez — buton birden fazla kez
+  tıklansa da tekrar e-posta gitmez.
+- Gönderim sonrası, kaç e-postanın gönderildiği, kaç eczanenin
+  e-postasının eksik olduğu ve varsa kaç tanesinin daha önce gönderilmiş
+  olduğu özet olarak gösterilir.
+- Bu gönderim **manuel**dir — sistemde otomatik/günlük bir zamanlayıcı
+  yoktur; butona her gün elle basılması gerekir. E-postanın fiilen
+  iletilebilmesi için sunucuda bir SMTP yapılandırması (ortam
+  değişkenleri) gereklidir. Yapılandırılmamışsa buton yine çalışır ve
+  "gönderildi" sayısını raporlar (atama kayıt altına alınır, tekrar
+  denenmez), ama gerçekte e-posta kutusuna hiçbir şey ulaşmaz — canlı
+  kullanımdan önce bir sistem yöneticisinin SMTP ayarlarını yapması
+  gerekir.
+- Bu bölüm yalnızca **Yönetici** ve **Oda Yetkilisi** rollerine
+  görünür.
+
+---
+
+## 11. Sorun Giderme
 
 **"Bu bölge için tanımlı bir nöbet kuralı bulunmuyor" hatası** — 2.3
 adımını tamamlamadan çizelge oluşturmaya çalıştınız. Önce

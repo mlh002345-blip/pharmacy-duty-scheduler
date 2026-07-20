@@ -17,6 +17,7 @@ const ALL_PERMISSIONS: Permission[] = [
   "manageUsers",
   "importPharmacies",
   "managePlanConfiguration",
+  "sendReminders",
 ];
 
 // The full role × permission matrix, as an explicit, reviewable table
@@ -40,6 +41,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     manageUsers: false,
     importPharmacies: false,
     managePlanConfiguration: false,
+    sendReminders: false,
   },
   ADMIN: {
     manageSetupData: true,
@@ -53,6 +55,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     manageUsers: true,
     importPharmacies: true,
     managePlanConfiguration: true,
+    sendReminders: true,
   },
   STAFF: {
     manageSetupData: true,
@@ -66,6 +69,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     manageUsers: false,
     importPharmacies: false,
     managePlanConfiguration: true,
+    sendReminders: true,
   },
   VIEWER: {
     manageSetupData: false,
@@ -79,6 +83,7 @@ const EXPECTED: Record<UserRole, Record<Permission, boolean>> = {
     manageUsers: false,
     importPharmacies: false,
     managePlanConfiguration: false,
+    sendReminders: false,
   },
 };
 
