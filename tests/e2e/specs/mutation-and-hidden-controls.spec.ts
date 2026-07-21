@@ -47,10 +47,10 @@ test.describe("server-side mutation authorization", () => {
     const before = await e2ePrisma.user.count();
 
     await page.goto("/kullanicilar/yeni");
-    await expect(page).toHaveURL(/\/\?error=/);
+    await expect(page).toHaveURL(/\/panel\?error=/);
 
     await page.goto(`/kullanicilar/${someOtherUser.id}/duzenle`);
-    await expect(page).toHaveURL(/\/\?error=/);
+    await expect(page).toHaveURL(/\/panel\?error=/);
 
     const after = await e2ePrisma.user.count();
     expect(after).toBe(before);

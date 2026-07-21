@@ -127,7 +127,7 @@ export default async function DenetimKayitlariPage({
 }) {
   const user = await requireOrganizationRoleOrRedirect(
     "manageUsers",
-    "/",
+    "/panel",
     "Bu sayfaya erişim yetkiniz bulunmuyor."
   );
   const { page: pageParam } = await searchParams;

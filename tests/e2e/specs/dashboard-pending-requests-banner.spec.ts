@@ -40,7 +40,7 @@ test.describe("dashboard pending duty request banner (real browser, real Postgre
 
     await createE2EDutyRequest(tracked, pharmacy.id, region.id);
 
-    await page.goto("/");
+    await page.goto("/panel");
     const banner = page.getByRole("link", { name: /İncelenmemiş 1 nöbet talebi var/ });
     await expect(banner).toBeVisible();
     await expect(banner).toContainText(pharmacy.name);
@@ -76,7 +76,7 @@ test.describe("dashboard pending duty request banner (real browser, real Postgre
     });
     tracked.dutyRequestIds.push(request.id);
 
-    await page.goto("/");
+    await page.goto("/panel");
     const banner = page.getByRole("link", { name: /İncelenmemiş 1 nöbet talebi var/ });
     await expect(banner).toBeVisible();
     await expect(banner).toContainText("acil mazeret");
@@ -91,7 +91,7 @@ test.describe("dashboard pending duty request banner (real browser, real Postgre
     const token = await createE2ESession(tracked, admin.id);
     await addSessionCookie(context, token, baseURL!);
 
-    await page.goto("/");
+    await page.goto("/panel");
     await expect(page.getByText(/İncelenmemiş .* nöbet talebi var/)).toHaveCount(0);
   });
 
@@ -110,7 +110,7 @@ test.describe("dashboard pending duty request banner (real browser, real Postgre
 
     await createE2EDutyRequest(tracked, pharmacyB.id, regionB.id);
 
-    await page.goto("/");
+    await page.goto("/panel");
     await expect(page.getByText(/İncelenmemiş .* nöbet talebi var/)).toHaveCount(0);
   });
 });

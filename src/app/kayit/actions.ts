@@ -141,5 +141,5 @@ export async function createSelfServiceOrganizationAction(
   await recordSelfSignupAttempt(networkBucketKey);
   await createSession(createdAdminId);
 
-  redirectWithMessage("/", "success", "Odanız oluşturuldu. Hoş geldiniz!");
+  redirectWithMessage("/panel", "success", "Odanız oluşturuldu. Hoş geldiniz!");
 }

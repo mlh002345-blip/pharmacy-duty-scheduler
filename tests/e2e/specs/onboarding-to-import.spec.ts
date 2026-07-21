@@ -92,7 +92,7 @@ test.describe("organization onboarding to pharmacy import (real browser, real Po
     await page.fill('input[name="email"]', adminEmail);
     await page.fill('input[name="password"]', E2E_TEST_PASSWORD);
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL("/");
+    await expect(page).toHaveURL("/panel");
 
     // Step 3: two regions exist for this organization (createRegionAction's
     // own end-state; the region-creation form is a separate unbound

@@ -102,7 +102,7 @@ test.describe("two-organization tenant isolation (real browser, real Postgres)",
     await createE2EPharmacy(tracked, regionC.id);
 
     await addSessionCookie(context, tokenA, baseURL!);
-    await page.goto("/");
+    await page.goto("/panel");
 
     const pharmacyCountText = await page
       .locator("text=Toplam Eczane")

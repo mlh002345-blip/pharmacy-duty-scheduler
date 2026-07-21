@@ -28,7 +28,7 @@ export default async function KullanicilarPage({
 }) {
   const currentUser = await requireOrganizationRoleOrRedirect(
     "manageUsers",
-    "/",
+    "/panel",
     "Bu sayfaya erişim yetkiniz bulunmuyor."
   );
   const { success, error, page: pageParam } = await searchParams;

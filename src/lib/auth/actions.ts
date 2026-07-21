@@ -111,7 +111,7 @@ export async function loginAction(
   // would otherwise log "succeeded" for a login that never actually
   // established a session.
   logger.info("auth_login_succeeded", { requestId: await getRequestId(), userId: user.id });
-  redirect("/");
+  redirect("/panel");
 }
 
 export async function logoutAction() {

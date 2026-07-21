@@ -48,7 +48,7 @@ test.describe("session fixation resistance", () => {
     await page.fill("#email", user.email);
     await page.fill("#password", E2E_TEST_PASSWORD);
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/$/);
+    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/panel$/);
 
     const cookiesAfterLogin = await context.cookies();
     const issuedToken = cookiesAfterLogin.find((c) => c.name === SESSION_COOKIE_NAME)!.value;
@@ -75,7 +75,7 @@ test.describe("session fixation resistance", () => {
     await page.fill("#email", user.email);
     await page.fill("#password", E2E_TEST_PASSWORD);
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/$/);
+    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/panel$/);
 
     const cookiesAfterSecondLogin = await context.cookies();
     const secondToken = cookiesAfterSecondLogin.find((c) => c.name === SESSION_COOKIE_NAME)!.value;

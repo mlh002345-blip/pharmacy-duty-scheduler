@@ -60,7 +60,7 @@ test.describe("password reset (real browser, real Postgres)", () => {
     await page.fill('input[name="email"]', email);
     await page.fill('input[name="password"]', "YeniSifre123!");
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL("/");
+    await expect(page).toHaveURL("/panel");
   });
 
   test("an unregistered email shows the same generic message (no enumeration)", async ({ page }) => {
@@ -126,7 +126,7 @@ test.describe("password reset (real browser, real Postgres)", () => {
     await page.fill('input[name="email"]', email);
     await page.fill('input[name="password"]', "AcilSifre123!");
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL("/");
+    await expect(page).toHaveURL("/panel");
   });
 
   test("an organization ADMIN cannot reach the platform emergency-reset endpoint", async ({
@@ -140,6 +140,6 @@ test.describe("password reset (real browser, real Postgres)", () => {
     await addSessionCookie(context, token, baseURL!);
 
     await page.goto(`/platform/kurumlar/${organization.id}`);
-    await expect(page).toHaveURL("/");
+    await expect(page).toHaveURL("/panel");
   });
 });

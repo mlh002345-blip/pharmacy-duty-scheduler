@@ -28,7 +28,7 @@ export type NavItem = {
 };
 
 export const navItems: NavItem[] = [
-  { label: "Panel", href: "/", icon: LayoutDashboard },
+  { label: "Panel", href: "/panel", icon: LayoutDashboard },
   { label: "Kullanım Kılavuzu", href: "/kilavuz", icon: BookOpen },
   { label: "Eczaneler", href: "/eczaneler", icon: Building2 },
   { label: "Nöbet Bölgeleri", href: "/bolgeler", icon: MapPin },

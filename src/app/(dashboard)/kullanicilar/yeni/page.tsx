@@ -6,7 +6,7 @@ import { createUserAction } from "../actions";
 export default async function YeniKullaniciPage() {
   await requireOrganizationRoleOrRedirect(
     "manageUsers",
-    "/",
+    "/panel",
     "Bu sayfaya erişim yetkiniz bulunmuyor."
   );
 

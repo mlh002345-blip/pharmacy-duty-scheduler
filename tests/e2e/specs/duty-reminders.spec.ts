@@ -73,7 +73,7 @@ test.describe("duty reminders (real browser, real Postgres)", () => {
       data: { dutyScheduleId: schedule.id, date: tomorrowUtc, pharmacyId: pharmacy.id, weight: 1 },
     });
 
-    await page.goto("/");
+    await page.goto("/panel");
     await expect(page.getByText("Nöbet Hatırlatmaları", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: /Yarının Nöbet Hatırlatmalarını Gönder/ }).click();
 
@@ -87,7 +87,7 @@ test.describe("duty reminders (real browser, real Postgres)", () => {
     const token = await createE2ESession(tracked, viewer.id);
     await addSessionCookie(context, token, baseURL!);
 
-    await page.goto("/");
+    await page.goto("/panel");
     await expect(page.getByText("Nöbet Hatırlatmaları")).toHaveCount(0);
   });
 });
