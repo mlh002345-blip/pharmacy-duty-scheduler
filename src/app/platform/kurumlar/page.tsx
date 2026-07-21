@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Building } from "lucide-react";
-import type { Prisma } from "@prisma/client";
+import type { BillingStatus, Prisma } from "@prisma/client";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import { ListBanner } from "@/components/layout/list-banner";
 import { PageHeader } from "@/components/layout/page-header";
 import { Pagination, DEFAULT_PAGE_SIZE, parsePageParam } from "@/components/layout/pagination";
 import { prisma } from "@/lib/prisma";
+import { BILLING_STATUS_LABELS, BILLING_STATUS_BADGE, BILLING_STATUS_OPTIONS } from "@/lib/billing/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +31,11 @@ export default async function PlatformKurumlarPage({
     error?: string;
     q?: string;
     status?: string;
+    billing?: string;
     page?: string;
   }>;
 }) {
-  const { success, error, q, status, page: pageParam } = await searchParams;
+  const { success, error, q, status, billing, page: pageParam } = await searchParams;
 
   const where: Prisma.OrganizationWhereInput = {};
   if (q) {
@@ -48,6 +50,9 @@ export default async function PlatformKurumlarPage({
   } else if (status === "passive") {
     where.isActive = false;
   }
+  if (billing && (BILLING_STATUS_OPTIONS as string[]).includes(billing)) {
+    where.billingStatus = billing as BillingStatus;
+  }
 
   const page = parsePageParam(pageParam);
 
@@ -60,6 +65,7 @@ export default async function PlatformKurumlarPage({
         province: true,
         slug: true,
         isActive: true,
+        billingStatus: true,
         createdAt: true,
         _count: { select: { users: true } },
       },
@@ -109,6 +115,20 @@ export default async function PlatformKurumlarPage({
               </Select>
             </div>
 
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium" htmlFor="billing">
+                Faturalama
+              </label>
+              <Select id="billing" name="billing" defaultValue={billing ?? ""} className="w-40">
+                <option value="">Tümü</option>
+                {BILLING_STATUS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {BILLING_STATUS_LABELS[option]}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
             <Button type="submit" variant="secondary">
               Filtrele
             </Button>
@@ -133,6 +153,7 @@ export default async function PlatformKurumlarPage({
                 <TableHead>Kısa Ad</TableHead>
                 <TableHead>Kullanıcı Sayısı</TableHead>
                 <TableHead>Durum</TableHead>
+                <TableHead>Faturalama</TableHead>
                 <TableHead className="text-right">İşlemler</TableHead>
               </TableRow>
             </TableHeader>
@@ -149,6 +170,11 @@ export default async function PlatformKurumlarPage({
                     </Badge>
                   </TableCell>
                   <TableCell>
+                    <Badge variant={BILLING_STATUS_BADGE[organization.billingStatus]}>
+                      {BILLING_STATUS_LABELS[organization.billingStatus]}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" size="sm" asChild>
                         <Link href={`/platform/kurumlar/${organization.id}`}>Görüntüle</Link>
@@ -159,7 +185,7 @@ export default async function PlatformKurumlarPage({
               ))}
               {organizations.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground py-8 text-center">
+                  <TableCell colSpan={7} className="text-muted-foreground py-8 text-center">
                     {totalCount === 0
                       ? "Henüz tanımlı bir oda bulunmuyor."
                       : "Filtreye uygun oda bulunamadı."}
@@ -170,7 +196,7 @@ export default async function PlatformKurumlarPage({
           </Table>
           <Pagination
             basePath="/platform/kurumlar"
-            searchParams={{ q, status }}
+            searchParams={{ q, status, billing }}
             page={page}
             pageSize={DEFAULT_PAGE_SIZE}
             totalCount={totalCount}

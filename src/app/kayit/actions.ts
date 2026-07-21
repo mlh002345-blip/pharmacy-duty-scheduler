@@ -98,6 +98,7 @@ export async function createSelfServiceOrganizationAction(
           province: parsed.data.province,
           slug,
           isActive: true,
+          billingStatus: "TRIAL",
         },
       });
 

@@ -17,6 +17,7 @@ import { redirectWithMessage } from "@/lib/flash-redirect";
 import {
   createOrganizationSchema,
   updateOrganizationSchema,
+  updateOrganizationBillingSchema,
   normalizeOrganizationSlug,
 } from "@/lib/validations/organization";
 import { type ActionState, zodErrorState } from "@/lib/action-state";
@@ -109,6 +110,7 @@ export async function createOrganizationAction(
           province: parsed.data.province,
           slug,
           isActive: parsed.data.isActive,
+          billingStatus: "TRIAL",
         },
       });
 
@@ -275,6 +277,58 @@ export async function setOrganizationStatusAction(id: string, isActive: boolean)
     "/platform/kurumlar",
     "success",
     isActive ? "Oda aktif yapıldı." : "Oda pasif yapıldı."
+  );
+}
+
+// Faturalama DURUMU — bkz. prisma/schema.prisma BillingStatus enum yorumu.
+// Ödeme işlemenin kendisini yapmaz; platform desteği banka
+// havalesi/fatura gibi sistem dışı bir kanaldan aldığı ödemeyi burada
+// yalnızca elle işaretler.
+export async function updateOrganizationBillingAction(
+  id: string,
+  _prevState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const platformAdmin = await requirePlatformAdmin();
+
+  const parsed = updateOrganizationBillingSchema.safeParse({
+    billingStatus: formData.get("billingStatus"),
+    billingNotes: formData.get("billingNotes") ?? "",
+  });
+  if (!parsed.success) {
+    return zodErrorState(parsed.error, "Lütfen formdaki hataları düzeltin.");
+  }
+
+  const before = await prisma.organization.findUnique({ where: { id } });
+  if (!before) {
+    return { success: false, message: "Oda bulunamadı." };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const organization = await tx.organization.update({
+      where: { id },
+      data: {
+        billingStatus: parsed.data.billingStatus,
+        billingNotes: parsed.data.billingNotes ?? null,
+      },
+    });
+    await writeAuditLog(tx, {
+      organizationId: organization.id,
+      userId: platformAdmin.id,
+      action: "UPDATE",
+      entity: "Organization",
+      entityId: organization.id,
+      before: { billingStatus: before.billingStatus, billingNotes: before.billingNotes },
+      after: { billingStatus: organization.billingStatus, billingNotes: organization.billingNotes },
+    });
+  });
+
+  revalidatePath("/platform/kurumlar");
+  revalidatePath(`/platform/kurumlar/${id}`);
+  redirectWithMessage(
+    `/platform/kurumlar/${id}`,
+    "success",
+    "Faturalama durumu güncellendi."
   );
 }
 

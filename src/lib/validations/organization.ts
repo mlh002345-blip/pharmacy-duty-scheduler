@@ -91,6 +91,30 @@ export const updateOrganizationSchema = z.object({
 
 export type UpdateOrganizationInput = z.infer<typeof updateOrganizationSchema>;
 
+// Faturalama/ödeme DURUMU takibi — bkz. prisma/schema.prisma BillingStatus
+// enum yorumu. Bu bir ödeme işleme akışı değildir; platform yöneticisi
+// banka havalesi/fatura gibi sistem dışı bir kanaldan gelen ödemeyi burada
+// yalnızca elle işaretler. Literaller Prisma'nın BillingStatus enum'u ve
+// src/lib/billing/labels.ts içindeki BILLING_STATUS_OPTIONS ile senkron
+// tutulmalıdır (z.enum bir literal tuple gerektirdiği için BillingStatus[]
+// tipli bir sabit doğrudan kullanılamıyor).
+export const updateOrganizationBillingSchema = z.object({
+  billingStatus: z.enum(["TRIAL", "ACTIVE", "PAST_DUE", "CANCELED"], {
+    message: "Geçerli bir faturalama durumu seçiniz.",
+  }),
+  billingNotes: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z
+      .string()
+      .trim()
+      .max(500, "Faturalama notu en fazla 500 karakter olabilir.")
+      .refine((value) => !CONTROL_CHAR_PATTERN.test(value), "Faturalama notu geçersiz karakter içeriyor.")
+      .optional()
+  ),
+});
+
+export type UpdateOrganizationBillingInput = z.infer<typeof updateOrganizationBillingSchema>;
+
 // Normalizes a slug field the same way everywhere it's produced: an
 // operator-supplied slug is transliterated/normalized exactly like a
 // name-derived default would be, so "Örnek Slug!!" and "" (falling back

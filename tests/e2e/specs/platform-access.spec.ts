@@ -157,4 +157,43 @@ test.describe("/platform access control (real browser, real Postgres)", () => {
       await expect(page.locator(fieldId)).toBeVisible();
     }
   });
+
+  // Faturalama (billing status) is a status-only field platform admins
+  // record manually — see updateOrganizationBillingAction. The actual
+  // form submission isn't exercised here for the same reason noted above
+  // for the creation form (bound Server Action button clicks lose the
+  // injected session cookie in this sandbox); the mutation itself is
+  // already proven against real Postgres by
+  // tests/integration/platform-organization.integration.test.ts. Here we
+  // only prove the badge and edit form are visible to a PLATFORM_ADMIN.
+  test("PLATFORM_ADMIN sees the billing status badge and edit form on an organization's detail page", async ({
+    context,
+    page,
+    baseURL,
+  }) => {
+    const { token } = await createPlatformAdminSession();
+    await addSessionCookie(context, token, baseURL!);
+
+    const organization = await createE2EOrganization(tracked);
+
+    await page.goto(`/platform/kurumlar/${organization.id}`);
+    await expect(page.locator('span[data-slot="badge"]', { hasText: "Deneme" })).toBeVisible();
+    await expect(page.locator("#billingStatus")).toBeVisible();
+    await expect(page.locator("#billingNotes")).toBeVisible();
+  });
+
+  test("the organization list shows a Faturalama column with a status badge", async ({
+    context,
+    page,
+    baseURL,
+  }) => {
+    const { token } = await createPlatformAdminSession();
+    await addSessionCookie(context, token, baseURL!);
+
+    await createE2EOrganization(tracked);
+
+    await page.goto("/platform/kurumlar");
+    await expect(page.locator("th", { hasText: "Faturalama" })).toBeVisible();
+    await expect(page.locator("#billing")).toBeVisible();
+  });
 });

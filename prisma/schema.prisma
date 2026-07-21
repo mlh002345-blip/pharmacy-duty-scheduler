@@ -10,6 +10,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Faturalama/ödeme durumu — bilinçli olarak yalnızca bir DURUM alanıdır,
+// ödeme işlemenin kendisi değil (bkz. CLAUDE.md: "payment" MVP kapsamı
+// dışında). Ödeme banka havalesi/fatura gibi sistem dışı bir kanaldan
+// alınır; platform yöneticisi bunu burada yalnızca elle işaretler. Bkz.
+// src/app/platform/kurumlar/actions.ts → updateOrganizationBillingAction.
+enum BillingStatus {
+  TRIAL // Kendi kendine kayıt sonrası varsayılan — henüz faturalanmadı.
+  ACTIVE // Ödeme alındı/sözleşme yürürlükte.
+  PAST_DUE // Ödeme zamanı geçti, oda henüz pasife alınmadı.
+  CANCELED // Hizmet sonlandırıldı (isActive ile birlikte veya ondan önce kullanılabilir).
+}
+
 enum UserRole {
   // Platform-level: manages Organizations themselves (create/(de)activate,
   // assign first ADMIN). Never a member of any organization
@@ -32,6 +44,12 @@ model Organization {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Faturalama — bkz. yukarıdaki BillingStatus enum yorumu. billingNotes,
+  // platform desteğinin serbest metin notu için (ör. "Yıllık sözleşme,
+  // sonraki fatura Ocak 2027") — hiçbir zaman kart/banka bilgisi içermez.
+  billingStatus BillingStatus @default(TRIAL)
+  billingNotes  String?
 
   users                     User[]
   regions                   Region[]
