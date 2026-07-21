@@ -6,6 +6,7 @@ import {
   createOrganizationAction,
   updateOrganizationAction,
   setOrganizationStatusAction,
+  updateOrganizationBillingAction,
 } from "@/app/platform/kurumlar/actions";
 import { IntegrationRedirectSignal, setIntegrationTestSessionToken } from "./helpers/setup";
 import {
@@ -323,5 +324,78 @@ describe("platform organization management (real Postgres)", () => {
     for (const org of otherActiveOrgs) {
       await prisma.organization.update({ where: { id: org.id }, data: { isActive: true } });
     }
+  });
+
+  it("new organizations start in TRIAL billing status", async () => {
+    const organization = await createTestOrganization(tracked);
+    expect(organization.billingStatus).toBe("TRIAL");
+  });
+
+  it("requirePlatformAdmin rejects a non-platform-admin caller for billing updates", async () => {
+    const organization = await createTestOrganization(tracked);
+    const orgAdmin = await createTestUser(tracked, { role: "ADMIN", organizationId: organization.id });
+    const token = await createTestSessionToken(orgAdmin.id);
+    setIntegrationTestSessionToken(token);
+
+    const formData = new FormData();
+    formData.set("billingStatus", "ACTIVE");
+
+    await expect(
+      updateOrganizationBillingAction(organization.id, { success: false, message: "" }, formData)
+    ).rejects.toBeInstanceOf(IntegrationRedirectSignal);
+
+    const unchanged = await prisma.organization.findUniqueOrThrow({ where: { id: organization.id } });
+    expect(unchanged.billingStatus).toBe("TRIAL");
+  });
+
+  it("updateOrganizationBillingAction updates status and notes, and writes an audit log", async () => {
+    const { platformAdmin, token } = await createPlatformAdmin();
+    setIntegrationTestSessionToken(token);
+
+    const target = await createTestOrganization(tracked);
+
+    const formData = new FormData();
+    formData.set("billingStatus", "ACTIVE");
+    formData.set("billingNotes", "Yıllık sözleşme, sonraki fatura Ocak 2027");
+
+    await expect(
+      updateOrganizationBillingAction(target.id, { success: false, message: "" }, formData)
+    ).rejects.toBeInstanceOf(IntegrationRedirectSignal);
+
+    const updated = await prisma.organization.findUniqueOrThrow({ where: { id: target.id } });
+    expect(updated.billingStatus).toBe("ACTIVE");
+    expect(updated.billingNotes).toBe("Yıllık sözleşme, sonraki fatura Ocak 2027");
+
+    const auditLog = await prisma.auditLog.findFirstOrThrow({
+      where: { entity: "Organization", entityId: target.id, action: "UPDATE" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(auditLog.userId).toBe(platformAdmin.id);
+    const before = JSON.parse(auditLog.before!);
+    const after = JSON.parse(auditLog.after!);
+    expect(before.billingStatus).toBe("TRIAL");
+    expect(after.billingStatus).toBe("ACTIVE");
+    expect(after.billingNotes).toBe("Yıllık sözleşme, sonraki fatura Ocak 2027");
+  });
+
+  it("updateOrganizationBillingAction rejects an invalid status without writing anything", async () => {
+    const { token } = await createPlatformAdmin();
+    setIntegrationTestSessionToken(token);
+
+    const target = await createTestOrganization(tracked);
+
+    const formData = new FormData();
+    formData.set("billingStatus", "PAID");
+
+    const result = await updateOrganizationBillingAction(
+      target.id,
+      { success: false, message: "" },
+      formData
+    );
+    expect(result.success).toBe(false);
+    expect(result.errors?.billingStatus).toBeTruthy();
+
+    const unchanged = await prisma.organization.findUniqueOrThrow({ where: { id: target.id } });
+    expect(unchanged.billingStatus).toBe("TRIAL");
   });
 });

@@ -8,7 +8,9 @@ import { StatusToggleButton } from "@/components/layout/status-toggle-button";
 import { ListBanner } from "@/components/layout/list-banner";
 import { ROLE_LABELS } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/prisma";
-import { setOrganizationStatusAction } from "../actions";
+import { BILLING_STATUS_LABELS, BILLING_STATUS_BADGE } from "@/lib/billing/labels";
+import { setOrganizationStatusAction, updateOrganizationBillingAction } from "../actions";
+import { OrganizationBillingForm } from "../organization-billing-form";
 import { EmergencyResetButton } from "./emergency-reset-button";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,8 @@ export default async function KurumDetayPage({
       province: true,
       slug: true,
       isActive: true,
+      billingStatus: true,
+      billingNotes: true,
       createdAt: true,
       updatedAt: true,
       _count: {
@@ -100,7 +104,34 @@ export default async function KurumDetayPage({
             </CardTitle>
           </CardHeader>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Faturalama</CardDescription>
+            <CardTitle>
+              <Badge variant={BILLING_STATUS_BADGE[organization.billingStatus]}>
+                {BILLING_STATUS_LABELS[organization.billingStatus]}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+        </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Faturalama Durumu</CardTitle>
+          <CardDescription>
+            Bu yalnızca bir durum kaydıdır — ödeme banka havalesi/fatura gibi sistem dışı bir
+            kanaldan alınır. Ödeme alındığında veya gecikince durumu burada elle güncelleyin.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <OrganizationBillingForm
+            action={updateOrganizationBillingAction.bind(null, organization.id)}
+            billingStatus={organization.billingStatus}
+            billingNotes={organization.billingNotes}
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

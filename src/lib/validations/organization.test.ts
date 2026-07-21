@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createOrganizationSchema,
   updateOrganizationSchema,
+  updateOrganizationBillingSchema,
   normalizeOrganizationSlug,
 } from "./organization";
 
@@ -90,6 +91,66 @@ describe("updateOrganizationSchema", () => {
       name: "Oda",
       province: "Ankara",
       slug: "a".repeat(61),
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("updateOrganizationBillingSchema", () => {
+  it("accepts a valid status without notes", () => {
+    const result = updateOrganizationBillingSchema.safeParse({ billingStatus: "TRIAL" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.billingNotes).toBeUndefined();
+    }
+  });
+
+  it("accepts each valid BillingStatus literal", () => {
+    for (const status of ["TRIAL", "ACTIVE", "PAST_DUE", "CANCELED"]) {
+      const result = updateOrganizationBillingSchema.safeParse({ billingStatus: status });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("rejects an invalid status", () => {
+    const result = updateOrganizationBillingSchema.safeParse({ billingStatus: "PAID" });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts and trims a valid notes string", () => {
+    const result = updateOrganizationBillingSchema.safeParse({
+      billingStatus: "ACTIVE",
+      billingNotes: "  Yıllık sözleşme  ",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.billingNotes).toBe("Yıllık sözleşme");
+    }
+  });
+
+  it("treats a blank notes string as undefined", () => {
+    const result = updateOrganizationBillingSchema.safeParse({
+      billingStatus: "ACTIVE",
+      billingNotes: "",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.billingNotes).toBeUndefined();
+    }
+  });
+
+  it("rejects notes over 500 characters", () => {
+    const result = updateOrganizationBillingSchema.safeParse({
+      billingStatus: "ACTIVE",
+      billingNotes: "a".repeat(501),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects notes containing control characters", () => {
+    const result = updateOrganizationBillingSchema.safeParse({
+      billingStatus: "ACTIVE",
+      billingNotes: "Zararli not\x07",
     });
     expect(result.success).toBe(false);
   });
