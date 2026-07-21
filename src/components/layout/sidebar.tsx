@@ -47,10 +47,7 @@ export function Sidebar({
       <div className="bg-sidebar-border mx-5 h-px" />
       <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
         {visibleNavItems.map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
+          const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
           const href =
             item.href === "/vatandas" && organizationSlug

@@ -21,7 +21,7 @@ export async function requirePlatformAdmin(): Promise<User> {
       userId: user.id,
       reason: "not_platform_admin",
     });
-    redirect("/");
+    redirect("/panel");
   }
   return user;
 }

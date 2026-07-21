@@ -67,7 +67,7 @@ test.describe("/platform access control (real browser, real Postgres)", () => {
 
       await addSessionCookie(context, token, baseURL!);
       await page.goto("/platform/kurumlar");
-      // requirePlatformAdmin() redirects any non-PLATFORM_ADMIN to "/" —
+      // requirePlatformAdmin() redirects any non-PLATFORM_ADMIN to "/panel" —
       // never to the platform area, regardless of the organization role's
       // own permissions (an organization ADMIN's manageUsers permission
       // must never translate into platform-level access).

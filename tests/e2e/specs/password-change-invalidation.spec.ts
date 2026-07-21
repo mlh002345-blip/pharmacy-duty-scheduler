@@ -90,7 +90,7 @@ test.describe("password-change session invalidation", () => {
       await pageA.fill("#email", user.email);
       await pageA.fill("#password", NEW_PASSWORD);
       await pageA.click('button[type="submit"]');
-      await expect(pageA).toHaveURL(/^http:\/\/localhost:\d+\/$/);
+      await expect(pageA).toHaveURL(/^http:\/\/localhost:\d+\/panel$/);
 
       // Exactly one password-change AuditLog row exists (not zero, not
       // duplicated).

@@ -41,7 +41,7 @@ test.describe("self-service organization signup (real browser, real Postgres)", 
     await page.check("#termsAccepted");
     await page.click('button[type="submit"]');
 
-    await expect(page).toHaveURL(/^http:\/\/localhost:3210\/\?success=/);
+    await expect(page).toHaveURL(/^http:\/\/localhost:3210\/panel\?success=/);
     await expect(page.getByText(/odanız oluşturuldu/i)).toBeVisible();
 
     const admin = await e2ePrisma.user.findUniqueOrThrow({ where: { email: adminEmail } });

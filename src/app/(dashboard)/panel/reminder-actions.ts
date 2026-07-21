@@ -19,7 +19,7 @@ export async function sendDutyRemindersAction(
     userId: user.id,
   });
 
-  revalidatePath("/");
+  revalidatePath("/panel");
 
   const parts: string[] = [];
   if (result.sentCount > 0) parts.push(`${result.sentCount} e-posta gönderildi`);

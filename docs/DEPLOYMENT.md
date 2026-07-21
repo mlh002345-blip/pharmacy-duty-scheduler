@@ -375,8 +375,9 @@ npm run start
 - [ ] Demo seed sadece hosted demo ortamında ve bilerek çalıştırıldı
       (gerçek pilotta hiç çalıştırılmadı)
 - [ ] Uygulama HTTPS arkasında çalışıyor
-- [ ] `/vatandas` sayfası giriş yapmadan erişilebiliyor
-- [ ] `/giris` sayfası çalışıyor ve rol tabanlı yönlendirme doğru
+- [ ] `/` (tanıtım sayfası) ve `/vatandas` sayfaları giriş yapmadan erişilebiliyor
+- [ ] `/giris` sayfası çalışıyor ve rol tabanlı yönlendirme doğru (organizasyon
+      üyeleri `/panel`'e, PLATFORM_ADMIN `/platform`'a yönlendirilir)
 - [ ] Sunucu saat dilimi `Europe/Istanbul` olarak ayarlı
 - [ ] `docs/SECURITY_CHECKLIST.md` içindeki tüm maddeler gözden geçirildi
 

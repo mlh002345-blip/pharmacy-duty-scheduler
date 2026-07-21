@@ -151,7 +151,7 @@ describe("loginAction — no account-status enumeration", () => {
 
     await expect(
       loginAction({ success: false, message: "" }, makeFormData("real@example.com", "correct"))
-    ).rejects.toThrow("REDIRECT:/");
+    ).rejects.toThrow("REDIRECT:/panel");
 
     expect(createSession).toHaveBeenCalledExactlyOnceWith("u1");
     expect(clearAccountLoginRateLimit).toHaveBeenCalledOnce();
@@ -303,7 +303,7 @@ describe("loginAction — auth_login_failed / auth_login_succeeded / auth_login_
 
     await expect(
       loginAction({ success: false, message: "" }, makeFormData("real@example.com", "correct"))
-    ).rejects.toThrow("REDIRECT:/");
+    ).rejects.toThrow("REDIRECT:/panel");
 
     expect(infoSpy).toHaveBeenCalledOnce();
     const record = JSON.parse(infoSpy.mock.calls[0][0] as string);

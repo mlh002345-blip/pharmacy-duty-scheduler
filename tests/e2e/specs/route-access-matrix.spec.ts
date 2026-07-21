@@ -59,9 +59,9 @@ test.describe("role-based route access matrix", () => {
 
     for (const route of ADMIN_ONLY_ROUTES) {
       await page.goto(route);
-      // requirePermissionOrRedirectWithMessage redirects to "/" with a
+      // requireOrganizationRoleOrRedirect redirects to "/panel" with a
       // flash error message — never renders the admin-only content.
-      await expect(page).toHaveURL(/\/\?error=/);
+      await expect(page).toHaveURL(/\/panel\?error=/);
       const body = await page.textContent("body");
       expect(body).not.toContain("passwordHash");
     }
@@ -84,7 +84,7 @@ test.describe("role-based route access matrix", () => {
 
     for (const route of ADMIN_ONLY_ROUTES) {
       await page.goto(route);
-      await expect(page).toHaveURL(/\/\?error=/);
+      await expect(page).toHaveURL(/\/panel\?error=/);
     }
 
     for (const route of AUTHENTICATED_ROUTES) {
@@ -104,15 +104,21 @@ test.describe("role-based route access matrix", () => {
   test("ANONYMOUS is redirected to /giris from every dashboard route, and public routes stay available", async ({
     page,
   }) => {
-    for (const route of [...ADMIN_ONLY_ROUTES, ...AUTHENTICATED_ROUTES, "/"]) {
+    for (const route of [...ADMIN_ONLY_ROUTES, ...AUTHENTICATED_ROUTES, "/panel"]) {
       await page.goto(route);
       await expect(page).toHaveURL(/\/giris/);
     }
 
-    // Public routes remain available with no session at all.
+    // Public routes remain available with no session at all — including
+    // "/" itself, which is now the public marketing landing page, not
+    // the (now-relocated-to-/panel) dashboard.
     const vatandasResponse = await page.goto("/vatandas");
     expect(vatandasResponse?.status()).toBe(200);
     await expect(page).toHaveURL(/\/vatandas/);
+
+    const landingResponse = await page.goto("/");
+    expect(landingResponse?.status()).toBe(200);
+    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/$/);
   });
 
   test("INACTIVE_USER cannot log in and a pre-existing session no longer grants access once deactivated", async ({

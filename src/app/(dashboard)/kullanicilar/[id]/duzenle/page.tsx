@@ -13,7 +13,7 @@ export default async function KullaniciDuzenlePage({
 }) {
   const currentUser = await requireOrganizationRoleOrRedirect(
     "manageUsers",
-    "/",
+    "/panel",
     "Bu sayfaya erişim yetkiniz bulunmuyor."
   );
   const { id } = await params;

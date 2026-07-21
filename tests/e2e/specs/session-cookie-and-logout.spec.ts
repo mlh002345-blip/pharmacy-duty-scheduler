@@ -26,7 +26,7 @@ test.describe("session-cookie security and logout", () => {
     await page.fill("#email", user.email);
     await page.fill("#password", E2E_TEST_PASSWORD);
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/$/);
+    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/panel$/);
 
     const cookies = await context.cookies();
     const sessionCookie = cookies.find((c) => c.name === SESSION_COOKIE_NAME);
@@ -62,7 +62,7 @@ test.describe("session-cookie security and logout", () => {
     await page.fill("#email", user.email);
     await page.fill("#password", E2E_TEST_PASSWORD);
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/$/);
+    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/panel$/);
 
     const cookiesBeforeLogout = await context.cookies();
     const tokenBeforeLogout = cookiesBeforeLogout.find((c) => c.name === SESSION_COOKIE_NAME)!.value;
@@ -104,7 +104,7 @@ test.describe("session-cookie security and logout", () => {
     await page.fill("#email", user.email);
     await page.fill("#password", E2E_TEST_PASSWORD);
     await page.click('button[type="submit"]');
-    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/$/);
+    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/panel$/);
 
     const secondCookies = await context.cookies();
     const secondToken = secondCookies.find((c) => c.name === SESSION_COOKIE_NAME)!.value;
